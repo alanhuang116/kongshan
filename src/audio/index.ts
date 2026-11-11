@@ -166,6 +166,8 @@ class KongshanAudio {
   }
   /** 用户自己放了有许可的诵经录音（public/audio/xinjing.mp3）就用它 */
   private async probe() {
+    // 有没有这个文件，起服务器 / 打包时就知道了（vite.config.ts）；没有就不去问，免得每次进山都白白 404 一回
+    if (!__KS_HAS_XINJING__) return;
     try {
       const url = `${import.meta.env.BASE_URL}audio/xinjing.mp3`;
       const r = await fetch(url, { method: 'HEAD' });
