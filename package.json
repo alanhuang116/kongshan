@@ -1,0 +1,34 @@
+{
+  "name": "yiwen-kongshan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "空山 —— 一座可以独自走进去的唐风山寺：上香、礼佛、木鱼、念珠、静坐、撞钟、抄经、放灯。",
+  "scripts": {
+    "dev": "vite --port 3800 --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 3800 --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "fonts": "node tools/fonts.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ma-shan-zheng": "^5.3.1",
+    "@fontsource/noto-serif-sc": "^5.3.1",
+    "lunar-javascript": "1.7.8",
+    "lxgw-wenkai-webfont": "^1.7.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.187.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "空山",
+  "short_name": "空山",
+  "description": "一座可以独自走进去的山寺。上香、礼佛、敲木鱼、数念珠、静坐一炷香、撞钟、抄经、放一盏灯。",
+  "lang": "zh-CN",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b0c0d",
+  "theme_color": "#0b0c0d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

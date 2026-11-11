@@ -1,0 +1,98 @@
+/* 一层层的面板（寺图、天时、声、功课簿、缘起）：电脑上从右侧出来的一块磨砂，手机上从底下升起来。 */
+.sheet-back { position: absolute; inset: 0; background: rgba(6, 7, 8, 0.18); animation: fade 0.5s backwards; }
+.sheet { position: absolute; right: calc(var(--sar) + 16px); top: calc(var(--sat) + 16px); bottom: calc(var(--sab) + 16px); width: min(392px, calc(100vw - 32px)); display: flex; flex-direction: column; background: rgba(14, 15, 16, 0.7); backdrop-filter: blur(26px) saturate(1.15); -webkit-backdrop-filter: blur(26px) saturate(1.15); border: 1px solid var(--hair); border-radius: 4px; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 30px 70px rgba(0, 0, 0, 0.5); animation: sheet-in 0.55s var(--out) backwards; }
+.sheet-wide { width: min(468px, calc(100vw - 32px)); }
+.sheet-head { display: flex; align-items: baseline; justify-content: space-between; padding: 22px 24px 14px; border-bottom: 1px solid var(--hair-2); }
+.sheet-head h3 { font-size: 15.5px; letter-spacing: 0.62em; }
+.sheet-close { font-size: 12.5px; letter-spacing: 0.3em; color: var(--moon-2); padding: 8px 0 8px 14px; transition: color 0.3s; }
+@media (hover: hover) { .sheet-close:hover { color: var(--moon); } }
+.sheet-body { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 18px 24px 26px; scrollbar-width: thin; scrollbar-color: var(--hair) transparent; touch-action: pan-y; }
+.sheet-note { margin-top: 20px; font-size: 12.5px; line-height: 1.95; letter-spacing: 0.06em; color: var(--moon-3); }
+@keyframes sheet-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* 寺图 */
+.map { width: 100%; height: auto; max-height: calc(100dvh - 210px); display: block; overflow: visible; }
+.map * { vector-effect: non-scaling-stroke; }
+.map-hill path { fill: none; stroke: rgba(236, 235, 230, 0.22); stroke-width: 1; stroke-linecap: round; }
+.map-far { font-size: 3.2px; fill: var(--moon-3); letter-spacing: 0.3em; text-anchor: middle; }
+.map-wall { fill: rgba(236, 235, 230, 0.035); stroke: rgba(236, 235, 230, 0.5); stroke-width: 1.2; }
+.map-terrace { fill: rgba(236, 235, 230, 0.03); stroke: rgba(236, 235, 230, 0.3); stroke-width: 1; stroke-dasharray: 3 3; }
+.map-path { fill: none; stroke: rgba(236, 235, 230, 0.16); stroke-width: 1; stroke-dasharray: 2 4; }
+.map-stair path { stroke: rgba(236, 235, 230, 0.3); stroke-width: 1; fill: none; }
+.map-pond { fill: rgba(150, 190, 180, 0.12); stroke: rgba(170, 205, 196, 0.42); stroke-width: 1; }
+.map-wave { fill: none; stroke: rgba(170, 205, 196, 0.45); stroke-width: 1; stroke-linecap: round; }
+.map-bridge { fill: rgba(14, 15, 16, 0.9); stroke: rgba(236, 235, 230, 0.5); stroke-width: 1; }
+.map-roof rect { fill: rgba(236, 235, 230, 0.1); stroke: rgba(236, 235, 230, 0.62); stroke-width: 1; }
+.map-roof path { fill: none; stroke: rgba(236, 235, 230, 0.34); stroke-width: 1; }
+.map-tree { fill: rgba(214, 194, 152, 0.1); stroke: rgba(214, 194, 152, 0.5); stroke-width: 1; stroke-dasharray: 1.5 2.5; }
+.map-censer { fill: none; stroke: rgba(236, 235, 230, 0.6); stroke-width: 1; }
+.map-st { cursor: pointer; }
+.map-st .map-hit { fill: transparent; stroke: none; }
+.map-st circle { fill: rgba(14, 15, 16, 0.95); stroke: var(--moon); stroke-width: 1.2; transition: fill 0.3s; }
+.map-st text { font-size: 3.7px; fill: var(--moon); letter-spacing: 0.12em; paint-order: stroke; stroke: rgba(10, 11, 12, 0.85); stroke-width: 3; stroke-linejoin: round; dominant-baseline: middle; transition: fill 0.3s; }
+.map-st.is-here circle { stroke: #e9b9ad; }
+.map-st.is-here text { fill: #f1c9bd; }
+/* 你在这里：一枚朱点，尖头指着你面朝的方向 */
+.map-me { pointer-events: none; }
+.map-me circle { fill: var(--zhu); stroke: #f6e3dc; stroke-width: 0.7; }
+.map-me path { fill: #f6e3dc; }
+@media (hover: hover) { .map-st:hover circle { fill: var(--gold); } .map-st:hover text { fill: #f5e9cb; } }
+
+/* 选项 */
+.sky-date { font-family: var(--kai); font-size: 15px; line-height: 2; letter-spacing: 0.24em; color: var(--moon-2); margin-bottom: 20px; }
+.pick { display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start; padding: 15px 0; border-top: 1px solid var(--hair-2); }
+.pick-mark { width: 30px; height: 30px; display: grid; place-items: center; font-style: normal; font-size: 14px; border: 1px solid var(--hair); border-radius: 3px; color: var(--moon-2); background: rgba(236, 235, 230, 0.04); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.05) inset; }
+.pick-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { min-height: 34px; padding: 0 14px; border-radius: 17px; font-size: 13.5px; letter-spacing: 0.22em; text-indent: 0.22em; color: var(--moon-2); border: 1px solid var(--hair-2); background: rgba(236, 235, 230, 0.035); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 3px 8px rgba(0, 0, 0, 0.18); transition: transform 0.3s var(--out), color 0.3s, border-color 0.3s, background 0.3s; }
+@media (hover: hover) { .opt:hover { transform: translateY(-1px); color: var(--moon); border-color: var(--hair); } }
+.opt:active { transform: translateY(1px); }
+.opt.is-on { color: #f5e9cb; border-color: var(--gold-2); background: linear-gradient(180deg, rgba(214, 194, 152, 0.2), rgba(214, 194, 152, 0.06)); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 1px 3px rgba(0, 0, 0, 0.3); }
+
+/* 声 */
+.vol { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; margin-bottom: 8px; }
+input[type='range'] { -webkit-appearance: none; appearance: none; height: 34px; background: transparent; cursor: pointer; width: 100%; }
+input[type='range']::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(to right, var(--gold) calc(var(--v, 0.5) * 100%), var(--hair) 0); }
+input[type='range']::-moz-range-track { height: 2px; background: var(--hair); }
+input[type='range']::-moz-range-progress { height: 2px; background: var(--gold); }
+input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -7px; border-radius: 50%; background: var(--moon); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(236, 235, 230, 0.1); }
+input[type='range']::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--moon); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.layers li { display: grid; grid-template-columns: 30px 1fr auto; gap: 14px; align-items: center; padding: 11px 0; border-top: 1px solid var(--hair-2); }
+.layer-sub { font-size: 12.5px; letter-spacing: 0.1em; color: var(--moon-3); }
+.steps { display: flex; align-items: center; gap: 2px; }
+.steps button { width: 26px; height: 34px; position: relative; }
+.steps button::after { content: ''; position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px; border-radius: 50%; border: 1px solid var(--moon-3); transition: background 0.25s, border-color 0.25s, transform 0.25s var(--out); }
+.steps button:first-child::after { width: 9px; height: 1px; margin: -0.5px -4.5px; border-radius: 0; border: 0; background: var(--moon-3); }
+.steps button.is-on::after { background: var(--gold); border-color: var(--gold); }
+.steps button.is-zero::after { background: var(--moon); }
+@media (hover: hover) { .steps button:hover::after { transform: scale(1.3); } }
+
+/* 功课簿 */
+.journal-empty { font-family: var(--kai); font-size: 15px; line-height: 2.1; letter-spacing: 0.14em; color: var(--moon-2); padding: 18px 0 8px; }
+.day { padding: 16px 0 14px; border-top: 1px solid var(--hair-2); }
+.day:first-child { border-top: 0; padding-top: 4px; }
+.day h4 { font-size: 15px; letter-spacing: 0.3em; display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 9px; }
+.day h4 small { font-size: 11.5px; letter-spacing: 0.12em; color: var(--moon-3); }
+.day li { font-family: var(--kai); font-size: 15.5px; line-height: 2.05; letter-spacing: 0.12em; color: var(--moon-2); padding-left: 1.1em; position: relative; }
+.day li::before { content: ''; position: absolute; left: 0; top: 1em; width: 4px; height: 4px; border-radius: 50%; background: var(--zhu); }
+.journal-foot { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hair-2); display: grid; gap: 14px; }
+.journal-foot p { font-size: 12.5px; letter-spacing: 0.12em; color: var(--moon-3); line-height: 1.9; }
+.journal-links { display: flex; gap: 8px; }
+
+/* 缘起 */
+.about section { padding: 6px 0 22px; }
+.about section + section { border-top: 1px solid var(--hair-2); padding-top: 22px; }
+.about h4 { font-size: 16px; letter-spacing: 0.4em; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.about h4 i { font-style: normal; font-size: 12px; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--hair); border-radius: 2px; color: var(--moon-2); letter-spacing: 0; }
+.about p { font-size: 14px; line-height: 2.05; letter-spacing: 0.05em; color: var(--moon-2); text-align: justify; margin-bottom: 10px; user-select: text; -webkit-user-select: text; }
+.about p.lead { font-family: var(--kai); font-size: 15.5px; color: var(--moon); letter-spacing: 0.1em; padding-left: 14px; border-left: 1px solid var(--gold-2); margin-bottom: 14px; }
+
+@media (max-width: 720px) {
+  .sheet, .sheet-wide { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: min(82dvh, 720px); border-radius: 18px 18px 0 0; border-bottom: 0; border-left: 0; border-right: 0; padding-bottom: var(--sab); animation-name: sheet-up; }
+  .sheet-head { padding: 18px 20px 12px; }
+  .sheet-head::before { content: ''; position: absolute; left: 50%; top: 7px; width: 34px; height: 3px; margin-left: -17px; border-radius: 2px; background: var(--hair); }
+  .sheet-body { padding: 14px 20px 22px; }
+  .map { max-height: 54dvh; margin: 0 auto; }
+}
+@media (max-height: 520px) and (min-width: 721px) { .sheet { top: calc(var(--sat) + 8px); bottom: calc(var(--sab) + 8px); } .map { max-height: calc(100dvh - 150px); } }

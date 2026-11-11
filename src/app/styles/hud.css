@@ -1,0 +1,85 @@
+/* 在寺里走动时的界面：左上是处名（随人走到哪而变），右上是时辰与四枚小键；走近了一件事，下面浮出它的名字；画面里有标记；触屏左下是摇杆。 */
+.hud { position: absolute; inset: 0; pointer-events: none; animation: rise 1.6s var(--out) backwards; transition: opacity 0.9s; }
+.hud > * { pointer-events: auto; }
+.hud.is-act .dock, .hud.is-act .place, .hud.is-act .corner, .hud.is-act .stick { opacity: 0; pointer-events: none; transform: translateY(4px); }
+.hud.is-act.is-free .stick { opacity: 1; pointer-events: auto; transform: none; }
+.hud.is-busy .stick, .hud.has-sheet .stick { opacity: 0; pointer-events: none; }
+.hud.is-busy .dock { opacity: 0.0; pointer-events: none; }
+.ks.is-quiet .hud { opacity: 0; pointer-events: none; }
+
+/* 处名 */
+.place { position: absolute; left: calc(var(--sal) + clamp(16px, 2.4vw, 30px)); top: calc(var(--sat) + clamp(16px, 2.6vh, 28px)); display: flex; gap: 13px; align-items: flex-start; pointer-events: none; transition: opacity 0.7s, transform 0.7s var(--out); animation: rise 1.4s var(--out) backwards; }
+.seal { writing-mode: vertical-rl; font-style: normal; font: 400 11.5px/1.1 var(--serif); letter-spacing: 0.14em; color: #f6ece2; background: var(--zhu); padding: 6px 4.5px 5px; border-radius: 2px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35); }
+.place-text { display: flex; flex-direction: row-reverse; gap: 9px; align-items: flex-start; }
+.place-text h2 { writing-mode: vertical-rl; font-size: clamp(20px, 2.7vh, 25px); letter-spacing: 0.46em; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.6), 0 0 2px rgba(0, 0, 0, 0.4); }
+.place-text p { writing-mode: vertical-rl; font-family: var(--kai); font-size: 13px; letter-spacing: 0.4em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); padding-top: 2px; transition: opacity 2.4s; max-height: 46vh; }
+.place-text p.is-dim { opacity: 0; }
+
+/* 右上：时辰与小键 */
+.corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 28px)); top: calc(var(--sat) + clamp(14px, 2.4vh, 26px)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; transition: opacity 0.7s, transform 0.7s var(--out); }
+.when { font-size: 12.5px; letter-spacing: 0.34em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); cursor: pointer; padding: 4px 0 4px 8px; }
+.when small { font-size: 11px; margin-left: 0.7em; color: var(--moon-3); letter-spacing: 0.2em; }
+.keys { display: flex; gap: 9px; }
+.key { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 14.5px; color: var(--moon); border: 1px solid var(--hair); background: var(--glass); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 -1px 0 rgba(0, 0, 0, 0.3) inset, 0 8px 20px rgba(0, 0, 0, 0.26); transition: transform 0.3s var(--out), border-color 0.3s, background 0.3s; }
+@media (hover: hover) { .key:hover { transform: translateY(-2px); border-color: var(--gold-2); background: rgba(13, 14, 15, 0.56); } }
+.key:active { transform: translateY(1px) scale(0.96); }
+
+/* 下面：走近了的那件事 */
+.dock { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(16px, 3.2vh, 34px)); display: grid; justify-items: center; gap: 12px; padding: 0 16px; transition: opacity 0.6s, transform 0.6s var(--out); pointer-events: none; }
+.dock > * { pointer-events: auto; }
+.chip { height: 40px; padding: 0 17px; border-radius: 20px; display: inline-grid; place-items: center; border: 1px solid var(--hair); background: var(--glass); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 -1px 0 rgba(0, 0, 0, 0.3) inset, 0 8px 20px rgba(0, 0, 0, 0.24); transition: transform 0.3s var(--out), border-color 0.3s, background 0.3s; }
+.chip span { font-size: 14px; letter-spacing: 0.34em; text-indent: 0.34em; white-space: nowrap; }
+.chip-act { height: 46px; padding: 0 24px; border-radius: 23px; border-color: var(--gold-2); background: linear-gradient(180deg, rgba(214, 194, 152, 0.26), rgba(120, 104, 70, 0.16)), var(--glass); }
+.chip-act span { font-size: 15.5px; color: #f5e9cb; letter-spacing: 0.5em; text-indent: 0.5em; }
+.chip-act { grid-auto-flow: column; gap: 12px; animation: rise 0.5s var(--out) backwards; }
+.chip-act kbd { font: 500 11px/1 var(--sans, system-ui); letter-spacing: 0; color: rgba(245, 233, 203, 0.86); border: 1px solid rgba(232, 213, 166, 0.45); border-radius: 5px; padding: 4px 6px 3px; margin-right: -6px; background: rgba(0, 0, 0, 0.22); }
+.chip-door { border-color: var(--hair); background: var(--glass); }
+.chip-door span { color: var(--moon); }
+/* 头一回的走法提示 */
+.walk-hint { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; max-width: min(640px, 100%); font-size: 12.5px; letter-spacing: 0.24em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; transition: opacity 1.4s; animation: rise 1.8s 1.2s var(--out) backwards; }
+.walk-hint.is-gone { opacity: 0; }
+.walk-hint span { white-space: nowrap; }
+.walk-hint kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-right: 3px; font: 500 11px/1 var(--sans, system-ui); letter-spacing: 0; color: var(--moon); border: 1px solid var(--hair); border-radius: 5px; background: rgba(0, 0, 0, 0.28); }
+.walk-hint kbd:last-of-type { margin-right: 9px; }
+/* 摇杆 */
+.stick { position: absolute; left: calc(var(--sal) + clamp(18px, 5vw, 44px)); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px)); width: clamp(104px, 27vw, 128px); aspect-ratio: 1; border-radius: 50%; border: 1px solid rgba(236, 235, 230, 0.26); background: radial-gradient(circle, rgba(236, 235, 230, 0.02) 46%, rgba(236, 235, 230, 0.09) 100%); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.18) inset; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity 0.6s, border-color 0.3s; }
+.stick b { position: absolute; left: 50%; top: 50%; width: 42%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); border: 1px solid rgba(236, 235, 230, 0.5); background: radial-gradient(circle at 40% 35%, rgba(246, 244, 238, 0.42), rgba(236, 235, 230, 0.14)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); pointer-events: none; }
+.stick.is-on { border-color: rgba(236, 220, 178, 0.6); }
+.stick.is-on b { border-color: #ecdcb2; }
+@media (hover: hover) {
+  .chip:hover { transform: translateY(-2px); border-color: rgba(236, 235, 230, 0.4); background: rgba(13, 14, 15, 0.58); }
+  .chip-act:hover { border-color: rgba(232, 213, 166, 0.85); }
+}
+.chip:active { transform: translateY(1px) scale(0.975); }
+
+/* 画面里的标记 */
+.markers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.mk { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 7px; padding: 12px 14px; opacity: 0; transition: opacity 0.5s; will-change: transform, opacity; }
+.mk i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(236, 235, 230, 0.9); background: rgba(236, 235, 230, 0.3); box-shadow: 0 0 0 4px rgba(236, 235, 230, 0.08), 0 0 14px rgba(255, 255, 255, 0.4); transition: transform 0.3s var(--out); }
+.mk span { font-size: 12px; letter-spacing: 0.32em; text-indent: 0.32em; white-space: nowrap; color: var(--moon); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.7); }
+.mk-act i { border-color: #ecdcb2; background: rgba(236, 220, 178, 0.36); }
+.mk-act span { color: #f5e9cb; }
+.mk.is-near i { width: 13px; height: 13px; border-color: #f3e3b6; background: rgba(240, 224, 180, 0.6); box-shadow: 0 0 0 5px rgba(236, 220, 178, 0.12), 0 0 18px rgba(255, 240, 200, 0.6); animation: breathe 3.4s ease-in-out infinite; }
+.mk.is-near span { font-size: 13.5px; }
+@media (hover: hover) { .mk:hover i { transform: scale(1.5); } }
+.hud.is-act .markers, .hud.has-sheet .markers { opacity: 0; }
+
+@media (max-width: 560px) {
+  .key { width: 38px; height: 38px; }
+  .chip { height: 38px; padding: 0 14px; }
+  .chip span { font-size: 13.5px; letter-spacing: 0.26em; text-indent: 0.26em; }
+  .chip-act { height: 44px; padding: 0 20px; }
+  .when { font-size: 12px; letter-spacing: 0.26em; }
+}
+.hud.is-touch .dock { padding-left: clamp(130px, 34vw, 190px); padding-right: 16px; justify-items: end; }
+@media (min-width: 720px) { .hud.is-touch .dock { padding: 0 16px; justify-items: center; } }
+@media (max-height: 460px) {
+  .dock { bottom: calc(var(--sab) + 10px); gap: 8px; }
+  .stick { width: 96px; bottom: calc(var(--sab) + 12px); }
+  .place-text p { display: none; }
+  .title { padding-top: calc(var(--sat) + 2vh); padding-bottom: calc(var(--sab) + 3vh); }
+  .title-name { font-size: clamp(48px, 22vh, 96px); }
+  .title-motto { padding-top: 26px; font-size: 14px; }
+  .title-foot { min-height: 76px; gap: 8px; }
+  .title-seal { bottom: -34px; }
+}
