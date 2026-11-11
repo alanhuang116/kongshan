@@ -10,6 +10,8 @@
     "preview": "vite preview --port 3800 --host",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:motion": "node tests/play/motion.mjs",
+    "test:acts": "node tests/play/acts.mjs",
     "fonts": "node tools/fonts.mjs"
   },
   "dependencies": {
@@ -27,6 +29,7 @@
     "@types/react-dom": "19.3.0",
     "@types/three": "0.187.0",
     "@vitejs/plugin-react": "4.7.0",
+    "playwright-core": "^1.65.0",
     "typescript": "5.9.3",
     "vite": "6.4.6",
     "vitest": "3.2.7"
