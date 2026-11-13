@@ -1,18 +1,17 @@
 /**
  * 行者：你操纵的那个小人在世界里怎么走。
  *   输入是一个相对镜头的方向（键盘 WASD、摇杆）；也可以给一个地点让他自己走过去（点地面、走向某件事）。
- *   每一步都问 walk.ts「能不能到」：撞墙顺着滑，平台从踏跺上，不会掉下台沿。
+ *   每一步都问 walk.ts「能不能到」：碰到篱笆、树石顺着滑，过溪走桥或踏石，不会从桥上掉下去。
  *   几处为了「像人」：掉头时先慢下来、转过身再走（转身有个上限，不是一帧翻面）；
  *     上下台阶时身子按坡走（取前后一步之内地面的平均），不是一级一顿。
  *   位置与朝向写到小人的 root 上；身体怎么动（步态、姿势）是小人自己的事（avatar/）。
  */
 import * as THREE from 'three';
 import type { Avatar } from './avatar/types';
-import { softSprite } from './core/tex';
 import { findPath, groundAt, move, standable, type Zone } from './walk';
 
-/** 平时是从容地走（一米五八的人每秒两步上下）；按住 Shift、摇杆推到头是小跑 */
-export const WALK = 1.45, FAST = 3.0;
+/** 平时是从容地走——这里是散步的地方；按住 Shift、摇杆推到头才快走几步 */
+export const WALK = 1.4, FAST = 3.0;
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
 
 /** 自己走的一条路：pts 是依次要到的点，i 是正往哪一个去 */
@@ -39,7 +38,6 @@ export class Player {
   private ground = 0; private climb = 0;
   /** 转身最快多少（弧度/秒） */
   static TURN = 7.5;
-  private shadow: THREE.Mesh;
   private settle: { x: number; z: number; t: number } | null = null;
   private slide: { x0: number; z0: number; x1: number; z1: number; t: number; dur: number } | null = null;
 
@@ -49,11 +47,6 @@ export class Player {
     // 告诉小人脚下真实的地面（台阶是一级一级的）：脚踩在踏面上，不陷、不悬
     // （只报与脚下相差不到两级的高度：台沿外、水面上那些走不到的地方不算数，免得脚去够它）
     av.setGround?.((x, z) => { const g = groundAt(x, z, this.zone); return g == null || Math.abs(g - this.ground) > 0.4 ? null : g; });
-    // 脚下一团软影（真的影子贴图是静的，不随人动）
-    const m = new THREE.MeshBasicMaterial({ map: softSprite(64, 31, 0), color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95).rotateX(-Math.PI / 2), m);
-    this.shadow.renderOrder = 2;
-    scene.add(this.shadow);
   }
 
   get moving() { return this.speed > 0.08; }
@@ -105,7 +98,6 @@ export class Player {
   private apply() {
     const r = this.av.root;
     r.position.copy(this.pos); r.position.y += this.liftS; r.rotation.y = this.yaw;
-    this.shadow.position.set(this.pos.x, this.pos.y + 0.012, this.pos.z);
   }
 
   update(dt: number, t: number, camYaw: number) {
@@ -195,5 +187,5 @@ export class Player {
     }
     return standable(p.x, p.z, this.zone) == null ? null : p.setY(y);
   }
-  setVisible(v: boolean) { this.av.setVisible(v); this.shadow.visible = v; }
+  setVisible(v: boolean) { this.av.setVisible(v); }
 }

@@ -1,4 +1,4 @@
-// 小人的动态：按键方向、步态（步幅、步频、脚下滑不滑、身子起伏）、起停、转身、上下台阶、撞墙、姿势、镜头。
+// 小人的动态：按键方向、步态（步幅、步频、脚下滑不滑、身子起伏）、起停、转身、上下坡与台阶（台基、桥、亭、汀步）、撞篱笆、姿势、镜头。
 // 用法：node tests/play/motion.mjs [--shots]
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { launch, open, dir, shot, Report } from './lib.mjs';
 const SHOTS = process.argv.includes('--shots');
 const probe = readFileSync(join(import.meta.dirname, 'probe.js'), 'utf8');
 const browser = await launch();
-const { page, logs } = await open(browser, { s: 'censer', ui: '0' });
+const { page, logs } = await open(browser, { s: 'yard', ui: '0' });
 await page.evaluate(probe);
 const R = new Report(), d = dir('motion');
 const wait = (ms) => page.waitForTimeout(ms);
@@ -25,14 +25,14 @@ console.log(`小人：${consts.cls}，身高 ${consts.h}，有脚 ${consts.feet}
 // —— 一、按键方向（相对镜头） ——
 console.log('\n一、按键方向');
 for (const [key, name, want] of [['w', '前', [0, -1]], ['s', '后', [0, 1]], ['a', '左', [-1, 0]], ['d', '右', [1, 0]]]) {
-  await tp(0, 24.2, Math.PI); await wait(250);
+  await tp(1.2, 13.2, Math.PI); await wait(250);
   const a = await pos();
   await page.keyboard.down(key); await wait(1100); await page.keyboard.up(key); await wait(500);
   const b = await pos(), dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
   R.ok(`按 ${key.toUpperCase()} 往${name}走`, l > 1.0 && (dx / l) * want[0] + (dz / l) * want[1] > 0.93, `走了 ${f2(l)} 米，方向 (${f2(dx / l)}, ${f2(dz / l)})`);
 }
 {
-  await tp(-15, 39.9, Math.PI / 2); await wait(250);
+  await tp(-9, 14.7, Math.PI / 2); await wait(250);
   const a = await pos();
   await ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = -Math.PI / 2; });
   await page.keyboard.down('Shift'); await page.keyboard.down('w'); await wait(2000);
@@ -44,8 +44,8 @@ for (const [key, name, want] of [['w', '前', [0, -1]], ['s', '后', [0, 1]], ['
 
 // —— 二、步态 ——
 async function gait(name, fast) {
-  await tp(-16, 39.9, Math.PI / 2); await wait(300);
-  await ev((fast) => { const k = window.__ks; k.player.fast = fast; k.player.goTo(16, 39.9); }, fast);
+  await tp(-10, 14.7, Math.PI / 2); await wait(300);
+  await ev((fast) => { const k = window.__ks; k.player.fast = fast; k.player.goTo(11, 14.7); }, fast);
   await wait(1500);                                   // 等走匀了再量
   const { rows, steps } = await rec(4200);
   await ev(() => { const k = window.__ks; k.player.fast = false; k.player.stop(); });
@@ -103,8 +103,8 @@ await gait('快走', true);
 // —— 三、起步与停步 ——
 console.log('\n三、起停');
 {
-  await tp(-16, 39.9, Math.PI / 2); await wait(400);
-  const a = await rec(2600, () => ev(() => window.__ks.player.goTo(16, 39.9)));
+  await tp(-10, 14.7, Math.PI / 2); await wait(400);
+  const a = await rec(2600, () => ev(() => window.__ks.player.goTo(11, 14.7)));
   const vmax = Math.max(...a.rows.map((r) => r.speed)), t90 = (a.rows.find((r) => r.speed > 0.9 * vmax).t - a.rows[0].t) / 1000;
   R.ok('起步：半秒上下走匀', t90 > 0.12 && t90 < 0.8, `到九成速度用了 ${f2(t90)} 秒`);
   const b = await rec(2200, () => ev(() => window.__ks.player.stop()));
@@ -122,9 +122,9 @@ console.log('\n三、起停');
 // —— 四、转身 ——
 console.log('\n四、转身');
 {
-  await tp(0, 39.9, Math.PI / 2); await wait(300);
-  await ev(() => window.__ks.player.goTo(12, 39.9)); await wait(1400);
-  const a = await rec(1600, () => ev(() => window.__ks.player.goTo(-12, 39.9)));
+  await tp(-4, 14.7, Math.PI / 2); await wait(300);
+  await ev(() => window.__ks.player.goTo(8, 14.7)); await wait(1400);
+  const a = await rec(1600, () => ev(() => window.__ks.player.goTo(-9, 14.7)));
   const wrap = (x) => { x = (x + Math.PI) % (Math.PI * 2); return (x < 0 ? x + Math.PI * 2 : x) - Math.PI; };
   const y0 = a.rows[0].yaw, turned = a.rows.map((r) => Math.abs(wrap(r.yaw - y0)));
   const tTurn = (a.rows[turned.findIndex((v) => v > Math.PI * 0.94)]?.t - a.rows[0].t) / 1000;
@@ -135,7 +135,7 @@ console.log('\n四、转身');
 }
 
 // —— 五、上下台阶 ——
-console.log('\n五、台阶');
+console.log('\n五、坡与台阶');
 async function stairs(name, from, to, zone = 'ground') {
   await tp(from[0], from[1], Math.atan2(to[0] - from[0], to[1] - from[1]), zone); await wait(400);
   const a = await rec(null, async () => {
@@ -163,39 +163,41 @@ async function stairs(name, from, to, zone = 'ground') {
   if (rows[0].fl) R.ok(`${name}：脚不陷进台阶`, -sink < 0.09, `最深 ${f3(-sink)} 米`);
   return a;
 }
-await stairs('上殿前踏跺', [0, 12.6], [0, 6.4]);
-await stairs('下殿前踏跺', [0, 6.4], [0, 12.6]);
-await stairs('上山道石阶', [0, 86], [0, 70]);
-await stairs('过石桥', [0, 39.6], [0, 24.6]);
-await stairs('下石埠', [-8.7, 39.2], [-8.7, 36.66]);
+await stairs('上草堂（踏步石、台基、门槛）', [0, 6.2], [0, 1.0]);
+await stairs('下草堂', [0, 1.0], [0, 6.2]);
+await stairs('出柴门下坡到溪边', [0.3, 17.2], [0, 25.2]);
+await stairs('过石桥', [0, 25.2], [0, 35.2]);
+await stairs('上坡回柴门', [0, 25.2], [0.3, 17.2]);
+await stairs('上观物亭', [-0.9, -20.1], [-3.6, -20.4]);
+await stairs('过汀步', [62, 35.8], [62.6, 25.2]);
 
 // —— 六、撞墙 ——
-console.log('\n六、撞墙');
+console.log('\n六、撞篱笆');
 {
-  // 面朝南墙站着往前走：应当停住，不原地踏步
-  await tp(12, 44.6, 0); await wait(300);
-  await ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = Math.PI; });
+  // 面朝屋后的竹篱站着往前走：应当停住，不原地踏步
+  await tp(6.5, -4.6, Math.PI); await wait(300);
+  await ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = 0; });
   await page.keyboard.down('w'); await wait(1900);
   const a = await rec(1800);
   await page.keyboard.up('w');
   const moved = Math.hypot(a.rows.at(-1).pos[0] - a.rows[0].pos[0], a.rows.at(-1).pos[2] - a.rows[0].pos[2]);
-  R.ok('顶着墙：停住', moved < 0.05 && a.rows.at(-1).pos[2] < 45.6, `又挪了 ${f3(moved)} 米，z=${f2(a.rows.at(-1).pos[2])}`);
-  R.ok('顶着墙：不原地踏步', a.steps.length === 0 && mean(a.rows.map((r) => r.speed)) < 0.08, `${a.steps.length} 步，速度 ${f3(mean(a.rows.map((r) => r.speed)))}`);
-  // 斜着蹭墙：顺着滑，速度慢下来
-  await tp(12, 45.2, 0); await wait(300);
-  await ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = Math.PI - 0.6; });
+  R.ok('顶着篱笆：停住', moved < 0.05 && a.rows.at(-1).pos[2] > -5.45, `又挪了 ${f3(moved)} 米，z=${f2(a.rows.at(-1).pos[2])}`);
+  R.ok('顶着篱笆：不原地踏步', a.steps.length === 0 && mean(a.rows.map((r) => r.speed)) < 0.08, `${a.steps.length} 步，速度 ${f3(mean(a.rows.map((r) => r.speed)))}`);
+  // 斜着蹭篱笆：顺着滑，速度慢下来
+  await tp(6.5, -4.95, Math.PI); await wait(300);
+  await ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = 0.6; });
   await page.keyboard.down('w'); await wait(500);
   const b = await rec(1500);
   await page.keyboard.up('w');
   const along = b.rows.at(-1).pos[0] - b.rows[0].pos[0], vS = mean(b.rows.map((r) => r.speed));
-  R.ok('斜着蹭墙：顺着墙滑过去', Math.abs(along) > 0.6 && Math.abs(b.rows.at(-1).pos[2] - b.rows[0].pos[2]) < 0.1, `沿墙走了 ${f2(along)} 米，速度 ${f2(vS)}`);
+  R.ok('斜着蹭篱笆：顺着滑过去', Math.abs(along) > 0.6 && Math.abs(b.rows.at(-1).pos[2] - b.rows[0].pos[2]) < 0.1, `沿墙走了 ${f2(along)} 米，速度 ${f2(vS)}`);
   await wait(300);
 }
 
 // —— 七、姿势 ——
 console.log('\n七、姿势');
-for (const [pose, name] of [['kneel', '跪'], ['sit', '坐'], ['crouch', '蹲'], ['stand', '站']]) {
-  await tp(8, 42.5, Math.PI); await wait(200);
+for (const [pose, name] of [['kneel', '跪'], ['sit', '盘坐'], ['bench', '坐凳'], ['crouch', '蹲'], ['stand', '站']]) {
+  await tp(1.2, 12.6, Math.PI); await wait(200);
   await ev((p) => { const k = window.__ks; k.player.locked = true; k.player.av.setPose(p, 1.0); }, pose);
   const a = await rec(1900);
   const box = await ev(() => window.__probe.box());
@@ -203,7 +205,8 @@ for (const [pose, name] of [['kneel', '跪'], ['sit', '坐'], ['crouch', '蹲'],
   let jerk = 0;
   for (let i = 1; i < a.rows.length; i++) jerk = Math.max(jerk, Math.abs(a.rows[i].head[1] - a.rows[i - 1].head[1]));
   console.log(`  ${name}：胯高 ${f2(hips)}，头高 ${f2(head)}，最低处 ${f3(box.lo[1])}，占地 ${f2(box.hi[0] - box.lo[0])}×${f2(box.hi[2] - box.lo[2])}，头一帧最多动 ${f3(jerk)}`);
-  R.ok(`${name}：不陷进地里`, box.lo[1] > -0.03, `最低 ${f3(box.lo[1])}`);
+  const gy = await ev(() => window.__ks.player.pos.y);
+  R.ok(`${name}：不陷进地里`, box.lo[1] - gy > -0.03, `最低处比地面 ${f3(box.lo[1] - gy)}`);
   R.ok(`${name}：过渡连贯`, jerk < 0.05, `头一帧最多 ${f3(jerk)} 米`);
   if (SHOTS) {
     await ev(() => { const k = window.__ks, p = k.player.pos; k.nav.setPose({ pos: new p.constructor(p.x + 1.9, p.y + 1.0, p.z - 1.5), look: new p.constructor(p.x, p.y + 0.7, p.z), fov: 40 }, 0.01); });
@@ -218,14 +221,16 @@ for (const [pose, name] of [['kneel', '跪'], ['sit', '坐'], ['crouch', '蹲'],
 console.log('\n八、镜头');
 {
   let bad = 0, n = 0, low = 0;
-  const spots = [[0, 44, 'ground'], [0, 2.5, 'ground'], [-9, 3, 'ground'], [9.5, -4.5, 'ground'], [-22.6, -1, 'ground'], [22.6, 3, 'ground'], [0, 47.5, 'ground'], [35.5, -15.5, 'ground'], [24.4, 20, 'ground'], [-24.5, 30, 'ground'], [0, 70, 'ground'], [-8.7, 36.7, 'ground']];
+  const spots = [[0, 0.6, 'ground'], [-3, -0.8, 'ground'], [3.2, -0.6, 'ground'], [1.2, 12, 'ground'], [-8, 4, 'ground'], [6.5, -4.4, 'ground'], [-3.8, -20.6, 'ground'], [80, 15, 'ground'], [0, 30, 'ground'], [99, 7.5, 'ground'], [-150, 38, 'ground'], [50, 10.8, 'ground']];
   for (const [x, z, zone] of spots) {
     for (const yaw of [0, 1.57, 3.14, -1.57]) {
       await ev(([x, z, yaw, zone]) => { const k = window.__ks; k.player.teleport(x, z, 0, zone); k.nav.snapBehind(); k.nav.yaw = yaw; }, [x, z, yaw, zone]);
       await wait(420);
       const r = await ev(() => {
-        const k = window.__ks, c = k.world.camera.position, B = window.__walk._debug.B;
-        const inside = B.some((b) => b.tall && c.x > b.x0 && c.x < b.x1 && c.z > b.z0 && c.z < b.z1);
+        const k = window.__ks, c = k.world.camera.position, { B, OB } = window.__walk._debug;
+        // 进了草堂屋顶南墙都隐去了，镜头在屋外看进来不算钻墙
+        if (k.nav.open) return { inside: false, under: false, d: 0 };
+        const inside = B.some((b) => b.tall && c.x > b.x0 && c.x < b.x1 && c.z > b.z0 && c.z < b.z1) || OB.some((o) => { if (!o.tall) return false; const dx = c.x - o.x, dz = c.z - o.z; return Math.abs(dx * o.c - dz * o.s) < o.hw && Math.abs(dx * o.s + dz * o.c) < o.hd; });
         const g = window.__walk.groundAt(c.x, c.z);
         return { inside, under: g != null && c.y < g + 0.2, d: Math.hypot(c.x - k.player.pos.x, c.z - k.player.pos.z) };
       });

@@ -1,154 +1,155 @@
 /**
- * 天：一个跟着镜头走的大球，里面画——
- *   天色（地平到天顶的渐变）、日晕与日轮、月（按农历的盈亏）、星、流云；
- *   还有最远的几重山：只是天边一层层的剪影，越远越淡，山脚没在雾里（水墨画里「远山无皴」的画法）。
- * 近处的山是真的地形，会挡在这些剪影前面。
+ * 天与远山。天就是纸：高处罩一层极淡的色，云是留出来的白，近地平处化成雾。
+ * 远山（东南望去的嵩山：太室在东、少室偏南）是画在天上的几重淡墨——越远越淡，山脚化在雾里；四围是一带低冈。
+ * 日是一点朱，月是留出来的一轮白，夜里有星；北斗七星按真实的赤经赤纬与当地的时刻摆（所以春天黄昏斗柄朝东）。
  */
 import * as THREE from 'three';
-import { shared } from '../core/mats';
+import { INK_PARS, PIG, U, type RGB } from '../ink/ink';
 
-const VERT = /* glsl */ `
+const SKY_V = /* glsl */ `
 varying vec3 vDir;
 void main() {
   vDir = position;
-  // 只取镜头的朝向、不取位置：天永远以镜头为中心
-  vec4 p = vec4(mat3(viewMatrix) * position * 50.0, 1.0);
-  gl_Position = projectionMatrix * p;
-  gl_Position.z = gl_Position.w * 0.99999;
-}`;
-
-const FRAG = /* glsl */ `
-precision highp float;
+  vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0);
+  // 贴在最远处：别的东西画过的地方就不再画天
+  gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
+}
+`;
+const SKY_F = /* glsl */ `
+layout(location = 1) out highp vec4 gAux;
+${INK_PARS}
+uniform vec3 uSkyPig; uniform vec4 uSky;
+uniform vec3 uGlowPig; uniform vec4 uGlow;
+uniform vec3 uSunDir; uniform vec4 uSun;
+uniform vec3 uMoonDir; uniform vec4 uMoon;
+uniform vec3 uMtPig; uniform vec4 uMt;
+uniform vec3 uStar[8];
 varying vec3 vDir;
-uniform vec3 uZenith, uHorizon, uSunColor, uMoonColor, uCloudLit, uCloudShade, uRidgeNear, uGround;
-uniform vec3 uSunPos, uMoonDir;
-uniform vec3 uFogColor, uFogSun, uSunDir;
-uniform float uSunDisk, uMoonPhase, uMoonOn, uStars, uCloud, uTime, uRidge, uHaze, uEnv;
-
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float hash3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
-float fbm3(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
-
+float h2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), f.x), f.y); }
+float fb2(vec2 p) { return n2(p) * 0.5 + n2(p * 2.03 + 3.1) * 0.25 + n2(p * 4.1 + 7.7) * 0.125 + n2(p * 8.3 + 1.3) * 0.0625; }
+// 山脊线：绕着地平一圈取噪声（首尾自然相接），尖的是峰
+float ridge(vec2 u, float R, float s) {
+  float a = 1.0 - abs(n2(u * R + s) * 2.0 - 1.0);
+  float b = 1.0 - abs(n2(u * R * 2.1 + s * 1.7 + 3.0) * 2.0 - 1.0);
+  float c = 1.0 - abs(n2(u * R * 4.7 + s * 2.3 + 8.0) * 2.0 - 1.0);
+  return a * a * 0.58 + b * b * 0.27 * (0.35 + a) + c * 0.11 * (0.3 + a * b) + n2(u * R * 13.0 + s) * 0.04;
+}
+// 一重山：h 山脊的高（仰角的正切），t 这一点的高，dens 山头的浓度；山脚淡进雾里
+vec3 range(vec3 c, float t, float h, float dens, float foot) {
+  float aa = fwidth(t) * 1.2 + 1e-5;
+  float cover = smoothstep(h + aa, h - aa, t);
+  float k = smoothstep(h - (h + 0.02) * foot, h, t);
+  float d = dens * mix(0.0, 1.0, pow(k, 1.4));
+  // 山头一道略深的边（一笔淡墨的水痕）
+  d += dens * 0.22 * smoothstep(h - 0.004, h - 0.0008, t);
+  return mix(c, uMist * pow(uMtPig, vec3(max(d, 0.0))), cover * uMt.x);
+}
 void main() {
   vec3 d = normalize(vDir);
-  float h = d.y;
-  vec3 fogDir = mix(uFogColor, uFogSun, pow(max(dot(normalize(vec3(d.x, max(d.y, 0.0), d.z)), uSunDir), 0.0), 5.0) * 0.8);
-
-  // 天色
-  float t = pow(clamp(h, 0.0, 1.0), 0.42);
-  vec3 col = mix(uHorizon, uZenith, t);
-
+  vec2 u = normalize(d.xz + vec2(1e-6, 0.0));
+  float t = d.y / max(length(d.xz), 1e-4);
+  float el = max(d.y, 0.0);
+  // 天：高处一层淡色；云是没染到的地方
+  float cl = fb2(d.xz / (d.y + 0.35) * 1.35 + vec2(uTime * 0.004, 0.0));
+  float wash = uSky.x * pow(smoothstep(0.0, 0.85, el), 0.8) * (1.0 - uSky.y * smoothstep(0.42, 0.68, cl));
+  wash += uSky.x * 0.55 * smoothstep(0.02, 0.5, el) * uSky.y * 0.25;
+  vec3 c = mix(uMist, uPaper, smoothstep(0.0, 0.22, t)) * pow(uSkyPig, vec3(wash));
+  // 霞：朝着日出日落那一边、贴近地平的一抹
+  float gl = uGlow.w * pow(max(dot(u, normalize(uGlow.xz + vec2(1e-5))), 0.0), 2.0) * exp(-max(t, 0.0) * 4.5) * smoothstep(-0.02, 0.05, t);
+  c *= pow(uGlowPig, vec3(gl));
   // 星
-  if (uStars > 0.01 && h > -0.02) {
-    vec3 p = d * 170.0; vec3 ip = floor(p); vec3 fp = fract(p) - 0.5;
-    float r = hash3(ip);
-    float tw = 0.75 + 0.25 * sin(uTime * (1.0 + r * 3.0) + r * 40.0);
-    float s = step(0.9965, r) * smoothstep(0.42, 0.0, length(fp)) * tw;
-    vec3 p2 = d * 70.0; float r2 = hash3(floor(p2));
-    s += step(0.9988, r2) * smoothstep(0.3, 0.0, length(fract(p2) - 0.5)) * 1.8;
-    col += vec3(0.86, 0.9, 1.0) * s * uStars * smoothstep(0.0, 0.25, h) * 1.6;
+  if (uSky.z > 0.01) {
+    vec2 sp = vec2(atan(d.x, d.z) * 34.0, asin(clamp(d.y, -1.0, 1.0)) * 34.0);
+    vec2 ci = floor(sp), cf = fract(sp);
+    float hs = h2(ci);
+    vec2 o = vec2(h2(ci + 3.7), h2(ci + 9.1)) * 0.7 + 0.15;
+    float st = step(0.9, hs) * smoothstep(0.075 * (0.5 + hs), 0.0, length(cf - o)) * smoothstep(0.03, 0.22, d.y) * (0.45 + 0.55 * h2(ci + 17.3));
+    for (int i = 0; i < 8; i++) st = max(st, smoothstep(2.4e-5, 5.0e-6, 1.0 - dot(d, uStar[i])));
+    c = mix(c, uLight, st * uSky.z);
   }
-
-  // 日
-  float sd = max(dot(d, uSunPos), 0.0);
-  col += uSunColor * (pow(sd, 5.0) * 0.14 + pow(sd, 40.0) * 0.32 + pow(sd, 400.0) * 0.6) * uSunDisk;
-  col += uSunColor * smoothstep(0.99925, 0.99965, sd) * 7.0 * uSunDisk;
-
-  // 月：按盈亏照亮半边
-  if (uMoonOn > 0.01) {
+  // 月：留出来的一轮白，四周的夜色淡一圈
+  if (uMoon.x > 0.0) {
     vec3 mr = normalize(cross(vec3(0.0, 1.0, 0.0), uMoonDir)), mu = cross(uMoonDir, mr);
-    float R = 0.021;
-    vec2 q = vec2(dot(d, mr), dot(d, mu)) / R;
-    float rr = dot(q, q);
-    float md = max(dot(d, uMoonDir), 0.0);
-    col += uMoonColor * (pow(md, 60.0) * 0.10 + pow(md, 900.0) * 0.25) * uMoonOn;
-    if (rr < 1.0 && dot(d, uMoonDir) > 0.0) {
-      vec3 n = vec3(q, sqrt(1.0 - rr));
-      float th = 6.2831853 * uMoonPhase;
-      vec3 l = vec3(sin(th), 0.0, -cos(th));
-      float lit = smoothstep(-0.02, 0.12, dot(n, l));
-      float mare = 0.78 + 0.22 * fbm3(q * 2.2 + 3.0) - 0.16 * smoothstep(0.45, 0.7, fbm3(q * 1.3 + 9.0));
-      vec3 mc = uMoonColor * (lit * mare * 2.6 + 0.035);
-      col = mix(col, mc, smoothstep(1.0, 0.94, rr) * uMoonOn);
-    }
+    vec2 q = vec2(dot(d, mr), dot(d, mu)) / uMoon.x;
+    float rr = length(q), front = step(0.0, dot(d, uMoonDir));
+    float ph = uMoon.y * 6.2831853, kx = cos(ph) * sqrt(max(0.0, 1.0 - q.y * q.y));
+    float lit = ph < 3.14159 ? smoothstep(-0.04, 0.04, q.x - kx) : smoothstep(-0.04, 0.04, -kx - q.x);
+    float disc = smoothstep(1.0, 0.94, rr) * front;
+    c = mix(c, uLight, exp(-rr * rr * 0.22) * 0.22 * uMoon.z * front);
+    c = mix(c, uLight * vec3(1.0, 0.99, 0.96), disc * lit * uMoon.z);
   }
-
-  // 云
-  if (h > 0.0 && uCloud > 0.01) {
-    vec2 p = d.xz / (h + 0.16);
-    float c = fbm(p * 0.55 + vec2(uTime * 0.006, uTime * 0.0025));
-    float c2 = fbm(p * 1.7 - vec2(uTime * 0.004, 0.0) + 5.0);
-    float cov = smoothstep(1.0 - uCloud * 0.9, 1.25 - uCloud * 0.75, c * 0.75 + c2 * 0.4);
-    float lit = smoothstep(0.2, 0.9, c2) * 0.6 + 0.4;
-    vec3 cc = mix(uCloudShade, uCloudLit, lit) + uSunColor * pow(sd, 8.0) * 0.25 * uSunDisk;
-    col = mix(col, cc, cov * smoothstep(0.0, 0.14, h) * 0.9);
+  // 日：一点朱
+  if (uSun.a > 0.0) {
+    float sd = acos(clamp(dot(d, uSunDir), -1.0, 1.0)) / uSun.a;
+    c = mix(c, c * mix(vec3(1.0), uSun.rgb, 0.35) + 0.05, exp(-sd * sd * 0.1) * 0.5);
+    c = mix(c, uSun.rgb * mix(vec3(1.0), uPaper, 0.25), smoothstep(1.0, 0.86, sd) * 0.92);
   }
-
-  // 远山：四重，最远的最淡
-  if (uRidge > 0.01) {
-    float az = atan(d.z, d.x);
-    vec2 cs = vec2(cos(az), sin(az));
-    for (int i = 0; i < 4; i++) {
-      float fi = float(i);
-      float far = 1.0 - fi / 3.0;                       // 1 最远 … 0 最近
-      vec2 q = cs * (2.2 + fi * 1.5) + fi * 13.7;
-      float n = fbm(q) * 0.7 + (1.0 - abs(noise(q * 2.7 + 4.0) * 2.0 - 1.0)) * 0.22 + noise(q * 9.0) * 0.045;
-      float top = mix(0.035, 0.075, far) + (n - 0.42) * mix(0.16, 0.115, far);
-      // 寺后（北，-z）山高，寺前（南）开阔
-      top += max(0.0, -cs.y) * mix(0.05, 0.035, far) - max(0.0, cs.x) * 0.012;
-      float m = smoothstep(top + 0.0016, top - 0.0016, h);
-      float into = clamp((top - h) / mix(0.05, 0.085, far), 0.0, 1.0);
-      vec3 mc = mix(uRidgeNear, fogDir, mix(0.34, 0.86, far));
-      mc = mix(mc, fogDir, pow(into, 0.8) * 0.94);        // 山脚没进雾里
-      col = mix(col, mc, m * uRidge);
-    }
+  // 远山三重
+  if (uMt.x > 0.001) {
+    // 天边最远的几重（立体的山在它们前面）：朝嵩山那一面高一些，淡得只剩一个影子
+    float song = smoothstep(0.55, 0.98, dot(u, uMt.yz));
+    // 正南（乾）天最空：天边那几重往正南压低
+    float open = 1.0 - 0.55 * smoothstep(0.9, 1.0, dot(u, vec2(0.0, 1.0)));
+    float h1 = (0.02 + (0.05 + 0.2 * song) * (0.3 + 0.7 * ridge(u, 6.0, 1.3))) * open;
+    c = range(c, t, h1, 0.13 * uMt.w, 0.95);
+    float h2r = (0.012 + (0.035 + 0.1 * song) * (0.3 + 0.7 * ridge(u, 9.0, 5.1))) * open;
+    c = range(c, t, h2r, 0.24 * uMt.w, 0.9);
+    float h3 = 0.006 + 0.03 * (0.35 + 0.65 * ridge(u, 13.0, 9.7));
+    c = range(c, t, h3, 0.42 * uMt.w, 0.85);
   }
+  c = mix(uMist, c, smoothstep(-0.012, 0.004, t));
+  gl_FragColor = vec4(c, 1.0);
+  gAux = vec4(0.5, 0.5, 0.0, 0.0);
+}
+`;
 
-  // 地平线以下、贴近地平线的地方都是雾
-  float f = smoothstep(0.075 * uHaze, -0.015, h);
-  col = mix(col, fogDir, f);
-  // 烘环境反射时：地平线以下是地面的颜色（朝下的面只该受到地面那点反光）
-  col = mix(col, uGround, uEnv * smoothstep(0.02, -0.12, h));
-
-  gl_FragColor = vec4(col, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-}`;
+const col = (c: RGB) => new THREE.Color(c[0], c[1], c[2]);
+/** 北斗七星与北极星：赤经（时）、赤纬（度） */
+const STARS: Array<[string, number, number]> = [
+  ['天枢', 11.062, 61.75], ['天璇', 11.031, 56.38], ['天玑', 11.897, 53.69], ['天权', 12.257, 57.03],
+  ['玉衡', 12.9, 55.96], ['开阳', 13.399, 54.93], ['摇光', 13.792, 49.31], ['北极', 2.53, 89.26],
+];
+/** 洛阳的纬度 */
+const LAT = (34.6 * Math.PI) / 180;
 
 export class Sky {
   mesh: THREE.Mesh;
   u = {
-    uZenith: { value: new THREE.Color(0x5f93cf) },
-    uHorizon: { value: new THREE.Color(0xdfe9f0) },
-    uSunColor: { value: new THREE.Color(0xfff2df) },
-    uMoonColor: { value: new THREE.Color(0xdfe6f2) },
-    uCloudLit: { value: new THREE.Color(0xffffff) },
-    uCloudShade: { value: new THREE.Color(0xb8c2cc) },
-    uRidgeNear: { value: new THREE.Color(0x2c3a3e) },
-    uGround: { value: new THREE.Color(0x30302c) },
-    uEnv: { value: 0 },
-    uSunPos: { value: new THREE.Vector3(0, 1, 0) },
-    uMoonDir: { value: new THREE.Vector3(0.4, 0.6, 0.6).normalize() },
-    uSunDisk: { value: 1 },
-    uMoonPhase: { value: 0.5 },
-    uMoonOn: { value: 0 },
-    uStars: { value: 0 },
-    uCloud: { value: 0.35 },
-    uRidge: { value: 1 },
-    uHaze: { value: 1 },
-    uTime: shared.uTime,
-    uFogColor: shared.uFogColor,
-    uFogSun: shared.uFogSun,
-    uSunDir: shared.uSunDir,
+    /** 高处罩的颜色 */ uSkyPig: { value: col(PIG.qing) },
+    /** x 罩色的浓度，y 云（留白）的多少，z 星的显隐 */ uSky: { value: new THREE.Vector4(0.1, 0.85, 0, 0) },
+    /** 霞的颜色 */ uGlowPig: { value: col(PIG.zhe) },
+    /** xyz 霞在哪一边（水平方向），w 浓度 */ uGlow: { value: new THREE.Vector4(1, 0, 0, 0) },
+    uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+    /** rgb 日的颜色，a 大小（弧度；0 不画） */ uSun: { value: new THREE.Vector4(0.86, 0.3, 0.22, 0) },
+    uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+    /** x 月的大小（弧度；0 不画），y 盈亏（0 朔、0.5 望），z 亮度 */ uMoon: { value: new THREE.Vector4(0, 0.5, 1, 0) },
+    /** 远山的颜色（远山如黛） */ uMtPig: { value: col([0.6, 0.62, 0.655]) },
+    /** x 远山的显隐，yz 嵩山在哪个方向（水平单位向量 x、z），w 浓度 */ uMt: { value: new THREE.Vector4(1, Math.sin(0.82), Math.cos(0.82), 1) },
+    uStar: { value: STARS.map(() => new THREE.Vector3(0, 1, 0)) },
   };
   constructor() {
-    const mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: this.u, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false });
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), mat);
+    const m = new THREE.ShaderMaterial({ uniforms: { ...U, ...this.u }, vertexShader: SKY_V, fragmentShader: SKY_F, side: THREE.BackSide, depthWrite: false });
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), m);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = -1000;
+    this.mesh.renderOrder = 1000;
     this.mesh.name = 'sky';
   }
+  /** 一年里的第几天、几点钟（当地时间，小数）：摆好北斗 */
+  setStars(day: number, hour: number) {
+    for (let i = 0; i < STARS.length; i++) this.u.uStar.value[i].copy(starDir(STARS[i][1], STARS[i][2], day, hour));
+  }
+  /** 北斗某一颗此刻在天上哪里（0 天枢 … 6 摇光，7 北极） */
+  star(i: number) { return this.u.uStar.value[i]; }
+}
+
+/** 赤经赤纬 → 此地此刻的方向（+x 东、+y 上、+z 南） */
+export function starDir(raH: number, decDeg: number, day: number, hour: number, out = new THREE.Vector3()): THREE.Vector3 {
+  // 正午时，子午线上是太阳的赤经；太阳的赤经从春分（约第 80 天）起一年走一圈
+  const lst = ((day - 80) / 365.25) * 24 + (hour - 12);
+  const H = ((lst - raH) / 24) * Math.PI * 2, dec = (decDeg * Math.PI) / 180;
+  const east = -Math.cos(dec) * Math.sin(H);
+  const up = Math.sin(dec) * Math.sin(LAT) + Math.cos(dec) * Math.cos(LAT) * Math.cos(H);
+  const north = Math.sin(dec) * Math.cos(LAT) - Math.cos(dec) * Math.sin(LAT) * Math.cos(H);
+  return out.set(east, up, -north).normalize();
 }

@@ -1,29 +1,27 @@
 /**
  * 替身：小人的正式模型没备好（或出了错）时用的一个最简的人形——一根袍子似的锥、一个头。
- * 接口齐全，动作从简；有了它，行走、镜头、各项活动都能照常跑。
+ * 接口齐全，动作从简；有了它，行走、镜头、各项活动都能照常跑。也是画法里的东西（一抹白衣、一点肤色）。
  */
 import * as THREE from 'three';
-import { enhance, type Mats } from '../core/mats';
+import { lathe, sphere } from '../core/geo';
+import { wash } from '../ink/ink';
 import type { Avatar, HandsName, PoseName, Side } from './types';
 
-export function createStubAvatar(mats: Mats): Avatar {
+export function createStubAvatar(): Avatar {
   const root = new THREE.Group();
   root.name = 'avatar-stub';
-  const robe = enhance(new THREE.MeshStandardMaterial({ color: 0x8f969a, roughness: 0.95 }));
-  const skin = enhance(new THREE.MeshStandardMaterial({ color: 0xd9b99b, roughness: 0.8 }));
-  void mats;
+  const robe = wash({ pig: [0.9, 0.93, 0.965], dens: 1, body: 1, shade: 1.4 });
+  const skin = wash({ pig: [0.99, 0.91, 0.83], dens: 1, body: 1, shade: 1.3 });
   const hips = new THREE.Group(), chest = new THREE.Group(), head = new THREE.Group();
   const handL = new THREE.Group(), handR = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.LatheGeometry([[0.001, 0], [0.3, 0], [0.26, 0.5], [0.19, 0.95], [0.21, 1.25], [0.08, 1.36]].map(([x, y]) => new THREE.Vector2(x, y)), 16), robe);
-  body.castShadow = true;
-  const hd = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 12), skin);
-  hd.castShadow = true;
+  const body = new THREE.Mesh(lathe([[0.001, 0], [0.3, 0], [0.26, 0.5], [0.19, 0.95], [0.21, 1.25], [0.08, 1.36]], 16), robe);
+  const hd = new THREE.Mesh(sphere(0.115, 16, 12), skin);
   head.position.set(0, 1.47, 0); head.add(hd);
   chest.position.set(0, 1.15, 0); hips.position.set(0, 0.85, 0);
   handL.position.set(0.24, 0.85, 0.08); handR.position.set(-0.24, 0.85, 0.08);
   root.add(body, hips, chest, head, handL, handR);
   let pose: PoseName = 'stand', k = 1, kGoal = 1, bowNow = 0, phase = 0;
-  const H: Record<PoseName, number> = { stand: 1, kneel: 0.62, sit: 0.55, crouch: 0.6 };
+  const H: Record<PoseName, number> = { stand: 1, kneel: 0.62, sit: 0.55, crouch: 0.6, bench: 0.74 };
   const rest = { L: handL.position.clone(), R: handR.position.clone() };
   const goal: Record<Side, THREE.Vector3 | null> = { L: null, R: null };
   const tmp = new THREE.Vector3();
@@ -57,7 +55,7 @@ export function createStubAvatar(mats: Mats): Avatar {
       } else body.position.y *= 0.8;
     },
     setVisible(v) { root.visible = v; },
-    dispose() { root.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); }); },
+    dispose() { root.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); }); robe.dispose(); skin.dispose(); root.removeFromParent(); },
   };
   return av;
 }

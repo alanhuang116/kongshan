@@ -1,10 +1,10 @@
-// 冒烟：每一项活动进去看一眼、截一张、出来；看有没有报错。
+// 冒烟：每一件事进去看一眼、截一张、出来；看有没有报错。
 // 用法：node smoke.mjs [活动id,活动id…]
 import { launch, open, dir, shot } from './lib.mjs';
 
 const only = process.argv[2]?.split(',');
 const browser = await launch();
-const { page, logs } = await open(browser, { s: 'court' });
+const { page, logs } = await open(browser, { s: 'yard', ui: '0' });
 const d = dir('smoke');
 const info = await page.evaluate(() => {
   const k = window.__ks;
@@ -13,7 +13,7 @@ const info = await page.evaluate(() => {
 console.log('活动：', info.acts.join(' '));
 console.log('位置：', info.things.join('  '));
 console.log('小人高', info.h);
-await shot(page, d, '00-court');
+await shot(page, d, '00-yard');
 for (const id of info.acts) {
   if (only && !only.includes(id)) continue;
   const n0 = logs.length;

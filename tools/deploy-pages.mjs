@@ -13,7 +13,7 @@ if (!remote) { console.error('要给一个 git 远端地址'); process.exit(1); 
 const dist = resolve(import.meta.dirname, '..', 'dist');
 if (!existsSync(join(dist, 'index.html'))) { console.error('dist/ 里没有 index.html：先 npm run build'); process.exit(1); }
 
-const dir = mkdtempSync(join(tmpdir(), 'kongshan-pages-'));
+const dir = mkdtempSync(join(tmpdir(), 'anlewo-pages-'));
 const git = (...a) => execFileSync('git', a, { cwd: dir, stdio: ['ignore', 'pipe', 'inherit'] }).toString().trim();
 try {
   cpSync(dist, dir, { recursive: true });
@@ -23,7 +23,7 @@ try {
   if (process.env.PAGES_NAME) id.push('-c', `user.name=${process.env.PAGES_NAME}`);
   if (process.env.PAGES_EMAIL) id.push('-c', `user.email=${process.env.PAGES_EMAIL}`);
   git('add', '-A');
-  git(...id, 'commit', '-q', '-m', process.env.PAGES_MESSAGE ?? `空山：${new Date().toISOString().slice(0, 16).replace('T', ' ')} 的构建`);
+  git(...id, 'commit', '-q', '-m', process.env.PAGES_MESSAGE ?? `安乐窝：${new Date().toISOString().slice(0, 16).replace('T', ' ')} 的构建`);
   git('push', '-q', '--force', remote, `${branch}:${branch}`);
   console.log(`已推到 ${remote} 的 ${branch} 分支（${git('rev-parse', '--short', 'HEAD')}）`);
 } finally {

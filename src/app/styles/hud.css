@@ -1,85 +1,98 @@
-/* 在寺里走动时的界面：左上是处名（随人走到哪而变），右上是时辰与四枚小键；走近了一件事，下面浮出它的名字；画面里有标记；触屏左下是摇杆。 */
-.hud { position: absolute; inset: 0; pointer-events: none; animation: rise 1.6s var(--out) backwards; transition: opacity 0.9s; }
+/* 走动时的界面，都贴着画的四角：左上是处名（浮出来又退下去），右上是时辰的卦与一卷简册；
+   画面里是近处那几件事的小签；触屏左下是摇杆、右下是做事的印。画的当中什么也不放。 */
+.hud { position: absolute; inset: 0; pointer-events: none; animation: fade 1.6s var(--out) backwards; }
 .hud > * { pointer-events: auto; }
-.hud.is-act .dock, .hud.is-act .place, .hud.is-act .corner, .hud.is-act .stick { opacity: 0; pointer-events: none; transform: translateY(4px); }
-.hud.is-act.is-free .stick { opacity: 1; pointer-events: auto; transform: none; }
-.hud.is-busy .stick, .hud.has-sheet .stick { opacity: 0; pointer-events: none; }
-.hud.is-busy .dock { opacity: 0.0; pointer-events: none; }
-.ks.is-quiet .hud { opacity: 0; pointer-events: none; }
+.hud.is-act .place, .hud.is-act .corner, .hud.is-act .dock, .hud.is-act .stick, .hud.is-act .act-key { opacity: 0; pointer-events: none; }
+.hud.is-act.is-free .stick { opacity: 1; pointer-events: auto; }
+.hud.is-busy .stick, .hud.has-sheet .stick, .hud.is-busy .act-key, .hud.has-sheet .act-key, .hud.is-busy .dock, .hud.has-sheet .dock { opacity: 0; pointer-events: none; }
+.hud.is-act .markers, .hud.has-sheet .markers, .hud.is-busy .markers, .hud.is-act .prompt, .hud.has-sheet .prompt, .hud.is-busy .prompt { opacity: 0; visibility: hidden; }
 
-/* 处名 */
-.place { position: absolute; left: calc(var(--sal) + clamp(16px, 2.4vw, 30px)); top: calc(var(--sat) + clamp(16px, 2.6vh, 28px)); display: flex; gap: 13px; align-items: flex-start; pointer-events: none; transition: opacity 0.7s, transform 0.7s var(--out); animation: rise 1.4s var(--out) backwards; }
-.seal { writing-mode: vertical-rl; font-style: normal; font: 400 11.5px/1.1 var(--serif); letter-spacing: 0.14em; color: #f6ece2; background: var(--zhu); padding: 6px 4.5px 5px; border-radius: 2px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35); }
-.place-text { display: flex; flex-direction: row-reverse; gap: 9px; align-items: flex-start; }
-.place-text h2 { writing-mode: vertical-rl; font-size: clamp(20px, 2.7vh, 25px); letter-spacing: 0.46em; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.6), 0 0 2px rgba(0, 0, 0, 0.4); }
-.place-text p { writing-mode: vertical-rl; font-family: var(--kai); font-size: 13px; letter-spacing: 0.4em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); padding-top: 2px; transition: opacity 2.4s; max-height: 46vh; }
-.place-text p.is-dim { opacity: 0; }
+/* —— 处名：竖写在左上角，像画上的一行题字 —— */
+.place { position: absolute; left: calc(var(--sal) + clamp(20px, 3vw, 44px)); top: calc(var(--sat) + clamp(20px, 3.6vh, 40px)); display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 9px; pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity 1.6s var(--out), transform 1.6s var(--out); }
+.place.is-on { opacity: 1; transform: none; }
+/* 字是直接写在画上的：身后垫一团没有边的纸色（像画上的一片云气），画上深的地方也读得出 */
+.place, .act-head { isolation: isolate; }
+.place::before, .act-head::before { content: ''; position: absolute; inset: -16px -20px -22px; background: var(--wash); filter: blur(12px); border-radius: 44%; opacity: 0.88; z-index: -1; }
+.place h2 { position: relative; writing-mode: vertical-rl; font-family: var(--brush); font-size: clamp(24px, 3.3vh, 31px); line-height: 1.1; letter-spacing: 0.2em; padding-top: 15px; }
+.place h2.is-kai { font-family: var(--kai); font-size: clamp(21px, 2.9vh, 27px); }
+/* 名字上头一点朱砂 */
+.place h2::before { content: ''; position: absolute; left: 50%; top: 0; width: 5px; height: 5px; margin-left: -2.5px; background: var(--zhu); border-radius: 1px; }
+.place p { writing-mode: vertical-rl; font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.34em; color: var(--ink); padding-top: 17px; max-height: 46vh; }
 
-/* 右上：时辰与小键 */
-.corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 28px)); top: calc(var(--sat) + clamp(14px, 2.4vh, 26px)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; transition: opacity 0.7s, transform 0.7s var(--out); }
-.when { font-size: 12.5px; letter-spacing: 0.34em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); cursor: pointer; padding: 4px 0 4px 8px; }
-.when small { font-size: 11px; margin-left: 0.7em; color: var(--moon-3); letter-spacing: 0.2em; }
-.keys { display: flex; gap: 9px; }
-.key { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 14.5px; color: var(--moon); border: 1px solid var(--hair); background: var(--glass); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 -1px 0 rgba(0, 0, 0, 0.3) inset, 0 8px 20px rgba(0, 0, 0, 0.26); transition: transform 0.3s var(--out), border-color 0.3s, background 0.3s; }
-@media (hover: hover) { .key:hover { transform: translateY(-2px); border-color: var(--gold-2); background: rgba(13, 14, 15, 0.56); } }
-.key:active { transform: translateY(1px) scale(0.96); }
-
-/* 下面：走近了的那件事 */
-.dock { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(16px, 3.2vh, 34px)); display: grid; justify-items: center; gap: 12px; padding: 0 16px; transition: opacity 0.6s, transform 0.6s var(--out); pointer-events: none; }
-.dock > * { pointer-events: auto; }
-.chip { height: 40px; padding: 0 17px; border-radius: 20px; display: inline-grid; place-items: center; border: 1px solid var(--hair); background: var(--glass); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 -1px 0 rgba(0, 0, 0, 0.3) inset, 0 8px 20px rgba(0, 0, 0, 0.24); transition: transform 0.3s var(--out), border-color 0.3s, background 0.3s; }
-.chip span { font-size: 14px; letter-spacing: 0.34em; text-indent: 0.34em; white-space: nowrap; }
-.chip-act { height: 46px; padding: 0 24px; border-radius: 23px; border-color: var(--gold-2); background: linear-gradient(180deg, rgba(214, 194, 152, 0.26), rgba(120, 104, 70, 0.16)), var(--glass); }
-.chip-act span { font-size: 15.5px; color: #f5e9cb; letter-spacing: 0.5em; text-indent: 0.5em; }
-.chip-act { grid-auto-flow: column; gap: 12px; animation: rise 0.5s var(--out) backwards; }
-.chip-act kbd { font: 500 11px/1 var(--sans, system-ui); letter-spacing: 0; color: rgba(245, 233, 203, 0.86); border: 1px solid rgba(232, 213, 166, 0.45); border-radius: 5px; padding: 4px 6px 3px; margin-right: -6px; background: rgba(0, 0, 0, 0.22); }
-.chip-door { border-color: var(--hair); background: var(--glass); }
-.chip-door span { color: var(--moon); }
-/* 头一回的走法提示 */
-.walk-hint { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; max-width: min(640px, 100%); font-size: 12.5px; letter-spacing: 0.24em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; transition: opacity 1.4s; animation: rise 1.8s 1.2s var(--out) backwards; }
-.walk-hint.is-gone { opacity: 0; }
-.walk-hint span { white-space: nowrap; }
-.walk-hint kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-right: 3px; font: 500 11px/1 var(--sans, system-ui); letter-spacing: 0; color: var(--moon); border: 1px solid var(--hair); border-radius: 5px; background: rgba(0, 0, 0, 0.28); }
-.walk-hint kbd:last-of-type { margin-right: 9px; }
-/* 摇杆 */
-.stick { position: absolute; left: calc(var(--sal) + clamp(18px, 5vw, 44px)); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px)); width: clamp(104px, 27vw, 128px); aspect-ratio: 1; border-radius: 50%; border: 1px solid rgba(236, 235, 230, 0.26); background: radial-gradient(circle, rgba(236, 235, 230, 0.02) 46%, rgba(236, 235, 230, 0.09) 100%); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.18) inset; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity 0.6s, border-color 0.3s; }
-.stick b { position: absolute; left: 50%; top: 50%; width: 42%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); border: 1px solid rgba(236, 235, 230, 0.5); background: radial-gradient(circle at 40% 35%, rgba(246, 244, 238, 0.42), rgba(236, 235, 230, 0.14)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); pointer-events: none; }
-.stick.is-on { border-color: rgba(236, 220, 178, 0.6); }
-.stick.is-on b { border-color: #ecdcb2; }
+/* —— 右上：此刻的时辰与它的卦；一卷简册 —— */
+.corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px)); display: grid; justify-items: end; gap: 8px; transition: opacity 0.7s; }
+.corner-bar { display: flex; height: 42px; border-radius: 2px; }
+.when { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 15px; transition: color 0.3s; color: var(--ink); }
+.when span { font-family: var(--kai); font-size: 14.5px; letter-spacing: 0.16em; white-space: nowrap; }
+.when span i { margin: 0 0.22em; color: var(--ink-3); }
+.when .gua { width: 19px; }
+.menu-key { width: 44px; border-left: 1px solid var(--rule-2); font-family: var(--kai); font-size: 16px; color: var(--ink); transition: background-color 0.3s, color 0.3s; }
+.menu-key.is-on { background: var(--ink); color: var(--paper); }
 @media (hover: hover) {
-  .chip:hover { transform: translateY(-2px); border-color: rgba(236, 235, 230, 0.4); background: rgba(13, 14, 15, 0.58); }
-  .chip-act:hover { border-color: rgba(232, 213, 166, 0.85); }
+  .when:hover, .menu-key:hover { background: var(--glass-2); }
+  .menu-key.is-on:hover { background: var(--ink); }
 }
-.chip:active { transform: translateY(1px) scale(0.975); }
+.when:active, .menu-key:active { opacity: 0.7; }
 
-/* 画面里的标记 */
-.markers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.mk { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 7px; padding: 12px 14px; opacity: 0; transition: opacity 0.5s; will-change: transform, opacity; }
-.mk i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(236, 235, 230, 0.9); background: rgba(236, 235, 230, 0.3); box-shadow: 0 0 0 4px rgba(236, 235, 230, 0.08), 0 0 14px rgba(255, 255, 255, 0.4); transition: transform 0.3s var(--out); }
-.mk span { font-size: 12px; letter-spacing: 0.32em; text-indent: 0.32em; white-space: nowrap; color: var(--moon); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.7); }
-.mk-act i { border-color: #ecdcb2; background: rgba(236, 220, 178, 0.36); }
-.mk-act span { color: #f5e9cb; }
-.mk.is-near i { width: 13px; height: 13px; border-color: #f3e3b6; background: rgba(240, 224, 180, 0.6); box-shadow: 0 0 0 5px rgba(236, 220, 178, 0.12), 0 0 18px rgba(255, 240, 200, 0.6); animation: breathe 3.4s ease-in-out infinite; }
-.mk.is-near span { font-size: 13.5px; }
-@media (hover: hover) { .mk:hover i { transform: scale(1.5); } }
-.hud.is-act .markers, .hud.has-sheet .markers { opacity: 0; }
+/* 简册：六枚竹简并排，自右而左；两道细线是编绳 */
+.menu-back { position: fixed; inset: 0; }
+.menu { position: relative; display: flex; flex-direction: row-reverse; border-radius: 2px; background: var(--glass-2); animation: rise 0.5s var(--out) backwards; }
+.menu::before, .menu::after { content: ''; position: absolute; left: 0; right: 0; height: 1px; background: var(--rule-2); pointer-events: none; }
+.menu::before { top: 13px; }
+.menu::after { bottom: 13px; }
+.slip { position: relative; width: 46px; padding: 26px 0 26px; display: grid; justify-items: center; align-content: start; min-height: 132px; color: var(--ink-2); transition: color 0.3s, background-color 0.3s, transform 0.3s var(--out); }
+.slip + .slip { border-right: 1px solid var(--rule-2); }
+.slip span { writing-mode: vertical-rl; font-family: var(--kai); font-size: 15.5px; letter-spacing: 0.3em; }
+@media (hover: hover) { .slip:hover { color: var(--ink); background: var(--rule-2); } }
+.slip:active { transform: translateY(1px); }
+
+/* —— 画面里的小签（不做磨砂：每一片磨砂都要把画读回来一遍，手机上费；底色已经够实） —— */
+.markers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; transition: opacity 0.5s; }
+.mk { position: absolute; left: 0; top: 0; display: grid; justify-items: center; opacity: 0; pointer-events: none; transition: opacity 0.5s; will-change: transform, opacity; padding: 6px 8px 0; }
+.mk-tag { display: flex; align-items: center; gap: 0; height: 24px; padding: 0 8px; border-radius: 2px; background: var(--glass-2); font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.22em; text-indent: 0.22em; white-space: nowrap; color: var(--ink); transition: height 0.3s var(--out), padding 0.3s var(--out); }
+.mk-tag i { width: 0; height: 5px; background: var(--zhu); border-radius: 1px; transition: width 0.3s var(--out), margin 0.3s var(--out); }
+.mk-tag em { display: none; font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.08em; text-indent: 0; color: var(--ink); margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--rule); line-height: 13px; }
+.mk-stem { display: block; width: 1px; height: 12px; background: var(--ink-3); }
+.mk.is-near .mk-tag, .prompt .mk-tag { height: 30px; padding: 0 11px; font-size: 14px; }
+.mk.is-near .mk-tag i, .prompt .mk-tag i { width: 5px; margin-right: 8px; }
+.mk.is-near .mk-tag em, .prompt .mk-tag em { display: inline; }
+.mk.is-near .mk-stem { background: var(--zhu); }
+@media (hover: hover) { .mk:hover .mk-tag { background: var(--ink); color: var(--paper); } .mk:hover .mk-tag em { color: inherit; border-color: currentColor; } }
+/* 走近了的那件事不在画面里时，下面另出一枚 */
+.prompt { position: absolute; left: 50%; bottom: calc(var(--sab) + clamp(22px, 5vh, 52px)); transform: translate(-50%, 6px); opacity: 0; pointer-events: none; transition: opacity 0.5s, transform 0.5s var(--out); }
+.prompt.is-on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.hud.is-touch .prompt { display: none; }
+
+/* —— 下面：头一回的走法 —— */
+.dock { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(64px, 12vh, 112px)); display: grid; justify-items: center; padding: 0 16px; transition: opacity 0.6s; pointer-events: none; }
+.walk-hint { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px; max-width: min(620px, 100%); padding: 10px 18px; border-radius: 2px; background: var(--glass-2); font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.14em; color: var(--ink-2); transition: opacity 1.4s; animation: rise 1.8s 1.6s var(--out) backwards; }
+.walk-hint.is-gone { opacity: 0; }
+.walk-hint span { white-space: nowrap; display: inline-flex; align-items: center; }
+.walk-hint b { font-weight: 400; color: var(--ink); margin-right: 0.5em; }
+.walk-hint kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-right: 3px; font: 500 11px/1 system-ui, sans-serif; letter-spacing: 0; color: var(--ink); border: 1px solid var(--rule); border-radius: 3px; }
+.walk-hint kbd:last-of-type { margin-right: 0.7em; }
+
+/* —— 触屏：摇杆与做事的印 —— */
+.stick { position: absolute; left: calc(var(--sal) + clamp(18px, 5vw, 44px)); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px)); width: clamp(104px, 27vw, 128px); aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--ink-3); background: var(--glass); opacity: 0.66; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity 0.5s; }
+.stick b { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); background: var(--ink); opacity: 0.5; pointer-events: none; transition: opacity 0.3s; }
+.stick.is-on { opacity: 0.95; }
+.stick.is-on b { opacity: 0.82; }
+/* 一方朱文印：印文是那件事的名字 */
+.act-key { position: absolute; right: calc(var(--sar) + clamp(20px, 5.4vw, 46px)); bottom: calc(var(--sab) + clamp(34px, 8vh, 70px)); min-width: 62px; min-height: 62px; padding: 9px 9px; display: grid; place-items: center; border: 1.5px solid var(--zhu); border-radius: 4px 3px 4px 3px; background: var(--glass-2); color: var(--zhu); animation: rise 0.5s var(--out) backwards; transition: transform 0.25s var(--out), opacity 0.5s; }
+.act-key span { writing-mode: vertical-rl; font-family: var(--kai); font-size: 17px; line-height: 1.16; letter-spacing: 0.12em; max-height: 4.9em; }
+.act-key:active { transform: translateY(2px) scale(0.96); }
 
 @media (max-width: 560px) {
-  .key { width: 38px; height: 38px; }
-  .chip { height: 38px; padding: 0 14px; }
-  .chip span { font-size: 13.5px; letter-spacing: 0.26em; text-indent: 0.26em; }
-  .chip-act { height: 44px; padding: 0 20px; }
-  .when { font-size: 12px; letter-spacing: 0.26em; }
+  .when span { font-size: 14px; }
+  .walk-hint { font-size: 13px; gap: 3px 16px; padding: 9px 14px; }
 }
-.hud.is-touch .dock { padding-left: clamp(130px, 34vw, 190px); padding-right: 16px; justify-items: end; }
-@media (min-width: 720px) { .hud.is-touch .dock { padding: 0 16px; justify-items: center; } }
 @media (max-height: 460px) {
-  .dock { bottom: calc(var(--sab) + 10px); gap: 8px; }
-  .stick { width: 96px; bottom: calc(var(--sab) + 12px); }
-  .place-text p { display: none; }
-  .title { padding-top: calc(var(--sat) + 2vh); padding-bottom: calc(var(--sab) + 3vh); }
-  .title-name { font-size: clamp(48px, 22vh, 96px); }
-  .title-motto { padding-top: 26px; font-size: 14px; }
-  .title-foot { min-height: 76px; gap: 8px; }
-  .title-seal { bottom: -34px; }
+  .place p { display: none; }
+  .dock { bottom: calc(var(--sab) + 14px); }
+  .stick { width: 96px; bottom: calc(var(--sab) + 14px); }
+  .act-key { bottom: calc(var(--sab) + 22px); }
+  .slip { min-height: 112px; padding: 22px 0; }
 }
+/* 触屏时提示别压着摇杆与印 */
+.hud.is-touch .dock { bottom: calc(var(--sab) + clamp(150px, 26vh, 210px)); }
+@media (max-height: 460px) { .hud.is-touch .dock { bottom: auto; top: calc(var(--sat) + 64px); } }

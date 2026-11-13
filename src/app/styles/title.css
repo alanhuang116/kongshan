@@ -1,0 +1,54 @@
+/* 题名页：左边一枚题签（手卷的签条），签下一句话与一个「入」字；其余都留给画。 */
+.title { position: absolute; inset: 0; pointer-events: none; transition: opacity 0.9s var(--out); }
+.title.is-leaving { opacity: 0; }
+.title-col { --fs: clamp(58px, 11.6vh, 112px); position: absolute; left: calc(var(--sal) + clamp(22px, 5.4vw, 96px)); top: calc(var(--sat) + clamp(22px, 7.6vh, 84px)); display: grid; justify-items: start; gap: clamp(18px, 3.4vh, 34px); pointer-events: auto; animation: rise 2s var(--out) backwards; }
+
+/* 签条：一片薄纸，里面再压一道细线（旧签上印的边栏）。大字在右，款与印在左下 */
+.title-slip { position: relative; display: flex; align-items: flex-end; gap: calc(var(--fs) * 0.16); padding: calc(var(--fs) * 0.3) calc(var(--fs) * 0.26) calc(var(--fs) * 0.3) calc(var(--fs) * 0.24); background: var(--glass-2); border-color: var(--rule); border-radius: 1px; }
+.title-slip::before { content: ''; position: absolute; inset: 5px; border: 1px solid var(--rule-2); pointer-events: none; }
+.title-name { writing-mode: vertical-rl; font-family: var(--brush); font-size: var(--fs); line-height: 1.06; letter-spacing: 0.1em; color: var(--ink); margin-bottom: -0.1em; }
+.title-name.is-kai { font-family: var(--kai); font-size: calc(var(--fs) * 0.86); }
+.title-sign { display: grid; justify-items: center; gap: 9px; padding-bottom: 2px; }
+.title-sign p { writing-mode: vertical-rl; font-family: var(--kai); font-size: clamp(13.5px, 1.9vh, 16.5px); letter-spacing: 0.34em; color: var(--ink-2); }
+
+/* 签下：「入」与一句相邀的话 */
+.title-foot { position: relative; display: flex; align-items: center; gap: 16px; min-height: 64px; }
+/* 话是直接写在画上的：身后垫一片没有边的纸色，画上深的地方也读得出 */
+.title-foot::before { content: ''; position: absolute; left: -26px; right: -44px; top: -16px; bottom: -16px; background: radial-gradient(closest-side, var(--wash), transparent); filter: blur(10px); opacity: 0.92; pointer-events: none; }
+.title-foot > * { position: relative; }
+.enter { flex: none; width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; background: var(--glass-2); border-color: var(--ink-3); transition: transform 0.35s var(--out), border-color 0.35s, background-color 0.35s, color 0.35s; animation: rise 1.4s var(--out) backwards; }
+.enter span { font-family: var(--brush); font-size: 30px; line-height: 1; transform: translate(-0.02em, -0.03em); }
+/* 一圈慢慢散开的墨晕：告诉人这里可以点 */
+.enter::after { content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--ink-3); animation: ripple 3.8s ease-out infinite; pointer-events: none; }
+@keyframes ripple { 0% { transform: scale(1); opacity: 0.7; } 70%, 100% { transform: scale(1.42); opacity: 0; } }
+@media (hover: hover) { .enter:hover { transform: translateY(-2px); background: var(--ink); border-color: var(--ink); color: var(--paper); } }
+.enter:active { transform: translateY(1px) scale(0.97); }
+.title-invite { font-family: var(--kai); font-size: clamp(14.5px, 2vh, 16.5px); line-height: 1.8; letter-spacing: 0.22em; color: var(--ink); max-width: 20em; animation: rise 1.6s 0.2s var(--out) backwards; }
+/* 一截话（到标点为止）不拆开 */
+.ph { display: inline-block; white-space: nowrap; }
+
+/* 「入」之后，画还在雾里：进门的几句话写在一片空白当中 */
+.intro { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: grid; justify-items: center; gap: clamp(12px, 2.4vh, 20px); padding: 0 24px; pointer-events: none; transition: opacity 1.6s var(--out); }
+.intro.is-out { opacity: 0; }
+.intro p { font-family: var(--kai); font-size: clamp(16px, 2.5vh, 20px); line-height: 1.9; letter-spacing: 0.3em; text-indent: 0.3em; text-align: center; color: var(--ink); animation: rise 1.5s var(--out) backwards; }
+
+.loading { display: grid; gap: 12px; align-content: center; min-height: 60px; }
+.loading-line { width: 132px; height: 1px; background: var(--rule); overflow: hidden; }
+.loading-line b { display: block; height: 100%; background: var(--ink); transform-origin: left center; transition: transform 0.6s var(--out); }
+.loading span { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.56em; color: var(--ink-2); min-height: 1.5em; animation: fade 0.8s backwards; }
+
+/* 竖着的手机：签贴在左上（天空那一角），话与「入」落到下面当中 */
+@media (max-aspect-ratio: 4/5) {
+  .title-col { --fs: clamp(50px, 15.5vw, 84px); position: absolute; inset: 0; display: block; }
+  .title-slip { position: absolute; left: calc(var(--sal) + 20px); top: calc(var(--sat) + clamp(20px, 4.4vh, 44px)); }
+  .title-foot { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(34px, 7vh, 72px)); flex-direction: column-reverse; gap: 16px; text-align: center; }
+  .title-foot::before { left: 8%; right: 8%; top: -22px; bottom: -22px; }
+  .title-invite { max-width: 15em; }
+  .loading { justify-items: center; }
+}
+/* 横着的手机：屋矮，签小一些，「入」排到签的右边 */
+@media (max-height: 520px) and (min-aspect-ratio: 4/5) {
+  .title-col { --fs: clamp(44px, 15vh, 64px); top: calc(var(--sat) + 16px); left: calc(var(--sal) + 20px); grid-auto-flow: column; align-items: end; gap: 22px; }
+  .title-foot { min-height: 56px; margin-bottom: 4px; }
+  .enter { width: 54px; height: 54px; }
+}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>安乐窝 · 试画的台子</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #f4f4f1; overflow: hidden; }
+      #stage { position: fixed; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #hud { position: fixed; left: 10px; top: 8px; color: #555; font: 12px/1.5 monospace; white-space: pre; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="c"></canvas></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/lab/ink-lab.ts"></script>
+  </body>
+</html>

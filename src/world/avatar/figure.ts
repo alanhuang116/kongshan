@@ -1,5 +1,6 @@
 /**
- * 行者：一袭素色长衫的小小身影——寺里由你操纵着走动的那个人。
+ * 一个人：一袭长衫（或短褐）的小小身影——你操纵着走动的邵雍，村里的农夫、童子、老人，都是这一副身子换一身打扮（Look）。
+ * 画法是水墨淡彩（docs/INK.md）：颜色写在一张贴图与顶点色里，整个人一个材质、一次绘制，轮廓由画法自己勾。
  *
  * 做法（混合）：
  *   长衫与两袖不是蒙皮，也不是刚性件，而是「每帧现摆的筒」（loft.ts）：
@@ -8,20 +9,21 @@
  *     姿态之间只是这些圈的参数在过渡，所以衣摆会自己「铺开」，也没有关节的缝。
  *     袖子是套在臂上的宽筒：臂越平，筒越往下垂成一只袋；臂垂下时筒就绕在臂上、长过手腕。袋的方向带惯性，走动、抬手时会晃。
  *     袜筒也在这张网里：自脚踝顺着小腿的方向（跪着时小腿是贴地的，所以它不会戳到地下去）。
- *   头、手、鞋、斗笠是刚性件，位置由脊与两段臂的反向运动学给出。
- * 所有量都在小人自己的坐标里算（原点在两脚之间的地面，+z 朝前，+x 是他的左手边）。
+ *   头、手、鞋、斗笠是刚性件，位置由脊与两段臂的反向运动学给出；它们也收在同一个几何里，每帧整块搬过去（loft.ts 的 place）。
+ *   短衣的人（Look.hem 高）露出小腿：袜筒那两张筒就改作小腿，自鞋口到膝、再往衣摆里探一截。
+ * 所有量都在小人自己的坐标里算（原点在两脚之间的地面，+z 朝前，+x 是他的左手边）；身量（Look.scale）是整个 root 的缩放。
  */
 import * as THREE from 'three';
-import { enhance, type Mats } from '../core/mats';
 import type { Quality } from '../core/World';
+import { wash } from '../ink/ink';
 import { LoftGeo } from './loft';
-import { HEAD_UP, TEX, bodyV, buildFeet, buildHands, buildHat, buildHead, garmentTexture } from './parts';
-import type { Avatar, HandsName, PoseName, ReachOpts, Seat, Side } from './types';
+import { ATLAS, HEAD_UP, TEX, bodyV, buildBack, buildFoot, buildHand, buildHead, paintAtlas, resolveLook, tones } from './parts';
+import type { Avatar, HandsName, Look, PoseName, ReachOpts, Seat, Side } from './types';
 
 export type { Seat } from './types';
 export type GroundFn = (x: number, z: number) => number | null;
 
-const POSES = ['stand', 'kneel', 'sit', 'crouch'] as const;
+const POSES = ['stand', 'kneel', 'sit', 'crouch', 'bench'] as const;
 type W4 = Record<PoseName, number>;
 
 // —— 骨架的几个尺寸（米） ——
@@ -29,6 +31,8 @@ const PELVIS = 0.86, HEM = 0.085;
 const SH_X = 0.138, L_UP = 0.245, L_FORE = 0.215, PALM = 0.07;
 const HIP_X = 0.08, L_TH = 0.375, L_SH = 0.37, ANKLE = 0.07;
 const FOOT_X = 0.076;
+/** 坐凳：默认的凳高、凳心在脚后多远；坐着时骨盆心比凳面高多少 */
+const BENCH_H = 0.44, BENCH_Z = -0.34, SIT_UP = 0.1;
 
 /** 上身各圈（自胯往上）：站立时的高、半宽、前半径、后半径、方圆的程度 */
 const UP: ReadonlyArray<readonly [number, number, number, number, number]> = [
@@ -53,6 +57,8 @@ const BASE: Record<PoseName, { py: number; pz: number; lean: number }> = {
   kneel: { py: 0.305, pz: -0.085, lean: 0.03 },
   sit: { py: 0.122, pz: -0.04, lean: 0.012 },
   crouch: { py: 0.37, pz: -0.15, lean: 0.5 },
+  // 坐凳：这里是凳高 BENCH_H、凳心在脚后 BENCH_Z 时的数；setSeat 给了别的高与前后，骨盆跟着挪（见 update）
+  bench: { py: BENCH_H + SIT_UP, pz: BENCH_Z, lean: 0.02 },
 };
 /** 俯身到底时：胯折多少、脊弯多少、颈再低多少，骨盆抬起与前移多少 */
 const BOW: Record<PoseName, { hip: number; sp: number; neck: number; dy: number; dz: number }> = {
@@ -60,7 +66,10 @@ const BOW: Record<PoseName, { hip: number; sp: number; neck: number; dy: number;
   kneel: { hip: 1.55, sp: 0.6, neck: 0.04, dy: 0.02, dz: 0.03 },
   sit: { hip: 0.12, sp: 0.16, neck: 0.3, dy: 0, dz: 0 },
   crouch: { hip: 0.26, sp: 0.2, neck: 0.1, dy: 0, dz: 0 },
+  bench: { hip: 0.55, sp: 0.2, neck: 0.25, dy: 0, dz: 0 },
 };
+/** 露着的小腿各圈的粗细：踝、腿肚、膝、探进衣摆里的那一截大腿 */
+const CALF = [0.04, 0.05, 0.046, 0.06];
 /** 落脚点正压在台阶的棱上时，往前或往后挪开多少（依次试） */
 const EDGE_TRY = [0.06, -0.06, 0.12, -0.12, 0.18, -0.18];
 const HEM_N = 8;                  // 沿下摆量几个点的地面（只在台阶、坡上量）
@@ -74,14 +83,18 @@ const V = () => new THREE.Vector3();
 
 interface Sk { y: number; cz: number; a: number; bF: number; bB: number; rise: number; riseW: number }
 const newSk = (): Sk => ({ y: 0, cz: 0, a: 0, bF: 0, bB: 0, rise: 0, riseW: 0 });
-/** 下摆某一圈在某个姿态下的样子。u：0 是摆脚，1 是胯。hy、hz：胯那一圈的高与前后 */
-function skirt(p: PoseName, u: number, hy: number, hz: number, o: Sk) {
+/**
+ * 下摆某一圈在某个姿态下的样子。u：0 是摆脚，1 是胯。hy、hz：胯那一圈的高与前后。
+ * hem：站着时下摆离地多高（长衫 0.085；短褐高得多）；fl：摆张开几成（短衣的摆不成钟）。
+ */
+function skirt(p: PoseName, u: number, hy: number, hz: number, o: Sk, hem: number, fl: number) {
   const v = 1 - u, g = 0.012;
   o.rise = 0; o.riseW = 0;
   if (p === 'stand') {
     // 道袍的摆本来就大：站着时垂成一口钟，多出来的布收在褶里
-    o.y = HEM + (hy - HEM) * u; o.cz = hz * u;
-    o.a = 0.17 + 0.068 * Math.pow(v, 1.25); o.bF = 0.118 + 0.082 * Math.pow(v, 1.25); o.bB = 0.128 + 0.07 * Math.pow(v, 1.25);
+    const w = fl * Math.pow(v, 1.25);
+    o.y = hem + (hy - hem) * u; o.cz = hz * u;
+    o.a = 0.17 + 0.068 * w; o.bF = 0.118 + 0.082 * w; o.bB = 0.128 + 0.07 * w;
   } else if (p === 'kneel') {
     // 跪坐：布自胯搭过大腿到膝前落地，身后盖住脚踝
     o.y = g + (hy - g) * Math.pow(u, 0.82); o.cz = lerp(0.04, hz, Math.pow(u, 1.4));
@@ -92,11 +105,30 @@ function skirt(p: PoseName, u: number, hy: number, hz: number, o: Sk) {
     o.y = g + (hy - g) * Math.pow(u, 0.9); o.cz = lerp(0.085, hz, Math.pow(u, 1.25));
     o.a = lerp(0.365, 0.17, Math.pow(u, 2.0)); o.bF = lerp(0.29, 0.118, Math.pow(u, 1.9)); o.bB = lerp(0.235, 0.128, Math.pow(u, 1.05));
     o.riseW = 0.105 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.9);
-  } else {
+  } else if (p === 'crouch') {
     // 蹲：两膝在身前顶起一道，身后的布垂到地
     o.y = g + (hy - g) * u; o.cz = lerp(0.03, hz, Math.pow(u, 1.2));
     o.a = lerp(0.255, 0.17, Math.pow(u, 1.3)); o.bF = lerp(0.3, 0.118, Math.pow(u, 2.8)); o.bB = lerp(0.285, 0.128, Math.pow(u, 0.95));
     o.rise = 0.19 * Math.sin(Math.PI * Math.pow(u, 0.72));
+  } else {
+    // 坐凳：布自腰搭过两条平放的大腿，到膝头折下去，垂到脚面。
+    // 上半（u 0.5…1）是「怀」：圈绕着骨盆，前面一圈比一圈探得远，直到盖过膝头，前沿抬在腿面上（rise），两侧与身后落在凳面上；
+    // 下半（u 0…0.5）是套着两条小腿垂下去的一筒：圈心自骨盆挪到小腿，身后的布自臀后收到腿肚后头。
+    const S = hy - (SIT_UP - 0.04), kz = hz + L_TH, kneeTop = S + 0.135, seatY = S + 0.012;
+    if (u >= 0.5) {
+      const s = (u - 0.5) / 0.5;
+      o.y = lerp(seatY, hy, Math.pow(s, 0.8)); o.cz = hz + 0.05 * (1 - s);
+      o.a = lerp(0.2, 0.17, s); o.bB = lerp(0.14, 0.128, s); o.bF = lerp(kz + 0.085 - (hz + 0.05), 0.118, Math.pow(s, 1.5));
+      o.rise = lerp(kneeTop, S + 0.145, s) - o.y;
+    } else {
+      const s = u / 0.5, k = smooth(0.7, 1, s);
+      // 短衣只盖到膝下；长衫垂到脚面
+      const hemY = lerp(Math.max(0.07, Math.min(hem, 0.12)), S - 0.09, clamp((hem - 0.12) / 0.3, 0, 1));
+      o.y = lerp(hemY, lerp(S - 0.07, seatY, k), Math.pow(s, 0.85));
+      o.cz = lerp(lerp(0.035, kz - 0.045, Math.min(1, s / 0.7)), hz + 0.05, k);
+      o.a = lerp(0.205, 0.2, s); o.bF = lerp(0.118, kz + 0.085 - (hz + 0.05), k); o.bB = lerp(0.125, 0.14, k);
+      o.rise = (kneeTop - o.y) * smooth(0.5, 1, s);
+    }
   }
 }
 
@@ -105,12 +137,12 @@ function skirt(p: PoseName, u: number, hy: number, hz: number, o: Sk) {
  * 有真实的地面时（setGround）：yw 是它此刻的世界高度——着地时就是落脚那一点踏面的高度。
  */
 interface Foot {
-  s: number; x: number; y: number; z: number; lift: number; pitch: number;
+  s: number; x: number; y: number; z: number; lift: number; pitch: number; /** 脚掌顺着脚下坡面的那一点倾斜（弧度，脚尖抬起为负） */ tilt: number;
   air: boolean; wasAir: boolean; s0: number; z0: number; k: number;
   c: number; cz0: number; cl0: number; cy0: number;
   has: boolean; yw: number; y0w: number; y1w: number; adj: number; adjS: number; rising: boolean; off: boolean;
 }
-const newFoot = (s: number): Foot => ({ s, x: s * FOOT_X, y: 0, z: 0, lift: 0, pitch: 0, air: false, wasAir: false, s0: 0, z0: 0, k: 0, c: -1, cz0: 0, cl0: 0, cy0: 0, has: false, yw: 0, y0w: 0, y1w: 0, adj: 0, adjS: 0, rising: false, off: false });
+const newFoot = (s: number): Foot => ({ s, x: s * FOOT_X, y: 0, z: 0, lift: 0, pitch: 0, tilt: 0, air: false, wasAir: false, s0: 0, z0: 0, k: 0, c: -1, cz0: 0, cl0: 0, cy0: 0, has: false, yw: 0, y0w: 0, y1w: 0, adj: 0, adjS: 0, rising: false, off: false });
 
 interface Arm {
   s: number;                       // +1 左（+x），−1 右
@@ -123,10 +155,15 @@ interface Arm {
 interface SRing { s: number; k: number; h: number; lining: boolean }
 const SR = (s: number, k = 1, h = 0, lining = false): SRing => ({ s, k, h, lining });
 
+/** 整块搬的部件在几何里的次序 */
+const CH = { head: 0, handL: 1, handR: 2, footL: 3, footR: 4, back: 5 };
+
 export class Figure implements Avatar {
   root = new THREE.Group();
-  readonly height = 1.58;
-  readonly eyeY = 1.45;
+  readonly height: number;
+  readonly eyeY: number;
+  /** 这一身打扮（造好之后不再变） */
+  readonly look: Look;
   joints: Avatar['joints'];
   bow = 0;
   onStep: ((foot: Side) => void) | null = null;
@@ -136,9 +173,9 @@ export class Figure implements Avatar {
   contact = { L: true, R: true };
 
   private poseName: PoseName = 'stand';
-  private w: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0 };
-  private w0: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0 };
-  private w1: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0 };
+  private w: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0, bench: 0 };
+  private w0: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0, bench: 0 };
+  private w1: W4 = { stand: 1, kneel: 0, sit: 0, crouch: 0, bench: 0 };
   private wT = 1; private wDur = 0.9;
   private hands0: HandsName = 'free'; private hands1: HandsName = 'free'; private hT = 1; private hDur = 0.45;
   private seat: Seat | null = null;
@@ -153,9 +190,11 @@ export class Figure implements Avatar {
   private hatSwing = 0; private hatV = 0;
 
   private loft: LoftGeo; private garment: THREE.Mesh;
-  private head: THREE.Object3D; private hat: THREE.Mesh; private feet: { L: THREE.Mesh; R: THREE.Mesh };
+  private head: THREE.Object3D; private hat: THREE.Object3D; private feet: { L: THREE.Object3D; R: THREE.Object3D };
   private arms: { L: Arm; R: Arm };
   private mats: THREE.Material[] = []; private texs: THREE.Texture[] = [];
+  /** 衣长、摆张开几成、袖子的肥瘦、是不是露着小腿、背上有没有东西 */
+  private hem: number; private flare: number; private sleeveK: number; private bare: boolean; private hasBack = false;
 
   // 圈与表
   private segs: number; private nlow: number; private srs: SRing[]; private segS: number; private segK: number;
@@ -174,9 +213,15 @@ export class Figure implements Avatar {
   private legK = [V(), V()]; private legH = [V(), V()]; private legA = [V(), V()];
   private cX = V(); private cF = V(); private cU = V();
 
-  constructor(mats: Mats, q: Quality) {
-    const low = q.tier === 'low';
+  /** q.tier 定这个人的网有多细（low 约四千三角，其余约九千）；q.tex 定贴图多大。look 不给就是读书人那一身 */
+  constructor(q: Quality, look?: Partial<Look>) {
+    const low = q.tier === 'low', lk = (this.look = resolveLook(look));
     this.root.name = 'avatar';
+    this.root.scale.setScalar(lk.scale);
+    this.height = 1.58 * lk.scale; this.eyeY = 1.45 * lk.scale;
+    this.hem = lk.hem; this.bare = lk.hem > 0.2; this.sleeveK = Math.max(0, Math.min(1, lk.sleeve));
+    // 短衣的摆不张成钟：衣越短越收
+    this.flare = Math.max(0.25, Math.min(1, (0.86 - lk.hem) / (0.86 - HEM)));
     this.segs = low ? 28 : 48; this.nlow = low ? 8 : 13; this.segS = low ? 12 : 20; this.segK = low ? 6 : 8;
     this.srs = low
       ? [SR(0, 0.04, 0.026), SR(0, 0.8, 0.014), SR(0), SR(0.2), SR(0.38), SR(0.5), SR(0.62), SR(0.82), SR(1), SR(0.95, 0.86, 0, true), SR(0.86, 0.03, 0, true)]
@@ -200,16 +245,21 @@ export class Figure implements Avatar {
     this.snS = new Float32Array(SS + 1); this.csS = new Float32Array(SS + 1);
     for (let i = 0; i <= SS; i++) { const a = -Math.PI + (2 * Math.PI * i) / SS; this.snS[i] = Math.sin(a); this.csS[i] = Math.cos(a); }
 
-    // —— 长衫、两袖、两只袜筒：一张网 ——
+    // —— 长衫、两袖、两只袜筒（短衣的人是两条小腿）：一张网；头、手、鞋、背上的东西各是一块，收在同一个几何里 ——
     const bodyRings = 2 + NL + NUP + 1, slRings = this.srs.length, SK = this.segK;
-    const L = (this.loft = new LoftGeo([{ rings: bodyRings, segs: S }, { rings: slRings, segs: SS }, { rings: slRings, segs: SS }, { rings: 4, segs: SK }, { rings: 4, segs: SK }]));
-    const dark = [0.2, 0.215, 0.235];
+    const backG = buildBack(lk, low), footG = buildFoot(lk, low);
+    const rigid = [buildHead(lk, low), buildHand(lk, low, 1), buildHand(lk, low, -1), footG, footG];
+    if (backG) { rigid.push(backG); this.hasBack = true; }
+    const L = (this.loft = new LoftGeo([{ rings: bodyRings, segs: S }, { rings: slRings, segs: SS }, { rings: slRings, segs: SS }, { rings: 4, segs: SK }, { rings: 4, segs: SK }], rigid));
+    for (const g of new Set(rigid)) g.dispose();
+    // 里子（下摆、袖口、领口往里折的那几圈）压成深色：衣里是暗的，人才有分量
+    const dark = [0.26, 0.275, 0.3], RU = ATLAS.robeU;
     for (let r = 0; r < bodyRings; r++) {
       const lining = r < 2 || r === bodyRings - 1;
-      const y = r < 2 ? 0.3 : r < 2 + NL ? HEM + (UP[0][0] - HEM) * ((r - 2) / NL) : r === bodyRings - 1 ? 1.34 : UP[r - 2 - NL][0];
+      const y = r < 2 ? Math.max(0.3, this.hem + 0.2) : r < 2 + NL ? this.hem + (UP[0][0] - this.hem) * ((r - 2) / NL) : r === bodyRings - 1 ? 1.34 : UP[r - 2 - NL][0];
       for (let i = 0; i <= S; i++) {
         const o = L.at(0, r, i);
-        L.uv[o * 2] = i / S; L.uv[o * 2 + 1] = bodyV(y);
+        L.uv[o * 2] = (RU * i) / S; L.uv[o * 2 + 1] = bodyV(y);
         if (lining) { L.col[o * 3] = dark[0]; L.col[o * 3 + 1] = dark[1]; L.col[o * 3 + 2] = dark[2]; }
       }
     }
@@ -217,43 +267,40 @@ export class Figure implements Avatar {
       const R = this.srs[r];
       for (let i = 0; i <= SS; i++) {
         const o = L.at(p, r, i);
-        L.uv[o * 2] = i / SS; L.uv[o * 2 + 1] = R.lining ? TEX.sleeve0 + 0.02 : TEX.sleeve0 + (TEX.sleeve1 - TEX.sleeve0) * R.s;
+        L.uv[o * 2] = (RU * i) / SS; L.uv[o * 2 + 1] = R.lining ? TEX.sleeve0 + 0.02 : TEX.sleeve0 + (TEX.sleeve1 - TEX.sleeve0) * R.s;
         if (R.lining) { L.col[o * 3] = dark[0]; L.col[o * 3 + 1] = dark[1]; L.col[o * 3 + 2] = dark[2]; }
       }
     }
-    // 袜：用袖子上那块素布，把颜色提成白的
+    // 袜（或露着的小腿）：指到贴图的白处，颜色写在顶点上
+    const legC = tones(lk).leg;
     for (const p of [3, 4]) for (let r = 0; r < 4; r++) for (let i = 0; i <= SK; i++) {
       const o = L.at(p, r, i);
-      L.uv[o * 2] = 0.3 + (0.1 * i) / SK; L.uv[o * 2 + 1] = TEX.sleeve0 + 0.03 + 0.02 * r;
-      L.col[o * 3] = 1.6; L.col[o * 3 + 1] = 1.4; L.col[o * 3 + 2] = 1.22;
+      L.uv[o * 2] = ATLAS.white[0]; L.uv[o * 2 + 1] = ATLAS.white[1];
+      L.col[o * 3] = legC[0]; L.col[o * 3 + 1] = legC[1]; L.col[o * 3 + 2] = legC[2];
     }
-    const gtex = garmentTexture(low);
-    const nm = mats.clothGrey.normalMap ? mats.clothGrey.normalMap.clone() : null;
-    if (nm) { nm.repeat.set(30, 64); nm.needsUpdate = true; this.texs.push(nm); }
-    this.texs.push(gtex);
-    const gm = enhance(new THREE.MeshStandardMaterial({ map: gtex, normalMap: nm, normalScale: new THREE.Vector2(0.55, 0.55), vertexColors: true, roughness: 0.93, metalness: 0 }), { wet: true });
+    const px = Math.max(128, Math.min(512, 2 ** Math.round(Math.log2(512 * q.tex))));
+    const atlas = paintAtlas(lk, px);
+    this.texs.push(atlas);
+    // 颜料全在贴图与顶点色里：材质的颜料是纯白、浓度 1，只管「粉不粉」与明暗
+    const gm = wash({ pig: [1, 1, 1], dens: 1, shade: lk.shade, body: lk.body, map: atlas, grain: 2.2, line: 1 });
     this.garment = new THREE.Mesh(L.geo, gm);
-    this.garment.frustumCulled = false; this.garment.castShadow = true; this.garment.receiveShadow = true; this.garment.name = 'avatar:robe';
+    this.garment.name = 'avatar:body';
     this.root.add(this.garment);
     this.mats.push(gm);
 
-    // —— 刚性件 ——
-    const hd = buildHead(low), hn = buildHands(low), ft = buildFeet(low), ht = buildHat(low);
-    this.mats.push(hd.mat, hn.mat, ft.mat, ht.mat);
-    for (const m of [hd.mat, ht.mat]) if (m.map) this.texs.push(m.map);
+    // —— 关节（挂点）。头、手、脚、背上的东西不再各是一个网格，只留着它们的位置，每帧把那几块搬过去 ——
     const hips = new THREE.Group(), chest = new THREE.Group(), neck = new THREE.Group(), headJ = new THREE.Group(), handL = new THREE.Group(), handR = new THREE.Group();
+    const back = new THREE.Group(), footL = new THREE.Group(), footR = new THREE.Group();
     hips.name = 'hips'; chest.name = 'chest'; headJ.name = 'head'; handL.name = 'handL'; handR.name = 'handR';
-    neck.add(hd.mesh); headJ.position.set(0, HEAD_UP, 0.008); neck.add(headJ);
-    chest.add(ht.mesh);
-    handL.add(hn.L); handR.add(hn.R);
-    this.root.add(hips, chest, neck, handL, handR, ft.L, ft.R);
-    this.head = neck; this.hat = ht.mesh; this.feet = ft;
+    headJ.position.set(0, HEAD_UP * lk.head, 0.008 * lk.head); neck.add(headJ);
+    chest.add(back);
+    this.root.add(hips, chest, neck, handL, handR, footL, footR);
+    this.head = neck; this.hat = back; this.feet = { L: footL, R: footR };
     this.joints = { hips, chest, head: headJ, handL, handR };
     const arm = (s: number, joint: THREE.Object3D): Arm => ({ s, reach: null, rDir: null, rPalm: null, rate: 10, rw: 0, rpos: V(), rd: new THREE.Vector3(0, -1, 0), rn: new THREE.Vector3(-s, 0, 0), S: V(), E: V(), W: V(), P: V(), D: new THREE.Vector3(0, -1, 0), prevW: V(), bagU: new THREE.Vector3(0, -0.2, -1).normalize(), bagF: new THREE.Vector3(0, -0.2, -1).normalize(), init: false, joint });
     this.arms = { L: arm(1, handL), R: arm(-1, handR) };
-    const tris = (m: THREE.Mesh) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-    this.stats.triangles = Math.round(L.triangles + [hd.mesh, hn.L, hn.R, ft.L, ft.R, ht.mesh].reduce((a, m) => a + tris(m), 0));
-    this.stats.draws = 7;
+    this.stats.triangles = Math.round(L.triangles);
+    this.stats.draws = 1;
     this.update(0, 0, { speed: 0 });
   }
 
@@ -301,7 +348,7 @@ export class Figure implements Avatar {
     if (!st) return 0;
     const dx = x - (st.cx ?? 0), dz = z - (st.cz ?? 0);
     const d = st.r != null ? Math.hypot(dx, dz) - st.r : Math.max(Math.abs(dx) - (st.hx ?? 0.39), Math.abs(dz) - (st.hz ?? 0.26));
-    return -st.h * smooth(-0.015 - 0.05 * soft, 0.05 + 0.08 * soft, d) * (1 - this.w.stand);
+    return -st.h * smooth(-0.015 - 0.05 * soft, 0.05 + 0.08 * soft, d) * Math.max(0, 1 - this.w.stand - this.w.bench);
   }
   /** 自己坐标里的一点 (x, z) 处真实地面的世界高度 */
   private groundW(x: number, z: number): number | null {
@@ -330,6 +377,8 @@ export class Figure implements Avatar {
     const trans = Math.sin(Math.PI * this.wT);
     let py = 0, pz = 0, lean = 0;
     for (const p of POSES) { py += W[p] * BASE[p].py; pz += W[p] * BASE[p].pz; lean += W[p] * BASE[p].lean; }
+    // 坐凳：凳有多高、凳心在脚后多远由 setSeat 给（不给就是默认的那只凳）
+    if (W.bench > 0.001 && this.seat) { py += W.bench * (this.seat.h - BENCH_H); pz += W.bench * ((this.seat.cz ?? BENCH_Z) - BENCH_Z); }
     lean += 0.2 * trans * (1 - Math.abs(W.stand * 2 - 1));          // 起身、蹲下的半途身子先往前探
 
     // —— 步态 ——
@@ -341,8 +390,8 @@ export class Figure implements Avatar {
     const A = this.amp * W.stand, climb = this.climbS, roll = this.rollS * W.stand;
     const run = smooth(2.2, 3.0, this.speedS);                       // 快到一定程度就是小跑：两脚有同时离地的一瞬
     const beta = lerp(0.62, 0.44, run);                              // 一步里脚着地的时间占比
-    const stepLen = clamp(0.4 + 0.19 * this.speedS, 0.36, 1.05) * (1 - 0.32 * Math.min(1, Math.abs(climb) * 2));
-    const liftH = 0.036 + 0.03 * Math.min(1, this.speedS / 1.5) + 0.05 * run + 0.13 * Math.max(0, climb);
+    const stepLen = clamp(0.4 + 0.19 * this.speedS, 0.36, 1.05) * (1 - 0.26 * Math.min(1, Math.abs(climb) * 1.6));
+    const liftH = 0.036 + 0.03 * Math.min(1, this.speedS / 1.5) + 0.05 * run + 0.07 * Math.max(0, climb);
     const FL = this.fL, FR = this.fR;
     if (moving) {
       if (!this.wasMoving) {
@@ -473,7 +522,19 @@ export class Figure implements Avatar {
     this.shapeBody(dt, swayAll, px, py, pz, yawP, roll, climb, br);
     this.shapeSleeve(1, this.arms.L); this.shapeSleeve(2, this.arms.R);
     this.shapeSock(3, this.feet.L, FL, 0); this.shapeSock(4, this.feet.R, FR, 1);
+    this.placeRigid();
     this.loft.normals(); this.loft.commit();
+  }
+
+  /** 把头、手、脚、背上的东西这几块搬到各自关节此刻的位置上 */
+  private placeRigid() {
+    const L = this.loft, a = this.arms, f = this.feet;
+    this.head.updateMatrix(); L.place(CH.head, this.head.matrix);
+    a.L.joint.updateMatrix(); L.place(CH.handL, a.L.joint.matrix);
+    a.R.joint.updateMatrix(); L.place(CH.handR, a.R.joint.matrix);
+    f.L.updateMatrix(); L.place(CH.footL, f.L.visible ? f.L.matrix : null);
+    f.R.updateMatrix(); L.place(CH.footR, f.R.visible ? f.R.matrix : null);
+    if (this.hasBack) { const c = this.joints.chest; c.updateMatrix(); this.hat.updateMatrix(); L.place(CH.back, this.m1.multiplyMatrices(c.matrix, this.hat.matrix)); }
   }
 
   /** 一只脚走一帧。pf：这只脚自己的相位（0 是脚跟着地） */
@@ -504,7 +565,7 @@ export class Figure implements Avatar {
    */
   private footY(f: Foot, pf: number, dt: number, moving: boolean, l: number, beta: number, liftH: number, climb: number) {
     const slope = f.lift + climb * f.z;
-    if (!this.ground || this.w.stand < 0.5) { f.y = slope; f.has = false; f.wasAir = f.air; f.rising = false; f.off = false; return; }
+    if (!this.ground || this.w.stand < 0.5) { f.y = slope; f.has = false; f.wasAir = f.air; f.rising = false; f.off = false; f.tilt *= Math.max(0, 1 - dt * 8); return; }
     const rootY = this.rootY, MID = 0.045;                          // 量脚心底下
     if (!f.has) { f.yw = this.groundW(f.x, f.z + MID) ?? rootY + climb * f.z; f.y0w = f.y1w = f.yw; f.has = true; }
     if (!f.air) {
@@ -514,6 +575,10 @@ export class Figure implements Avatar {
         if (g != null) f.yw = f.wasAir ? g : f.yw + (g - f.yw) * Math.min(1, dt * 14);
       }
       f.y = f.yw - rootY; f.rising = false; f.off = Math.abs(f.y) > 0.03;
+      // 脚掌贴着脚下的坡（前后各量一点；差得太多是踩在台阶的棱上，不算）
+      const g0 = this.groundW(f.x, f.z - 0.07), g1 = this.groundW(f.x, f.z + 0.15);
+      const want = g0 != null && g1 != null && Math.abs(g1 - g0) < 0.14 ? -Math.atan2(g1 - g0, 0.22) : 0;
+      f.tilt += (want - f.tilt) * Math.min(1, dt * 12);
     } else if (f.c >= 0) {
       // 停步时收脚：落到两脚并拢处的地面
       const g = this.groundW(f.x, MID) ?? rootY;
@@ -527,10 +592,21 @@ export class Figure implements Avatar {
       if (edge(f.adj) > 0.03) for (const c of EDGE_TRY) if (edge(c) <= 0.03) { f.adj = c; break; }
       f.y1w = this.groundW(f.x, zL + f.adj + MID) ?? rootY + climb * (beta * l);
       const d = f.y1w - f.y0w, k = f.k;
-      f.rising = d > 0.03;
-      const top = Math.max(f.y0w, f.y1w) + liftH + (Math.abs(d) > 0.03 ? 0.035 : 0);
-      const a = smooth(0, f.rising ? 0.26 : 0.38, k), bq = smooth(d < -0.03 ? 0.62 : 0.55, 1, k);
-      f.yw = lerp(lerp(f.y0w, top, a), f.y1w, bq);
+      // 是坡还是台阶：落脚处前后各量一下——地面是连着斜上去（斜下去）的，这一步的高差又正合这个坡度，就是坡
+      const gA = this.groundW(f.x, zL + f.adj - 0.16), gB = this.groundW(f.x, zL + f.adj + 0.2);
+      const sl = gA != null && gB != null ? (gB - gA) / 0.36 : 0;
+      const ramp = gA != null && gB != null && Math.abs(d - sl * 2 * l) < 0.08 + 0.35 * Math.abs(d);
+      f.rising = !ramp && d > 0.03;
+      if (ramp) {
+        // 坡：脚顺着坡面迈过去，上面只加平地上那一点抬脚（不像上台阶那样先高高抬起、下台阶那样悬着再落）
+        f.yw = lerp(f.y0w, f.y1w, k * k * (3 - 2 * k)) + liftH * Math.pow(Math.sin(Math.PI * k), 0.85);
+        f.tilt += (-Math.atan(sl) - f.tilt) * Math.min(1, dt * 7);
+      } else {
+        const top = Math.max(f.y0w, f.y1w) + liftH + (Math.abs(d) > 0.03 ? 0.035 : 0);
+        const a = smooth(0, f.rising ? 0.26 : 0.38, k), bq = smooth(d < -0.03 ? 0.62 : 0.55, 1, k);
+        f.yw = lerp(lerp(f.y0w, top, a), f.y1w, bq);
+        f.tilt *= Math.max(0, 1 - dt * 8);
+      }
       f.y = f.yw - rootY; f.off = Math.abs(f.y0w - rootY) > 0.03 || Math.abs(f.y1w - rootY) > 0.03;
     }
     f.wasAir = f.air;
@@ -561,6 +637,8 @@ export class Figure implements Avatar {
       if (W.kneel > 0.001) { const w = W.kneel; P.x += w * (hp.x + s * 0.105); P.y += w * (hp.y - 0.04); P.z += w * (hp.z + 0.2); D.z += w; D.y -= w * 0.3; D.x -= w * s * 0.15; N.y -= w; }
       if (W.sit > 0.001) { const w = W.sit; P.x += w * s * 0.275; P.y += w * 0.19; P.z += w * 0.135; D.z += w * 0.8; D.y -= w * 0.45; D.x += w * s * 0.35; N.y -= w; }
       if (W.crouch > 0.001) { const w = W.crouch; P.x += w * s * 0.135; P.y += w * 0.47; P.z += w * 0.24; D.z += w; D.y -= w * 0.5; N.y -= w; }
+      // 坐凳：两手平放在大腿上
+      if (W.bench > 0.001) { const w = W.bench; P.x += w * (hp.x + s * 0.105); P.y += w * (hp.y + 0.08); P.z += w * (hp.z + 0.24); D.z += w; D.y -= w * 0.1; D.x -= w * s * 0.12; N.y -= w; }
     }
   }
 
@@ -635,19 +713,20 @@ export class Figure implements Avatar {
     cur.lerp(gp.normalize(), k).normalize();
   }
 
-  private placeFoot(m: THREE.Mesh, f: Foot, b: number) {
+  private placeFoot(m: THREE.Object3D, f: Foot, b: number) {
     const W = this.w, s = f.s;
     // 站：步态给的位置；脚尖着地、脚跟抬起时把脚整体抬一点（等于绕脚尖转）
     const toe = Math.max(0, f.pitch), heel = Math.max(0, -f.pitch);
     let x = W.stand * f.x, y = W.stand * (f.y + Math.sin(toe) * 0.11 + Math.sin(heel) * 0.03), z = W.stand * (f.z - 0.004);
     // 跪：脚背贴地、脚尖朝后、脚底朝上；叩拜时臀离脚跟，脚略立起
     if (W.kneel > 0.001) { const kx = s * 0.086, kz = -0.125; x += W.kneel * kx; y += W.kneel * (0.073 + 0.012 * b + this.groundAt(kx, kz - 0.1)); z += W.kneel * kz; }
-    x += W.sit * s * 0.07 + W.crouch * s * 0.1; y += W.sit * 0.05 + W.crouch * 0.004; z += W.sit * 0.17 + W.crouch * 0.03;
+    x += W.sit * s * 0.07 + W.crouch * s * 0.1 + W.bench * s * 0.088; y += W.sit * 0.05 + W.crouch * 0.004; z += W.sit * 0.17 + W.crouch * 0.03 + W.bench * 0.012;
     m.position.set(x, y, z);
-    const qs = this.q1.setFromEuler(this.e1.set(f.pitch, s * 0.13, 0, 'YXZ'));
+    const qs = this.q1.setFromEuler(this.e1.set(f.pitch + f.tilt * W.stand, s * 0.13, 0, 'YXZ'));
     if (W.kneel > 0.001) qs.slerp(this.q2.setFromEuler(this.e1.set(Math.PI - 0.27 + 0.1 * b, s * 0.1, 0, 'YXZ')), W.kneel);
     if (W.crouch > 0.001) qs.slerp(this.q2.setFromEuler(this.e1.set(0.02, s * 0.3, 0, 'YXZ')), W.crouch);
     if (W.sit > 0.001) qs.slerp(this.q2.setFromEuler(this.e1.set(0.5, -s * 1.2, 0, 'YXZ')), W.sit);
+    if (W.bench > 0.001) qs.slerp(this.q2.setFromEuler(this.e1.set(0, s * 0.17, 0, 'YXZ')), W.bench);
     m.quaternion.copy(qs);
     const sc = 1 - 0.999 * smooth(0.3, 0.75, W.sit);
     m.scale.setScalar(sc); m.visible = sc > 0.01;
@@ -692,7 +771,7 @@ export class Figure implements Avatar {
       B.y = B.cz = B.a = B.bF = B.bB = B.rise = B.riseW = 0;
       for (const p of POSES) {
         const w = W[p]; if (w < 0.001) continue;
-        skirt(p, u, hy, hz, sk);
+        skirt(p, u, hy, hz, sk, this.hem, this.flare);
         B.y += w * sk.y; B.cz += w * (sk.cz + (p === 'stand' ? hemZ * (1 - u) : 0)); B.a += w * sk.a; B.bF += w * sk.bF; B.bB += w * sk.bB; B.rise += w * sk.rise; B.riseW += w * sk.riseW;
       }
       const cx = sway * (0.35 + 0.65 * u) + roll * (B.y - 0.09), cy = B.y, cz = B.cz;
@@ -786,8 +865,9 @@ export class Figure implements Avatar {
     const L = this.loft, P = L.pos, SS = this.segS, srs = this.srs, n = srs.length;
     const S0 = a.S, E = a.E;
     // 袖口：臂垂着时长过手腕、只露指尖；手举起来袖子就褪下去，露出手腕
-    const fore = _t.subVectors(a.W, E).normalize();
-    const ext = fore.y < 0 ? lerp(0.03, 0.125, smooth(0.15, 0.9, -fore.y)) : lerp(0.03, -0.085, smooth(0.15, 0.85, fore.y));
+    const fore = _t.subVectors(a.W, E).normalize(), full = this.sleeveK;
+    // （窄袖：袖口挽在腕上一截，不垂成袋）
+    const ext = lerp(-0.07, fore.y < 0 ? lerp(0.03, 0.125, smooth(0.15, 0.9, -fore.y)) : lerp(0.03, -0.085, smooth(0.15, 0.85, fore.y)), full);
     const cuff = this.t1.copy(a.W).addScaledVector(fore, ext);
     const c = this.t2, T = this.t3, Bd = this.t4, Av = this.t5, b = this.t6;
     const k0 = 0.35, k1 = 0.65;
@@ -816,6 +896,7 @@ export class Figure implements Avatar {
       const hang = lerp(0.072, 0.105, Math.min(1, s * 2)) + 0.105 * Math.pow(Math.max(0, s * 2 - 1), 1.3);
       let rTop = lerp(rr * 0.84, 0.043 + 0.01 * (1 - s), m), rBag = lerp(rr * 1.32 + 0.022 * s * s, hang, m), rSide = lerp(rr * 0.8, 0.05 + 0.014 * s, m);
       if (s < 0.1) { const k = s / 0.1; rBag = lerp(0.066, rBag, k); rTop = lerp(0.05, rTop, k); rSide = lerp(0.056, rSide, k); }
+      if (full < 1) rBag = lerp(Math.max(rTop, rSide) * 1.08, rBag, full);
       rTop *= R.k; rBag *= R.k; rSide *= R.k;
       for (let i = 0; i <= SS; i++) {
         const sn = this.snS[i], cs = this.csS[i];
@@ -830,7 +911,7 @@ export class Figure implements Avatar {
   }
 
   /** 袜筒：自鞋口顺着小腿的方向。站着朝膝，跪着贴地朝前，蹲着朝身前的膝；坐着收起来（盘着的腿在衣摆底下） */
-  private shapeSock(patch: number, m: THREE.Mesh, f: Foot, l: number) {
+  private shapeSock(patch: number, m: THREE.Object3D, f: Foot, l: number) {
     const L = this.loft, P = L.pos, SK = this.segK, W = this.w, s = f.s;
     let o = L.at(patch, 0, 0) * 3;
     const vis = 1 - smooth(0.3, 0.75, W.sit);
@@ -842,14 +923,25 @@ export class Figure implements Avatar {
     if (W.stand > 0.02) { K.addScaledVector(this.legK[l], W.stand); wsum += W.stand; }
     if (W.kneel > 0.001) { K.addScaledVector(_p.set(s * 0.09, 0.075, ank.z + 0.37), W.kneel); wsum += W.kneel; }
     if (W.crouch > 0.001) { K.addScaledVector(_p.set(s * 0.12, 0.43, 0.26), W.crouch); wsum += W.crouch; }
+    if (W.bench > 0.001) { const hp = this.joints.hips.position; K.addScaledVector(_p.set(s * 0.092, hp.y - 0.04, hp.z + L_TH - 0.03), W.bench); wsum += W.bench; }
     const up = this.t4.set(0, 1, 0).applyQuaternion(q), dir = this.t5;
     if (wsum > 0.01) dir.copy(K).multiplyScalar(1 / wsum).sub(ank).normalize(); else dir.copy(up);
     dir.lerp(up, 0.3 * W.stand).normalize();                    // 站着：鞋口处还顺着脚
+    // 短衣露着小腿：筒自鞋口正对着膝（三圈），最上一圈再顺着大腿往衣摆里探一截
+    const bare = this.bare, th = _p;
+    let kneeLen = 0;
+    if (bare) {
+      if (wsum > 0.01) K.multiplyScalar(1 / wsum); else K.copy(ank).addScaledVector(up, 0.37);
+      dir.subVectors(K, base); kneeLen = dir.length(); dir.multiplyScalar(1 / (kneeLen || 1));
+      if (W.stand > 0.5) th.subVectors(this.legH[l], K).normalize(); else if (W.bench > 0.5) th.set(0, 0.12, -1).normalize(); else th.copy(dir);
+    }
     const ex = this.t6.set(1, 0, 0).applyQuaternion(q); ex.addScaledVector(dir, -ex.dot(dir)).normalize();
     const ez = _q.crossVectors(ex, dir);
     const flat = W.stand < 0.98, len = 0.215 * vis;
     for (let r = 0; r < 4; r++) {
-      const t = r / 3, rad = lerp(0.041, 0.037, t) * vis, cx = base.x + dir.x * len * t, cy = base.y + dir.y * len * t, cz = base.z + dir.z * len * t;
+      const t = bare ? Math.min(1, r / 2) : r / 3, ln = bare ? kneeLen : len, up2 = bare && r === 3 ? 0.17 : 0;
+      const rad = (bare ? CALF[r] : lerp(0.041, 0.037, t)) * vis;
+      const cx = base.x + dir.x * ln * t + th.x * up2, cy = base.y + dir.y * ln * t + th.y * up2, cz = base.z + dir.z * ln * t + th.z * up2;
       for (let i = 0; i <= SK; i++) {
         const a = -Math.PI + (2 * Math.PI * i) / SK, sa = Math.sin(a) * rad, ca = Math.cos(a) * rad;
         const x = cx + ex.x * sa + ez.x * ca, z = cz + ex.z * sa + ez.z * ca;

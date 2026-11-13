@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>安乐窝 · 整景的台子</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #f1ede2; overflow: hidden; font-family: 'Noto Serif SC', serif; }
+      #stage { position: fixed; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #hud { position: fixed; left: 10px; top: 8px; color: #555; font: 12px/1.5 monospace; white-space: pre; pointer-events: none; }
+      #marks { position: fixed; inset: 0; pointer-events: none; }
+      #marks span { position: absolute; transform: translate(-50%, -50%); padding: 2px 7px; color: #2b2a28; font-size: 14px; letter-spacing: 0.2em; background: rgba(246, 243, 234, 0.72); border-radius: 2px; }
+      #marks span.near { color: #9c2f24; }
+      #act { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); color: #2b2a28; font-size: 15px; letter-spacing: 0.15em; background: rgba(246, 243, 234, 0.8); padding: 6px 14px; white-space: pre-wrap; max-width: 80vw; display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="c"></canvas></div>
+    <div id="marks"></div>
+    <div id="act"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/lab/world-lab.ts"></script>
+  </body>
+</html>

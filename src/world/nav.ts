@@ -1,15 +1,20 @@
 /**
- * 镜头，与寺里的「处」。
- *   平时：跟在行者身后上方（第三人称）。拖动绕着他转、上下看；滚轮 / 双指拉近推远；
- *        走起来而手没在转镜头时，镜头会慢慢转到他身后；被高墙挡住时把镜头收近，进了屋不会穿到顶棚上面去。
+ * 镜头，与这里的「处」。
+ *   平时：远远跟在行者身后，放得平——人只占画面下半的一小块（点景），上半留给远山与天。
+ *        拖动绕着他转（一圈三百六十度都有景）、上下看；滚轮 / 双指拉近推远；
+ *        走起来而手没在转镜头时，镜头会慢慢转到他身后；被高墙挡住时把镜头收近。
+ *   进了草堂：屋顶与南墙隐去，镜头从南面高处往里看（像看一出戏台）。
  *   做事时：活动给一个机位（pose），镜头缓缓过去，可在小范围内张望；做完再回到身后。
- *   换处（寺图上点一处、上下楼）：画面沉入墨色，人到了那里，再亮起来。
+ *   换处（村图上点一处）：画面淡成一片雾，人到了那里，再显出来。
  */
 import * as THREE from 'three';
 import type { World } from './core/World';
 import type { Player } from './player';
-import { L } from './layout';
+import { PLACES as SITE_PLACES, SITE } from './site';
 import { boom, groundAt, placeAt, type Place, type Zone } from './walk';
+
+/** 跟随时的视角（度）、俯仰（弧度）、远近（米） */
+export const FOLLOW_FOV = 42, FOLLOW_PITCH = 0.14, FOLLOW_DIST = 8;
 
 export interface PlaceDef {
   id: string;
@@ -19,25 +24,7 @@ export interface PlaceDef {
   spawn?: [number, number, number];
   zone?: Zone;
 }
-export const PLACES: PlaceDef[] = [
-  { id: 'foot', name: '山道', sub: '石阶向上，没在雾里', spawn: [0, L.stair.z1 + 3.1, Math.PI] },
-  { id: 'gate', name: '山门', sub: '入此门来', spawn: [0, 53.6, Math.PI] },
-  { id: 'court', name: '石桥', sub: '一池，一桥，一殿', spawn: [0, 39.8, Math.PI] },
-  { id: 'pond', name: '莲池', sub: '水静则明', spawn: [-7.4, 39.3, 2.6] },
-  { id: 'censer', name: '香炉', sub: '一炷清香', spawn: [0, L.censer.z + 3.6, Math.PI] },
-  { id: 'tree', name: '银杏', sub: '叶落归根', spawn: [-7.3, 10.8, -2.36] },
-  // 上了楼站在朝院子的那一侧（西 / 东），离钟、鼓两步
-  { id: 'bell', name: '钟楼', sub: '晨钟', spawn: [L.bell.x - 1.6, L.bell.z + 0.6, Math.PI / 2], zone: 'bell' },
-  { id: 'drum', name: '鼓楼', sub: '暮鼓', spawn: [L.drum.x + 1.6, L.drum.z + 0.6, -Math.PI / 2], zone: 'drum' },
-  { id: 'steps', name: '殿前', sub: '月台之上', spawn: [0, 5.9, Math.PI] },
-  { id: 'hall', name: '大殿', sub: '如是', spawn: [0, 2.7, Math.PI] },
-  { id: 'study', name: '经房', sub: '一灯，一案，一卷', spawn: [L.study.x + 1.3, L.study.z, -Math.PI / 2] },
-  { id: 'tea', name: '茶寮', sub: '吃茶去', spawn: [L.tea.x - 1.4, L.tea.z + 1.2, Math.PI / 2] },
-  { id: 'terrace', name: '云台', sub: '行到水穷处，坐看云起时', spawn: [31.4, L.terrace.cz, Math.PI / 2] },
-  // 走得到、但不在寺图上的地方
-  { id: 'yard', name: '庭院', sub: '粉墙，黛瓦，一地天光' },
-  { id: 'back', name: '后院', sub: '竹在墙根' },
-];
+export const PLACES: PlaceDef[] = SITE_PLACES.map((p) => ({ id: p.id, name: p.name, sub: p.note, spawn: p.spawn }));
 export const PLACE = new Map(PLACES.map((p) => [p.id, p]));
 
 export interface Pose { pos: THREE.Vector3; look: THREE.Vector3; fov?: number; yaw?: number; up?: number; down?: number }
@@ -48,23 +35,25 @@ const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ?
 
 export class Nav {
   /** 人此刻在哪一处 */
-  place: Place = placeAt(0, 90, 'ground');
+  place: Place = placeAt(SITE.entry.x, SITE.entry.z);
   get cur() { return this.place.id; }
   /** 正在换处（画面暗着） */
   busy = false;
   onPlace: ((id: string) => void) | null = null;
   /** 跟随：绕人的方位、俯仰、远近（都是目标值，另有平滑后的） */
-  yaw = 0; pitch = 0.3; dist = 5.2;
-  private yawS = 0; private pitchS = 0.3; private distS = 5.2; private boomS = 1;
+  yaw = 0; pitch = FOLLOW_PITCH; dist = FOLLOW_DIST;
+  private yawS = 0; private pitchS = FOLLOW_PITCH; private distS = FOLLOW_DIST; private boomS = 1;
+  /** 人在草堂里（屋顶、南墙已隐去）：镜头不必躲墙、不必钻在屋檐下 */
+  open = false;
   private tgt = new THREE.Vector3(); private inited = false;
   private idle = 9;
   /** 镜头贴得太近，人暂时不画 */
   private hid = false;
   // 机位
   private pose: Pose | null = null; private poseK = 1; private poseDur = 1.2; private poseOut = false;
-  private from = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 50 };
+  private from = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: FOLLOW_FOV };
   private offYaw = 0; private offPitch = 0; private offYawG = 0; private offPitchG = 0; private zoom = 0; private zoomG = 0;
-  private pos = new THREE.Vector3(); private look = new THREE.Vector3(); private fov = 50;
+  private pos = new THREE.Vector3(); private look = new THREE.Vector3(); private fov = FOLLOW_FOV;
   private fpos = new THREE.Vector3(); private flook = new THREE.Vector3();
   private tmp = new THREE.Vector3();
   /** 画面压黑（0…1） */
@@ -82,7 +71,7 @@ export class Nav {
   get camYaw() { return this.yawS; }
 
   /** 把镜头直接摆到人的身后（换处之后） */
-  snapBehind(pitch = 0.3, dist = 5.2) {
+  snapBehind(pitch = FOLLOW_PITCH, dist = FOLLOW_DIST) {
     this.yaw = this.yawS = wrap(this.player.yaw + Math.PI);
     this.pitch = this.pitchS = pitch; this.dist = this.distS = dist; this.boomS = 1;
     this.inited = false; this.pose = null; this.poseOut = false; this.poseK = 1;
@@ -100,7 +89,7 @@ export class Nav {
       if (!this.pose) return;
       this.poseOut = true; this.poseK = 0; this.poseDur = dur;
       // 回到身后时别从很怪的角度绕回来：就取人此刻的背后
-      this.yaw = this.yawS = wrap(this.player.yaw + Math.PI); this.pitch = this.pitchS = 0.3; this.boomS = 1;
+      this.yaw = this.yawS = wrap(this.player.yaw + Math.PI); this.pitch = this.pitchS = this.open ? 0.62 : FOLLOW_PITCH; this.boomS = 1;
       return;
     }
     this.pose = p; this.poseOut = false; this.poseK = 0; this.poseDur = dur;
@@ -110,24 +99,24 @@ export class Nav {
   drag(dx: number, dy: number) {
     if (this.busy) return;
     if (this.pose && !this.poseOut) {
-      const k = (this.fov / 50) * 0.11, p = this.pose;
+      const k = (this.fov / FOLLOW_FOV) * 0.11, p = this.pose;
       this.offYawG = Math.max(-(p.yaw ?? 12), Math.min(p.yaw ?? 12, this.offYawG + dx * k));
       this.offPitchG = Math.max(-(p.down ?? 8), Math.min(p.up ?? 8, this.offPitchG + dy * k));
       return;
     }
     this.yaw = wrap(this.yaw - dx * 0.0052);
-    this.pitch = Math.max(-0.16, Math.min(1.2, this.pitch + dy * 0.0042));
+    this.pitch = Math.max(-0.12, Math.min(1.15, this.pitch + dy * 0.0042));
     this.idle = 0;
   }
   wheel(dy: number) {
     if (this.pose && !this.poseOut) { this.zoomG = Math.max(0, Math.min(1, this.zoomG - dy * 0.0012)); return; }
-    this.dist = Math.max(1.9, Math.min(11, this.dist * Math.exp(dy * 0.0011)));
+    this.dist = Math.max(2.2, Math.min(18, this.dist * Math.exp(dy * 0.0011)));
     this.idle = 0;
   }
   /** 键盘转镜头（Q / E、左右方向键）：rate 是弧度/秒，正为往右转 */
   turn(rate: number, dt: number) { if (this.busy || (this.pose && !this.poseOut)) return; this.yaw = wrap(this.yaw - rate * dt); this.idle = 0; }
   /** 双指：scale > 1 是张开（拉近） */
-  pinch(scale: number) { this.dist = Math.max(1.9, Math.min(11, this.dist / scale)); this.idle = 0; }
+  pinch(scale: number) { this.dist = Math.max(2.2, Math.min(18, this.dist / scale)); this.idle = 0; }
 
   /** 画面沉入墨色 → 做 fn（把人放到别处）→ 再亮起来 */
   travel(fn: () => void): Promise<void> {
@@ -157,7 +146,7 @@ export class Nav {
     // 走着、手又没在转镜头：镜头慢慢转到身后（迎着镜头走时不转，免得天旋地转）
     this.idle += dt;
     // 跟得要慢：横着走时镜头若跟得急，「左」就一直在变，人会绕起圈来
-    if (p.moving && this.idle > 1.4 && !p.locked) {
+    if (p.moving && this.idle > 1.4 && !p.locked && !this.open) {
       const d = wrap(p.yaw + Math.PI - this.yaw);
       if (Math.abs(d) < 2.2) this.yaw = wrap(this.yaw + d * Math.min(1, dt * 0.3) * Math.min(1, p.speed / 1.6));
     }
@@ -166,7 +155,7 @@ export class Nav {
     this.distS += (this.dist - this.distS) * sm(8);
     const cp = Math.cos(this.pitchS), dx = Math.sin(this.yawS) * cp, dy = Math.sin(this.pitchS), dz = Math.cos(this.yawS) * cp;
     // 被高墙挡住就收近（收得快、放得慢）
-    const want = boom(this.tgt.x, this.tgt.z, this.tgt.x + dx * this.distS, this.tgt.z + dz * this.distS, p.zone);
+    const want = this.open ? 1 : boom(this.tgt.x, this.tgt.z, this.tgt.x + dx * this.distS, this.tgt.z + dz * this.distS, p.zone);
     this.boomS += (want - this.boomS) * (want < this.boomS ? sm(30) : sm(2.2));
     // 背后就是墙时镜头可以贴得很近（宁可贴近，不进墙）；近到快碰着头了，就不画人（像是从他眼里看出去）
     const d = this.boomS < 0.999 ? Math.max(0.4, this.distS * this.boomS - 0.3) : this.distS;
@@ -175,12 +164,15 @@ export class Nav {
     } else if (this.hid) { this.hid = false; p.setVisible(true); }
     // 屋里别穿到顶棚上面去；屋外别钻到地下
     let y = this.tgt.y + dy * d;
-    if (y > this.place.ceil - 0.2) y = this.place.ceil - 0.2;
+    if (!this.open && y > this.place.ceil - 0.2) y = this.place.ceil - 0.2;
     const cx = this.tgt.x + dx * d, cz = this.tgt.z + dz * d;
     const g = groundAt(cx, cz, p.zone);
     if (g != null && y < g + 0.34) y = g + 0.34;
     this.fpos.set(cx, y, cz);
-    this.flook.copy(this.tgt); this.flook.y += 0.12 + 0.1 * (1 - Math.min(1, d / 3));
+    // 看的那一点比头高一些（越远抬得越多）：人落在画面下半，上半是远山与天
+    // （竖屏画幅高：少抬一些，天不至于空掉半幅）
+    const lift = this.world.camera.aspect < 1 ? 0.035 : 0.075;
+    this.flook.copy(this.tgt); this.flook.y += 0.1 + lift * d * (1 - Math.min(1, Math.max(0, this.pitchS - 0.2) / 0.5));
   }
 
   update(dt: number, t: number) {
@@ -200,11 +192,11 @@ export class Nav {
       const k = ease5(this.poseK);
       const tp = this.poseOut ? this.fpos : this.pose.pos, tl = this.poseOut ? this.flook : this.pose.look;
       this.pos.lerpVectors(this.from.pos, tp, k); this.look.lerpVectors(this.from.look, tl, k);
-      this.fov = this.from.fov + ((this.poseOut ? 50 : this.pose.fov ?? 44) - this.from.fov) * k;
+      this.fov = this.from.fov + ((this.poseOut ? FOLLOW_FOV : this.pose.fov ?? 40) - this.from.fov) * k;
       if (this.poseOut && this.poseK >= 1) { this.pose = null; this.poseOut = false; }
     } else {
       this.pos.copy(this.fpos); this.look.copy(this.flook);
-      this.fov += (50 - this.fov) * Math.min(1, dt * 4);
+      this.fov += (FOLLOW_FOV - this.fov) * Math.min(1, dt * 4);
     }
     this.apply(t);
   }

@@ -117,7 +117,7 @@ export class Chant extends Base {
       // 一遍的开头：先一声磬，隔两拍起腔
       if (this.phrase === 0 && this.inPhrase === 0 && o.bowl && !this.rang && !this.recorded) {
         this.rang = true;
-        this.e.voice('bowl', { vel: 0.45 }, t, { dry: this.fishIn }, { dry: 1, hall: 0, open: 0 });
+        this.e.voice('qing', { vel: 0.45 }, t, { dry: this.fishIn }, { dry: 1, hall: 0, open: 0 });
         this.next = t + beat * 2;
         continue;
       }
@@ -125,7 +125,7 @@ export class Chant extends Base {
       const last = this.inPhrase >= phrases[this.phrase] - 1;
       if (!this.recorded) {
         this.sing(t, beat, XINJING_SYLLABLES[this.i % XINJING_SYLLABLES.length], last);
-        if (o.fish) this.e.voice('muyu', { vel: 0.3, pitch: 0.8 }, t, { dry: this.fishIn }, { dry: 1, hall: 0, open: 0 });
+        if (o.fish) this.e.voice('muyu', { vel: 0.3, rate: 0.8 }, t, { dry: this.fishIn }, { dry: 1, hall: 0, open: 0 });
       }
       this.e.onSyllable?.(this.i, t);
       this.i++; this.inPhrase++;

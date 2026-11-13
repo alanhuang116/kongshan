@@ -4,7 +4,7 @@
  * uv 以「米」为单位（一个单位 = 一米），木纹的走向沿 v；color 是顶点色，用来做暗角、旧、脏（乘在材质色上）。
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from './rng';
 
 export type Geo = THREE.BufferGeometry;
@@ -235,7 +235,9 @@ export function colorize(g: Geo, fn: (x: number, y: number, z: number, nx: numbe
 }
 /** 一块石头：二十面体细分后用噪声挤一挤。sx/sy/sz 是三个方向的半径 */
 export function rockGeo(seed: number, sx: number, sy: number, sz: number, detail = 2): Geo {
-  const g0 = new THREE.IcosahedronGeometry(1, detail);
+  const raw = new THREE.IcosahedronGeometry(1, detail);
+  raw.deleteAttribute('normal'); raw.deleteAttribute('uv');
+  const g0 = mergeVertices(raw, 1e-4);
   const p = g0.attributes.position as THREE.BufferAttribute;
   const h = (x: number, y: number, z: number) => { const v = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 4.1) * 43758.5453; return v - Math.floor(v); };
   const n3 = (x: number, y: number, z: number) => {

@@ -1,12 +1,112 @@
-/* 做事时的界面：上面一行名字与计数，下面一句提示，右下一枚「毕」。 */
-.act { position: absolute; inset: 0; pointer-events: none; animation: rise 1.2s var(--out) backwards; transition: opacity 1.2s; }
-.act > * { pointer-events: auto; }
-.act-head, .act-hint, .act-done { transition: opacity 1.2s, transform 0.3s var(--out), border-color 0.3s; }
-.act.is-quiet .act-head, .act.is-quiet .act-hint, .act.is-quiet .act-done { opacity: 0; pointer-events: none; }
-.act-head { position: absolute; left: calc(var(--sal) + clamp(16px, 2.4vw, 30px)); top: calc(var(--sat) + clamp(16px, 2.6vh, 28px)); display: flex; flex-direction: row-reverse; gap: 12px; align-items: flex-start; pointer-events: none; }
-.act-head h3 { writing-mode: vertical-rl; font-size: clamp(20px, 2.7vh, 25px); letter-spacing: 0.46em; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.6); }
-.act-count { writing-mode: vertical-rl; font-family: var(--kai); font-size: 14px; letter-spacing: 0.36em; color: var(--moon-2); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); padding-top: 3px; }
-.act-hint { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(28px, 6.5vh, 64px)); text-align: center; font-family: var(--kai); font-size: clamp(15px, 2vh, 17px); letter-spacing: 0.42em; text-indent: 0.42em; color: var(--moon); text-shadow: 0 1px 12px rgba(0, 0, 0, 0.85), 0 0 3px rgba(0, 0, 0, 0.5); pointer-events: none; animation: rise 0.9s var(--out) backwards; padding: 0 76px; }
-.act-done { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 28px)); bottom: calc(var(--sab) + clamp(16px, 3.2vh, 34px)); width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; color: var(--moon); border: 1px solid var(--hair); background: var(--glass); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 -1px 0 rgba(0, 0, 0, 0.3) inset, 0 8px 20px rgba(0, 0, 0, 0.26); transition: transform 0.3s var(--out), border-color 0.3s; }
-@media (hover: hover) { .act-done:hover { transform: translateY(-2px); border-color: var(--gold-2); } }
+/* 做事时的界面：左上是这件事的名字，下面一句提示，右下一枚「毕」；有话、有象、有签时旁边出一块面板。
+   这一层自己不接指针（天上的星、琴弦、炉火照常点得到）；只有面板与右下那一枚接。 */
+.act { position: absolute; inset: 0; pointer-events: none; animation: fade 1s var(--out) backwards; }
+
+/* 名字：与处名一样，竖写在左上角 */
+.act-head { position: absolute; left: calc(var(--sal) + clamp(20px, 3vw, 44px)); top: calc(var(--sat) + clamp(20px, 3.6vh, 40px)); display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 9px; animation: rise 1.2s var(--out) backwards; }
+.act-head h3 { position: relative; writing-mode: vertical-rl; font-family: var(--brush); font-size: clamp(24px, 3.3vh, 31px); line-height: 1.1; letter-spacing: 0.2em; padding-top: 15px; }
+.act-head h3.is-kai { font-family: var(--kai); font-size: clamp(21px, 2.9vh, 27px); }
+.act-head h3::before { content: ''; position: absolute; left: 50%; top: 0; width: 5px; height: 5px; margin-left: -2.5px; background: var(--zhu); border-radius: 1px; }
+.act-head p { writing-mode: vertical-rl; font-family: var(--kai); font-size: 14px; letter-spacing: 0.3em; color: var(--ink); padding-top: 17px; }
+
+/* 提示：下面当中的一枚薄签 */
+.act-foot { display: grid; justify-items: center; gap: 9px; padding: 9px 18px 10px; border-radius: 2px; background: var(--glass-2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); max-width: min(560px, calc(100vw - 32px)); transition: opacity 1.6s var(--out); animation: rise 0.9s var(--out) backwards; }
+.act-foot.is-faded { opacity: 0; }
+.act-hint { font-family: var(--kai); font-size: clamp(14.5px, 2vh, 16px); line-height: 1.75; letter-spacing: 0.16em; text-align: center; text-wrap: balance; color: var(--ink); }
+/* 进度：一道慢慢写过去的墨线 */
+.act-bar { display: block; width: 132px; height: 1px; background: var(--rule); }
+.act-bar b { display: block; height: 100%; background: var(--ink); transform-origin: left center; transition: transform 0.4s linear; }
+/* 只是看着的时候：单独的一道极细的线，贴着下边 */
+.act-bar.is-bare { position: absolute; left: 50%; bottom: calc(var(--sab) + clamp(20px, 4.4vh, 44px)); width: min(180px, 40vw); margin-left: calc(min(180px, 40vw) / -2); background: var(--rule); box-shadow: 0 0 6px var(--wash); animation: fade 1.6s backwards; }
+
+/* 右下那一枚：「毕」，或那件事自己的「罢」「起身」 */
+.act-done { position: absolute; right: calc(var(--sar) + clamp(16px, 2.4vw, 30px)); bottom: calc(var(--sab) + clamp(18px, 3.6vh, 36px)); min-width: 48px; height: 48px; padding: 0 15px; border-radius: 24px; display: grid; place-items: center; pointer-events: auto; font-family: var(--kai); font-size: 16px; letter-spacing: 0.12em; white-space: nowrap; background: var(--glass-2); border-color: var(--rule); transition: transform 0.3s var(--out), border-color 0.3s, background-color 0.3s, color 0.3s, opacity 1.2s; }
+.act-done.is-done { border-color: var(--zhu); color: var(--zhu); }
+.act.is-quiet .act-done { opacity: 0.55; }
+@media (hover: hover) { .act-done:hover, .act.is-quiet .act-done:hover { transform: translateY(-2px); background: var(--ink); border-color: var(--ink); color: var(--paper); opacity: 1; } }
 .act-done:active { transform: translateY(1px) scale(0.96); }
+
+/* —— 面板 —— */
+.panel { pointer-events: auto; display: flex; flex-direction: column; background: var(--glass-2); backdrop-filter: blur(20px) saturate(1.05); -webkit-backdrop-filter: blur(20px) saturate(1.05); border: 1px solid var(--rule-2); border-radius: 2px; box-shadow: 0 16px 40px var(--lift); overflow: hidden; animation: rise 0.9s var(--out) backwards; }
+/* 里头放不下就在里头滚；下沿淡出去（看得出下面还有），不是齐刷刷地切断 */
+.panel-body { flex: 1 1 auto; min-height: 0; display: grid; gap: 14px; padding: 22px 24px 20px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; touch-action: pan-y; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); }
+.panel-who { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.3em; color: var(--ink-2); padding-bottom: 9px; border-bottom: 1px solid var(--rule-2); }
+.panel-text { animation: fade 0.7s backwards; }
+.panel-text > div { display: grid; gap: 7px; }
+.panel-text p { font-family: var(--kai); font-size: 16px; line-height: 1.95; letter-spacing: 0.07em; text-wrap: pretty; user-select: text; -webkit-user-select: text; }
+/* 八卦盘：话的左边是那一卦的三画 */
+.panel-text.has-tri { display: flex; align-items: flex-start; gap: 18px; }
+.panel-text.has-tri .gua { width: 44px; flex: none; margin-top: 8px; }
+.panel-source { font-size: 12.5px; line-height: 1.7; letter-spacing: 0.06em; color: var(--ink-2); text-align: right; margin-top: -5px; text-wrap: balance; }
+.panel-gloss { font-size: 13.5px; line-height: 1.95; letter-spacing: 0.04em; color: var(--ink-2); text-align: justify; padding-top: 12px; border-top: 1px solid var(--rule-2); user-select: text; -webkit-user-select: text; }
+.panel-found { position: relative; font-size: 12.5px; letter-spacing: 0.1em; color: var(--ink-2); padding-left: 14px; }
+.panel-found::before { content: ''; position: absolute; left: 1px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; background: var(--zhu); border-radius: 1px; }
+.panel-acts { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+.panel .act-bar { width: 100%; }
+/* 诗：五言七言竖写，自右而左；别的一行一行横排。行多了字就小一号，总放得下 */
+.verse { font-family: var(--brush); font-size: 25px; line-height: 1.75; letter-spacing: 0.12em; color: var(--ink); text-align: center; user-select: text; -webkit-user-select: text; }
+.verse.is-kai { font-family: var(--kai); font-size: 21px; }
+.verse span { display: block; }
+/* （竖写的一行有多长就占多高：面板矮、要滚的时候也不把一句诗折成几列） */
+.verse.is-tall { writing-mode: vertical-rl; justify-self: center; inline-size: max-content; line-height: 1.85; letter-spacing: 0.2em; text-align: start; }
+.verse.is-tall span { white-space: nowrap; }
+.verse.is-tall.verse-m { font-size: 23px; }
+.verse.is-tall.verse-s { font-size: 21px; line-height: 1.8; }
+.verse.is-tall.verse-xs { font-size: 18px; line-height: 1.72; }
+.verse.is-tall.is-kai.verse-l, .verse.is-tall.is-kai.verse-m { font-size: 20px; }
+.verse.is-tall.is-kai.verse-s { font-size: 18.5px; }
+.verse.is-tall.is-kai.verse-xs { font-size: 16.5px; }
+/* 方才亲手写的那两句：是自己的笔迹 */
+.panel-piece { display: grid; justify-items: center; gap: 8px; }
+.panel-piece img { display: block; max-width: 100%; max-height: min(42vh, 330px); border: 1px solid rgba(30, 28, 26, 0.14); }
+:root[data-tone='night'] .panel-piece img { filter: brightness(0.86); }
+.panel-link { font-size: 12.5px; letter-spacing: 0.12em; color: var(--ink-2); padding: 6px 4px; border-bottom: 1px solid var(--rule); transition: color 0.3s, border-color 0.3s; }
+@media (hover: hover) { .panel-link:hover { color: var(--ink); border-color: var(--ink-3); } }
+
+/* 宽屏：面板靠右居中，提示在下面当中（人被取景让到左边，见 ActLayer） */
+@media (min-width: 760px) and (min-aspect-ratio: 23/20) {
+  .act-main { display: contents; }
+  .act-foot { position: absolute; left: 50%; bottom: calc(var(--sab) + clamp(24px, 5.6vh, 56px)); transform: translateX(-50%); animation-name: rise-x; }
+  .act.has-panel .act-foot { left: 36%; }
+  .panel { position: absolute; right: calc(var(--sar) + clamp(24px, 5.6vw, 104px)); top: 50%; transform: translateY(-50%); width: min(396px, 40vw); max-height: calc(100dvh - 40px - var(--sat) - var(--sab)); animation-name: panel-in; }
+  /* 面板高得快顶到底时，右下那一枚别压着它：面板让到那一枚的左边去 */
+  .act.has-panel:not(.no-done) .panel { max-height: calc(100dvh - 176px - var(--sat) - var(--sab)); }
+  @keyframes panel-in { from { opacity: 0; transform: translateY(calc(-50% + 8px)); } to { opacity: 1; transform: translateY(-50%); } }
+}
+/* 屋矮（横着的手机）：面板、纸让到右下那一枚的左边，上下就可以顶满 */
+@media (min-width: 760px) and (min-aspect-ratio: 23/20) and (max-height: 520px) {
+  .panel, .act.has-panel:not(.no-done) .panel { right: calc(var(--sar) + 80px); max-height: calc(100dvh - 20px - var(--sat) - var(--sab)); }
+  .act.no-done .panel { right: calc(var(--sar) + 24px); }
+}
+/* 竖屏：面板在下，提示在它底下；右下那一枚与提示同一行，提示给它让出地方 */
+@media (max-width: 759.98px), not all and (min-aspect-ratio: 23/20) {
+  .act-main { position: absolute; left: calc(var(--sal) + 12px); right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 16px); display: grid; justify-items: center; gap: 10px; }
+  .panel { width: 100%; max-height: min(52dvh, 470px); }
+  .panel-body { padding: 18px 20px 16px; }
+  .act-foot { max-width: calc(100% - 148px); min-height: 48px; align-content: center; }
+  .act.no-done .act-foot { max-width: 100%; }
+  .act-done { bottom: calc(var(--sab) + 16px); right: calc(var(--sar) + 12px); }
+  /* 面板底下没有提示、右下那一枚又在：给它留出一行 */
+  .act.has-panel:not(.no-done):not(.has-foot) .panel { margin-bottom: 58px; }
+  /* 做着还能走动的事（浇菊）：摇杆在左下，提示挪到它上面 */
+  .act.is-free.is-touch .act-main { bottom: calc(var(--sab) + clamp(150px, 26vh, 210px)); }
+  .act-bar.is-bare { bottom: calc(var(--sab) + 40px); }
+  .xiang-top .gua { width: 62px; }
+  .xiang-name h4 { font-size: 40px; }
+  .verse { font-size: 23px; }
+  .verse.is-tall.verse-m { font-size: 22px; }
+  .verse.is-tall.verse-s { font-size: 20px; }
+  .verse.is-tall.verse-xs { font-size: 17px; }
+}
+@media (max-height: 460px) {
+  .panel-body { padding: 14px 20px 14px; gap: 10px; }
+  .xiang { gap: 9px; }
+  .xiang-top .gua { width: 54px; }
+  .xiang-name h4 { font-size: 34px; }
+  .xiang-image { font-size: 15px; line-height: 1.7; }
+  .xiang-gloss { font-size: 12.5px; line-height: 1.75; }
+  .panel-text p { font-size: 15px; line-height: 1.8; }
+  .verse.is-tall { font-size: 20px; line-height: 1.7; letter-spacing: 0.14em; }
+  .verse.is-tall.verse-s, .verse.is-tall.verse-xs { font-size: 17px; }
+  .act-head p { display: none; }
+}

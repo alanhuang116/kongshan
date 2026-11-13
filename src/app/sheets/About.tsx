@@ -1,44 +1,37 @@
-import { QUOTES } from '../../data/verses';
+import { WORDS } from '../texts';
+import Sheet from './Sheet';
 
-/** 缘起：这座寺是什么、不是什么。经文与典故的出处、核对记录见 docs/SOURCES.md。 */
+/**
+ * 关于：这里是什么（WORDS.about）；另起一节、分得清清楚楚地说哪些是古人的原话、哪些是本应用自己的话（WORDS.honest）；
+ * 再是怎么做出来的与用到的东西。文字在 src/data/talk.ts。
+ */
 export default function About() {
   return (
-    <article className="about">
-      <section>
-        <h4><i>壹</i>空山</h4>
-        <p className="lead">「{QUOTES.motto.lines.join('，')}。」——{QUOTES.motto.by}{QUOTES.motto.from}</p>
-        <p>这是一座没有人的寺。没有香客，没有知客僧，也没有谁在看着你。山门开着，香炉里有余烟，殿里的灯还亮着，像是刚刚有人离开。</p>
-        <p>走进来的是一位行者：月白的长衫，背后一顶斗笠。他就是你——往哪里走、在哪里停下，都由你。</p>
-        <p>你可以上一炷香、拜三拜、敲一会儿木鱼、把一串念珠数完、在云台坐到一炷香烧尽、撞一声钟、抄几个字、放一盏灯。也可以什么都不做，找个地方待着。</p>
-      </section>
-      <section>
-        <h4><i>贰</i>不计功德</h4>
-        <p className="lead">{QUOTES.noMerit.text}——{QUOTES.noMerit.from}</p>
-        <p>所以这里没有「功德 +1」，没有连续签到，没有等级。功课簿上只记数：几声、几颗、几分钟。数是给自己看的，看过也可以清掉。</p>
-        <p>殿里那只签筒也不问吉凶。摇出来的是一则古人的话——禅门的偈、经里的句、唐人的诗、老庄与孔孟——和一句留给你自己想的话。古人的话逐字核对过出处；那句问话是本应用写的，不是古人说的。</p>
-      </section>
-      <section>
-        <h4><i>叁</i>这座寺</h4>
-        <p>寺取唐代的气象：朱柱白壁，直棂窗，板门上一排排门钉；屋檐伸得很远、翘得很缓，正脊两头是鸱尾；斗栱硕大，柱与柱之间用人字栱（北朝到盛唐的式样）。现存的唐代木构只有五台山南禅寺大殿（782 年）、佛光寺东大殿（857 年）等寥寥几座，这里取的是它们的气象，不是哪一座的复原。</p>
-        <p>殿前正中一座石灯，取唐代燃灯塔的形制；远处那座塔是密檐式的，学的是小雁塔。东钟西鼓、晨钟暮鼓是后世丛林的通例——唐代的钟楼对面多是经楼——这里从了通例。</p>
-        <p>殿里大磬在东、木鱼在西；上香先中、再右、再左；这些都只是通行的做法，各处丛林不尽相同。「一炷香」在禅堂里也没有固定的长短，这里的五分、十分、一刻是本应用自己的设定。</p>
-        <p>四时的草木、月的盈亏跟着你那里的日历走。每一根柱、每一垄瓦、每一缕烟、每一声钟都是程序现算出来的，没有一张照片、一段录音。</p>
-      </section>
-      <section>
-        <h4><i>肆</i>几句原话</h4>
-        <p className="lead">{QUOTES.bell108.text}——{QUOTES.bell108.from}</p>
-        <p className="lead">{QUOTES.fish.text}——{QUOTES.fish.from}</p>
-        <p className="lead">{QUOTES.beadsTurn.text}——{QUOTES.beadsTurn.from}</p>
-        <p>撞钟一百零八下、木鱼的由来、念珠数到母珠要掉头，依的是这几句。《心经》用的是玄奘译的流通本，二百六十字，与大正藏本逐字对过。</p>
-      </section>
-      <section>
-        <h4><i>伍</i>只在这台设备上</h4>
-        <p>没有账号，不联网存任何东西。你写在灯上的愿、抄过的字、坐过的时间，只留在这台设备的浏览器里，清掉浏览器数据就没有了。</p>
-      </section>
-      <section>
-        <h4><i>陆</i>一点提醒</h4>
-        <p>这不是一座真的寺院，也不替代任何道场与仪轨。如果你正经历很难的时候，请去找一个真实的人说说话。</p>
-      </section>
-    </article>
+    <Sheet title="关于" wide>
+      <article className="about">
+        <section>
+          <h4><i>壹</i>{WORDS.title}</h4>
+          <p className="lead">{WORDS.subtitle}</p>
+          {WORDS.about.map((p, i) => <p key={i}>{p}</p>)}
+        </section>
+        <section className="about-honest">
+          <h4><i>贰</i>哪些是原话</h4>
+          {WORDS.honest.map((p, i) => <p key={i}>{p}</p>)}
+        </section>
+        <section>
+          <h4><i>叁</i>都是现画、现算的</h4>
+          <p>这里的每一座山、每一株桃、每一间屋、每一个人，都是程序一笔一笔现画出来的；每一声溪水、鸟鸣、鸡犬与读书声，都是现算出来的。没有一张照片、一个现成的模型、一张贴图、一段录音。</p>
+          <p>画法学的是浅绛与小青绿山水：近处淡彩，远景水墨，天与水留白。</p>
+        </section>
+        <section>
+          <h4><i>肆</i>只在这台设备上</h4>
+          <p>没有账号，不联网存任何东西。起居注、观象册、写过的字、天时与声音的偏好，都只留在这台设备的浏览器里。</p>
+        </section>
+        <section>
+          <h4><i>伍</i>用到的</h4>
+          <p>字：马善政毛笔楷书、霞鹜文楷、思源宋体。画：three.js。历：lunar-javascript（农历与节气）。界面：React。</p>
+        </section>
+      </article>
+    </Sheet>
   );
 }

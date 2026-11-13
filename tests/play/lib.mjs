@@ -19,7 +19,7 @@ export async function open(browser, q = {}, o = {}) {
   const logs = [];
   page.on('console', (m) => { if (m.type() === 'error' || (m.type() === 'warning' && !/GPU stall|ReadPixels/.test(m.text()))) logs.push(`[${m.type()}] ${m.text().slice(0, 500)}`); });
   page.on('pageerror', (e) => logs.push(`[pageerror] ${String(e.stack ?? e.message).slice(0, 900)}`));
-  const params = new URLSearchParams({ auto: '1', t: 'day', w: 'clear', season: 'autumn', q: 'mid', ...q });
+  const params = new URLSearchParams({ auto: '1', t: 'day', w: 'clear', season: 'spring', q: 'mid', ...q });
   await page.goto(BASE + '?' + params.toString(), { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 120000 });
   await page.waitForTimeout(o.wait ?? 600);

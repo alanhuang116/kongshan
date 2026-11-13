@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Kongshan } from '../Kongshan';
+import type { Anlewo } from '../Anlewo';
 import type { Spot } from './types';
 
 /** 临界阻尼附近的弹簧：x 追 goal。k 越大越快，z 是阻尼比（<1 会过冲一点） */
@@ -84,4 +84,4 @@ export const behind = (c: { x: number; z: number }, yaw: number, back: number): 
 /** 蒲团后面站多远；拜垫后面站多远、跪下后 root（膝下的面）在垫心之后多少 */
 export const ZAFU_BACK = 0.44, KNEEL_BACK = 0.42, KNEEL_ROOT = 0.36;
 /** 人的常用几个量 */
-export const who = (k: Kongshan) => k.player.av;
+export const who = (k: Anlewo) => k.player.av;
