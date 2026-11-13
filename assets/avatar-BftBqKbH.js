@@ -1,0 +1,1 @@
+import{F as o}from"./figure-CEKjp9gu.js";import{S as c}from"./figure-CEKjp9gu.js";import"./index-DhJsi2Nk.js";import"./react-BpaniaUk.js";import"./three-CRx9R-PO.js";import"./brush-CoACQ7Vi.js";function n(r,t){return new o(r,t)}export{o as Figure,c as SCHOLAR,n as createAvatar};
