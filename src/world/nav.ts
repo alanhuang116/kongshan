@@ -3,6 +3,7 @@
  *   平时：远远跟在行者身后，放得平——人只占画面下半的一小块（点景），上半留给远山与天。
  *        拖动绕着他转（一圈三百六十度都有景）、上下看；滚轮 / 双指拉近推远；
  *        走起来而手没在转镜头时，镜头会慢慢转到他身后；被高墙挡住时把镜头收近。
+ *        跑起来镜头稍退、视野略宽、跟得紧些（人不会冲到画面边上去）；停下来再慢慢回去。都是缓的，不晕、不抖。
  *   进了草堂：屋顶与南墙隐去，镜头从南面高处往里看（像看一出戏台）。
  *   做事时：活动给一个机位（pose），镜头缓缓过去，可在小范围内张望；做完再回到身后。
  *   换处（村图上点一处）：画面淡成一片雾，人到了那里，再显出来。
@@ -33,6 +34,9 @@ const ease5 = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
 
+/** 抬头看天：俯仰能往下拖到多少（平时最低 −0.12）；仰到底时镜头离人多远、视线仰角多大 */
+const UP_MIN = -0.75, UP_DIST = 1.8, UP_EL = 0.92;
+
 export class Nav {
   /** 人此刻在哪一处 */
   place: Place = placeAt(SITE.entry.x, SITE.entry.z);
@@ -47,6 +51,8 @@ export class Nav {
   open = false;
   private tgt = new THREE.Vector3(); private inited = false;
   private idle = 9;
+  /** 跑了几成（0…1）：起来得快些，回去得慢 */
+  private runK = 0;
   /** 镜头贴得太近，人暂时不画 */
   private hid = false;
   // 机位
@@ -73,7 +79,7 @@ export class Nav {
   /** 把镜头直接摆到人的身后（换处之后） */
   snapBehind(pitch = FOLLOW_PITCH, dist = FOLLOW_DIST) {
     this.yaw = this.yawS = wrap(this.player.yaw + Math.PI);
-    this.pitch = this.pitchS = pitch; this.dist = this.distS = dist; this.boomS = 1;
+    this.pitch = this.pitchS = pitch; this.dist = this.distS = dist; this.boomS = 1; this.runK = 0;
     this.inited = false; this.pose = null; this.poseOut = false; this.poseK = 1;
     this.offYaw = this.offPitch = this.offYawG = this.offPitchG = this.zoom = this.zoomG = 0;
   }
@@ -105,9 +111,11 @@ export class Nav {
       return;
     }
     this.yaw = wrap(this.yaw - dx * 0.0052);
-    this.pitch = Math.max(-0.12, Math.min(1.15, this.pitch + dy * 0.0042));
+    this.pitch = Math.max(this.upOk() ? UP_MIN : -0.12, Math.min(1.15, this.pitch + dy * 0.0042));
     this.idle = 0;
   }
+  /** 能不能抬头看天：在屋外（屋里有顶，草堂里屋顶虽隐去了也不往上仰） */
+  private upOk() { return !this.open && this.place.indoor < 0.5; }
   wheel(dy: number) {
     if (this.pose && !this.poseOut) { this.zoomG = Math.max(0, Math.min(1, this.zoomG - dy * 0.0012)); return; }
     this.dist = Math.max(2.2, Math.min(18, this.dist * Math.exp(dy * 0.0011)));
@@ -141,24 +149,34 @@ export class Nav {
   /** 跟随时镜头该在哪：写进 fpos / flook */
   private follow(dt: number) {
     const p = this.player, sm = (r: number) => 1 - Math.exp(-dt * r);
-    const head = this.tmp.set(p.pos.x, p.pos.y + 1.28, p.pos.z);
-    if (!this.inited) { this.tgt.copy(head); this.inited = true; } else { this.tgt.x += (head.x - this.tgt.x) * sm(11); this.tgt.z += (head.z - this.tgt.z) * sm(11); this.tgt.y += (head.y - this.tgt.y) * sm(6); }
+    // 跑了几成：快起来时一秒上下到位，停下来两三秒才回去
+    const rk = Math.max(0, Math.min(1, (p.speed - 2.3) / 1.9)), rkS = rk * rk * (3 - 2 * rk);
+    this.runK += (rkS - this.runK) * sm(rkS > this.runK ? 1.8 : 0.75);
+    const head = this.tmp.set(p.pos.x, p.pos.y + 1.28, p.pos.z), fr = 11 + 8 * this.runK;
+    if (!this.inited) { this.tgt.copy(head); this.inited = true; } else { this.tgt.x += (head.x - this.tgt.x) * sm(fr); this.tgt.z += (head.z - this.tgt.z) * sm(fr); this.tgt.y += (head.y - this.tgt.y) * sm(6); }
     // 走着、手又没在转镜头：镜头慢慢转到身后（迎着镜头走时不转，免得天旋地转）
     this.idle += dt;
-    // 跟得要慢：横着走时镜头若跟得急，「左」就一直在变，人会绕起圈来
+    // 跟得要慢：横着走时镜头若跟得急，「左」就一直在变，人会绕起圈来（跑起来略快一点）
     if (p.moving && this.idle > 1.4 && !p.locked && !this.open) {
       const d = wrap(p.yaw + Math.PI - this.yaw);
-      if (Math.abs(d) < 2.2) this.yaw = wrap(this.yaw + d * Math.min(1, dt * 0.3) * Math.min(1, p.speed / 1.6));
+      if (Math.abs(d) < 2.2) this.yaw = wrap(this.yaw + d * Math.min(1, dt * (0.3 + 0.2 * this.runK)) * Math.min(1, p.speed / 1.6));
     }
+    // 抬着头的时候一迈步（或进了屋）就慢慢低回来（进屋一下子回来）
+    if (this.pitch < -0.12 && (p.moving || !this.upOk())) this.pitch += (-0.12 - this.pitch) * (this.upOk() ? sm(1.6) : 1);
     this.yawS = wrap(this.yawS + wrap(this.yaw - this.yawS) * sm(13));
     this.pitchS += (this.pitch - this.pitchS) * sm(13);
-    this.distS += (this.dist - this.distS) * sm(8);
-    const cp = Math.cos(this.pitchS), dx = Math.sin(this.yawS) * cp, dy = Math.sin(this.pitchS), dz = Math.cos(this.yawS) * cp;
+    // 抬头看天（屋外往上拖过了平时的最低处，up 0…1）：镜头再低一些、凑到身后，往天上仰到五十来度；人的头肩留在画面下沿
+    const u0 = Math.max(0, Math.min(1, (-0.12 - this.pitchS) / (-0.12 - UP_MIN))), up = u0 * u0 * (3 - 2 * u0);
+    const pitchP = up > 0 ? -0.12 - 0.38 * up : this.pitchS;
+    // 跑起来稍退一些（屋里不退）
+    this.distS += (this.dist * (1 + (this.open ? 0 : 0.15 * this.runK)) - this.distS) * sm(8);
+    const distU = this.distS + (UP_DIST - this.distS) * up;
+    const cp = Math.cos(pitchP), dx = Math.sin(this.yawS) * cp, dy = Math.sin(pitchP), dz = Math.cos(this.yawS) * cp;
     // 被高墙挡住就收近（收得快、放得慢）
-    const want = this.open ? 1 : boom(this.tgt.x, this.tgt.z, this.tgt.x + dx * this.distS, this.tgt.z + dz * this.distS, p.zone);
+    const want = this.open ? 1 : boom(this.tgt.x, this.tgt.z, this.tgt.x + dx * distU, this.tgt.z + dz * distU, p.zone);
     this.boomS += (want - this.boomS) * (want < this.boomS ? sm(30) : sm(2.2));
     // 背后就是墙时镜头可以贴得很近（宁可贴近，不进墙）；近到快碰着头了，就不画人（像是从他眼里看出去）
-    const d = this.boomS < 0.999 ? Math.max(0.4, this.distS * this.boomS - 0.3) : this.distS;
+    const d = this.boomS < 0.999 ? Math.max(0.4, distU * this.boomS - 0.3) : distU;
     if (!this.pose) {
       if (d < 0.62 && !this.hid) { this.hid = true; p.setVisible(false); } else if (d > 0.82 && this.hid) { this.hid = false; p.setVisible(true); }
     } else if (this.hid) { this.hid = false; p.setVisible(true); }
@@ -173,6 +191,12 @@ export class Nav {
     // （竖屏画幅高：少抬一些，天不至于空掉半幅）
     const lift = this.world.camera.aspect < 1 ? 0.035 : 0.075;
     this.flook.copy(this.tgt); this.flook.y += 0.1 + lift * d * (1 - Math.min(1, Math.max(0, this.pitchS - 0.2) / 0.5));
+    if (up > 0.001) {
+      // 往天上仰：从镜头出发、朝着人的那个方向、仰角 UP_EL 的那一点
+      const hx = this.tgt.x - cx, hz = this.tgt.z - cz, hl = Math.hypot(hx, hz) || 1;
+      this.tmp.set(cx + (hx / hl) * Math.cos(UP_EL) * 12, y + Math.sin(UP_EL) * 12, cz + (hz / hl) * Math.cos(UP_EL) * 12);
+      this.flook.lerp(this.tmp, up);
+    }
   }
 
   update(dt: number, t: number) {
@@ -196,7 +220,8 @@ export class Nav {
       if (this.poseOut && this.poseK >= 1) { this.pose = null; this.poseOut = false; }
     } else {
       this.pos.copy(this.fpos); this.look.copy(this.flook);
-      this.fov += (FOLLOW_FOV - this.fov) * Math.min(1, dt * 4);
+      // 跑起来视野略宽（四度上下）
+      this.fov += (FOLLOW_FOV + 4 * this.runK - this.fov) * Math.min(1, dt * 4);
     }
     this.apply(t);
   }

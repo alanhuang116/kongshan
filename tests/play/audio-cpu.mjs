@@ -51,4 +51,20 @@ await page.evaluate(() => {
 await wait(17000);
 const busy = await measure();
 console.log(`春晨桃林 + 走路 + 抚琴 + 煮水 + 鸡鸣　${(busy * 100).toFixed(1)}%（净 ${((busy - idle) * 100).toFixed(1)}%）`);
+// 后来添的一起来：跑着（一秒近三步）、村里推着磨、远处有人说话、池边一片蛙，隔一阵一声羊、喜鹊、驴、一群寒鸦
+//（KS_AUDIO_OLD=1：量的是原来那一版，没有这些声音，跳过这一行）
+if (process.env.KS_AUDIO_OLD) { await browser.close(); process.exit(0); }
+await page.evaluate(() => {
+  const au = window.__audio;
+  for (const id of window.__busy) clearInterval(id);
+  au.setLoop('kettle', 0);
+  au.setScene(window.__presets[2][1]);
+  au.setLoop('millstone', 0.8, { at: [6, 4] }); au.setLoop('murmur', 0.7, { at: [-20, 10] }); au.setLoop('frog', 0.6, { at: [30, -20] });
+  const shots = ['goat', 'magpie', 'donkey', 'chop', 'flail', 'sickle'];
+  let i = 0;
+  window.__busy = [setInterval(() => au.step('earth', { run: true, speed: 4.5, vel: 0.6 }), 360), setInterval(() => au.play(shots[i++ % shots.length], { at: [15 - (i % 5) * 6, 12] }), 2500), setInterval(() => au.play('crow', { variant: 'flock', at: [-40, 60] }), 11000)];
+});
+await wait(17000);
+const busy2 = await measure();
+console.log(`村里 + 跑 + 推磨 + 人声 + 一片蛙 + 羊鹊驴劈柴打场割麦 + 寒鸦　${(busy2 * 100).toFixed(1)}%（净 ${((busy2 - idle) * 100).toFixed(1)}%）`);
 await browser.close();

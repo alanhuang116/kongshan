@@ -276,6 +276,8 @@ export const BRIDGE_END: Spot = atPlank(0, PLANK.half + 0.9, Math.PI);
 /** 板垛（桥南头东侧一摞板）旁扛板的地方；板送到桥面上放下的地方 */
 export const STACK: Spot = atPlank(1.15, PLANK.half + 1.5, Math.PI / 2);
 export const CARRY_TO: Spot = atPlank(-0.3, 2.3, Math.PI);
+/** 赵老上午坐着看儿子修桥的地方（木马西南的岸上，面朝木马） */
+export const OVERSEE: Spot = atPlank(-3.4, PLANK.half + 3.4, Math.PI + 0.75);
 /** 歇晌坐的两处（板垛南边的岸上） */
 export const WRIGHT_REST: Spot[] = [atPlank(0.6, PLANK.half + 3.3, Math.PI - 0.4), atPlank(-0.7, PLANK.half + 3.6, Math.PI + 0.5)];
 /** 木匠回家的路：木桥没修好，沿溪南的路往西走 */
@@ -318,3 +320,177 @@ export const HERD: Array<[number, number]> = X.herd;
 export const HERD_HAY = X.haystacks.reduce((a, b) => { const m = (HERD[0][0] + HERD[1][0]) / 2, n = (HERD[0][1] + HERD[1][1]) / 2; return Math.hypot(b.x - m, b.z - n) < Math.hypot(a.x - m, a.z - n) ? b : a; });
 /** 瓜架 */
 export const TRELLIS = X.trellis;
+
+// ———————————————————————— 这一轮添的：各家门前、井边、槐树下说书、麦收、山上、河滩、打更 ————————————————————————
+/** 坐在一只矮凳上（凳是人自己搬出来的那件家什，摆在凳心 stool）：脚在凳心前 fwd，面朝 yaw */
+export interface StoolSeat extends Seat { stool: Spot }
+export const onStool = (s: Spot, h = 0.26, fwd = 0.3): StoolSeat => ({ ...seatAt(s.x, s.z, s.yaw, h, fwd), stool: { x: s.x, z: s.z, yaw: s.yaw } });
+
+/** 甲家（王家）门前：矮墙里面是自家的院子（墙在屋前 3.4 米，当中留着口子），墙外是去村路的那一小段 */
+export const A_FRONT = {
+  /** 冬天王伯坐着磨锄、修农具；王大娘纳鞋底；阿秀挨着娘学针线（侧过身对着娘） */
+  mend: onStool(atHouse('a', -3.3, 4.1, 0)), sew: onStool(atHouse('a', -1.2, 4.4, 0.15)), sew2: onStool(atHouse('a', -0.35, 4.75, -1.0), 0.24),
+  /** 雨天爷儿俩坐在檐下搓草绳 */
+  rope: [onStool(atHouse('a', -1.75, 3.0, 0.05)), onStool(atHouse('a', -2.95, 3.0, -0.1))],
+  /** 姊妹俩坐着说话（对着脸，略朝外） */
+  chat: [onStool(atHouse('a', -1.05, 4.3, 0.9)), onStool(atHouse('a', 0.35, 4.7, -1.6))],
+  /** 喂鸡的人站这里（食撒在身前一步半，鸡群在墙外那一处） */
+  feed: atHouse('a', 0.4, 7.3, 0.05),
+  /** 墙外扫地的三处 */
+  sweep: [atHouse('a', -1.6, 7.3, 0.4), atHouse('a', 1.9, 7.7, -0.3), atHouse('a', 0.2, 8.6, 0.1)],
+  /** 冬天二郎劈柴：西墙外，木墩在人身前半步（柴垛码在木墩东边） */
+  chop: atHouse('a', -9.3, 4.2, Math.PI),
+};
+/** 己家（篾匠）门前（build/homes.ts bambooHome：篾凳在屋前 z0+1.15、东 1.55；小板凳在篾凳南 0.72，篾匠坐着面朝北对着篾凳；编了一半的筐在门前 z0+1.95、东 0.35） */
+export const F_FRONT = (() => {
+  const h = H('f'), z0 = h ? h.d / 2 : 2.2, bx = 1.55, bz = z0 + 1.15, sx = bx - 0.05, sz = bz + 0.72;
+  const at = (lx: number, lz: number, yaw = 0) => (h ? atHouse('f', lx, lz, yaw) : { x: 38 + lx, z: -7 + lz, yaw: yaw });
+  const st = at(sx, sz, Math.PI);
+  return {
+    /** 坐在他自己那只小板凳上（凳是屋舍那边摆的，高 0.26），面朝篾凳 */
+    seat: seatAt(st.x, st.z, st.yaw, 0.26, 0.28),
+    /** 篾凳的面（劈篾的手落在这里，世界高度现算）、编了一半的筐（编筐时蹲在它东边） */
+    bench: at(bx, bz), basket: at(0.35, z0 + 1.95), weave: at(0.95, z0 + 1.95, -Math.PI / 2),
+    /** 晾篾片的横竿（高 1.55）：站在竿南边往上搭 */
+    rack: at(-1.78, z0 + 3.05, Math.PI),
+    /** 雨天：坐在檐下编小筐 */
+    eave: onStool(at(-1.65, z0 + 0.55, 0)),
+  };
+})();
+/** 庚家（陶家）：坯棚里的陶车与陶工的凳（build/homes.ts potShed：陶车在棚里 (−0.65, 0.35)，凳在轮西 0.62，高 0.3，坐着面朝东对着轮）；窑门；屋前的坯架 */
+export const G_WORK = (() => {
+  const S = SITE.crafts?.potShed ?? { x: 135.2, z: 23.2, yaw: 0.12 }, K = SITE.crafts?.kiln ?? { x: 149.2, z: 30.6, yaw: -2.25 };
+  const st = beside(S, -0.65 - 0.62, 0.35, Math.PI / 2), wheel = beside(S, -0.65, 0.35), mouth = beside(K, 0, 2.35, Math.PI), wood = beside(K, -1.86, 2.0, Math.PI);
+  return {
+    /** 陶工的凳：从棚口（南边敞着的那面）进来、在凳前站定再坐下 */
+    seat: seatAt(st.x, st.z, st.yaw, 0.3, 0.2, undefined, (() => { const fr = beside(S, -1.0, 1.05); return [fr.x, fr.z] as [number, number]; })()), wheel, wheelY: ground(S.x, S.z) + 0.37,
+    /** 揉泥的地方（棚里东南角的泥块前，面朝北） */
+    clay: beside(S, 1.92, 0.32, -2.57),
+    /** 窑门前（蹲着往里添柴）、去窑西柴垛抱柴站的地方 */
+    kiln: mouth, kilnMouth: beside(K, 0, 1.7), kilnWood: wood,
+    /** 屋前两排坯架的一头（把坯摆上去） */
+    racks: [atHouse('g', -1.75, 2.3 + 2.45, Math.PI), atHouse('g', 1.8, 2.3 + 2.45, Math.PI)] as Spot[],
+    shed: S as Spot,
+  };
+})();
+/** 乙家（李家）东头披屋下的斜织机（build/traces.ts：机在屋东 x0+1.1、屋前 1.15，织的人坐在机南头的坐板上，面朝北对着经线，板高 0.44） */
+export const B_LOOM = (() => {
+  const h = H('b'), x0 = h.w / 2, L = atHouse('b', x0 + 1.1, 1.15), st = atHouse('b', x0 + 1.1, 1.15 + 0.62, Math.PI), y = houseY('b');
+  // 坐板在屋的占地里头（披屋算在屋里）：先走到披屋南沿外一点，再直着进去坐下
+  const fr = atHouse('b', x0 + 1.1, h.d / 2 + 0.6);
+  return { loom: L, yaw: h.yaw, y, seat: seatAt(st.x, st.z, st.yaw, 0.44, 0.3, y, [fr.x, fr.z]) };
+})();
+/** 丁家（赵家）檐下：织机在门西（机身转过来，人坐在靠墙那头、面朝外）、杏儿坐在一旁；雨天木匠在屋东头的木工凳上刨木 */
+export const D_FRONT = (() => {
+  const h = H('d'), z0 = h.d / 2, loom = atHouse('d', -0.75, z0 + 1.5, Math.PI);
+  const seat = atHouse('d', -0.75, z0 + 0.78, 0);
+  return {
+    /** 织机摆在哪（机身自己的 +z 朝着墙）；织布的人坐在机尾的坐板上（板高 0.45） */
+    loom, weave: seatAt(seat.x, seat.z, seat.yaw, 0.45, 0.3),
+    /** 杏儿坐在娘身边的地上，侧着身看 */
+    by: atHouse('d', -1.62, z0 + 1.35, 1.25),
+    /** 雨天：屋东头的木工凳（build 那边摆的，长向顺着屋的进深）上刨木头——师傅站在凳南头往北推，徒弟在北头侧着身扶着料 */
+    bench: atHouse('d', 5.0, 1.2, 0), benchTop: houseY('d') + 0.62, plane: atHouse('d', 5.0, 2.5, Math.PI), hold: atHouse('d', 5.6, 0.45, -Math.PI / 2),
+    /** 喂鹅的人站这里 */
+    feed: atHouse('d', -0.4, z0 + 2.4, 0),
+  };
+})();
+/** 戊家（孙家酒家）：门朝北。手磨在门西（屋自己的 +x）屋前、酒桌与水缸之间；孙嫂站在磨与墙之间推磨；雨天掌柜坐在门边檐下 */
+export const E_FRONT = (() => {
+  const h = H('e'), z0 = h.d / 2, B = { ...X.wineShop.bench, yaw: h.yaw };
+  const quern = atHouse('e', 1.55, z0 + 0.95, 0), bs = beside(B, 0.5, -0.62), bf = beside(B, 1.25, -0.9);
+  return {
+    quern, grind: atHouse('e', 1.55, z0 + 0.35, 0),
+    /** 孙嫂午后坐在酒客那条凳的西头拣豆子（从凳的西头迈进去） */
+    beans: seatAt(bs.x, bs.z, B.yaw, 0.42, 0.3, undefined, [bf.x, bf.z]),
+    /** 雨天掌柜坐在门边的檐下 */
+    idle: onStool(atHouse('e', 0.85, z0 + 0.42, 0), 0.3),
+    /** 水缸（build/village.ts：门西 2.6、屋前 0.6）：倒水的人站在缸前，面朝缸 */
+    vat: atHouse('e', 2.6, z0 + 1.32, Math.PI),
+  };
+})();
+/** 井边：打水的人站在井北沿（面朝井，不挡着辘轳与井台上那只桶）；担子放在他身后 */
+export const WELL = (() => {
+  const W = SITE.well;
+  return { draw: { x: W.x + 0.15, z: W.z - 1.18, yaw: 0.1 } as Spot, load: { x: W.x + 1.2, z: W.z - 2.05, yaw: Math.PI / 2 } as Spot, mouth: { x: W.x, z: W.z }, y: ground(W.x, W.z) + 0.14 };
+})();
+
+/**
+ * 槐树下说书（春夏秋的晴天傍晚）：说书的坐在交床上，面朝槐树（朝北略偏西），鼓架在他右手前；
+ * 听的人在他与槐树之间围成半圈：孩子坐在最前头的地上，老人妇人坐自己搬来的矮凳，男人站在后头。
+ */
+export const STORY = (() => {
+  const x = 91.8, z = 20.6, yaw = Math.atan2(SITE.elm.x - x, SITE.elm.z - z), c = Math.cos(yaw), s = Math.sin(yaw);
+  /** 说书人自己坐标里的一点（f 朝前，l 朝他的左手） */
+  const P = (f: number, l: number) => ({ x: x + l * c + f * s, z: z - l * s + f * c });
+  const face = (p: { x: number; z: number }): Spot => ({ ...p, yaw: Math.atan2(x - p.x, z - p.z) });
+  const seat = seatAt(x, z, yaw, 0.4, 0.3);
+  /** 听的人站在哪、怎么待着：ground 坐在地上，crouch 蹲着，stool 坐矮凳，stand 站着 */
+  const slot = (f: number, l: number, kind: 'ground' | 'crouch' | 'stool' | 'stand') => ({ kind, at: face(P(f, l)) });
+  return {
+    teller: { x, z, yaw } as Spot, seat, drum: P(0.55, -0.42), stool: { x, z, yaw } as Spot,
+    /** 各人的位置：按 id */
+    slots: {
+      kid2: slot(1.25, -0.5, 'ground'), kid3: slot(1.3, 0.55, 'ground'), swinger: slot(1.75, 2.55, 'ground'),
+      elder: slot(2.2, 0, 'stool'), elder2: slot(2.1, -1.15, 'stool'), farmwife: slot(2.35, 1.2, 'stool'), weaver: slot(2.45, 2.15, 'stool'), neighbor: slot(2.45, -2.25, 'stool'), tofu: slot(3.05, -3.0, 'stool'),
+      picker: slot(3.35, 1.45, 'stand'), washer: slot(3.55, 2.35, 'stand'), lunch: slot(3.0, 3.05, 'stand'),
+      farmer: slot(3.5, -0.35, 'stand'), farmson: slot(3.65, 0.55, 'stand'), basketman: slot(3.45, -1.5, 'stand'), potter: slot(4.05, -2.2, 'stand'),
+      carpenter1: slot(3.35, -2.45, 'stand'), carpenter2: slot(4.15, -1.25, 'stand'), miller: slot(4.0, -0.3, 'stand'),
+    } as Record<string, { kind: 'ground' | 'crouch' | 'stool' | 'stand'; at: Spot }>,
+  };
+})();
+
+/**
+ * 夏天王家割麦的那一片：农事那一路管的那一块地（总图上标了 farm）的南边一大片，十九垄，垄东西走向，自西往东割
+ * （与 farm/layout.ts 的 VILLAGE 同一个算法；割到哪由农事那一路记着，见 harvest.ts）。总图上没有那一块时，退回路东那一畦麦。
+ * lane(i, u)：第 i 垄、沿垄 u（0 西头 … 1 东头）人站的一点（垄的南侧）。
+ */
+export const REAP = (() => {
+  const F = PLOTS.find((p) => p.farm);
+  if (F) {
+    const x0 = F.x0 + 1.0, x1 = F.x1 - 1.0, z0 = F.z0 + 1.6 + 4.8 + 2.0, z1 = F.z1 - 1.0, rows = 19, pitch = (z1 - z0) / rows;
+    return {
+      plot: F, rows, pitch, x0, x1, z0, z1, len: x1 - x0 - 1.2, lanes: rows, dir: Math.PI / 2,
+      lane: (i: number, u: number) => ({ x: x0 + 0.6 + (x1 - x0 - 1.2) * u, z: z0 + pitch * (i + 0.5) + 0.45 }),
+      /** 晌午坐着歇的地头（地西沿的埂上，面朝麦地）、饭篮放在哪、送饭的人站着等的地方 */
+      bund: { x: F.x0 - 0.6, z: z0 + 5.5, yaw: Math.PI / 2 } as Spot, bund2: { x: F.x0 - 0.6, z: z0 + 6.6, yaw: Math.PI / 2 } as Spot,
+      set: { x: F.x0 - 0.8, z: z0 + 4.6, yaw: Math.PI / 2 } as Spot, wait: { x: F.x0 - 2.3, z: z0 + 4.0, yaw: Math.PI / 2 + 0.5 } as Spot,
+      /** 牛在地北头外的空地上歇着吃草 */
+      ox: { x: F.x0 + 4.0, z: F.z0 - 1.5, yaw: Math.PI / 2 } as Spot,
+    };
+  }
+  const P = PLOTS.find((p) => p.x0 === 27 && p.z0 === 71 && p.crop === 'wheat') ?? PLOTS.find((p) => p.crop === 'wheat' && p.x0 > 20) ?? PLOTS[0];
+  const rows = Math.floor((P.z1 - P.z0 - 1.8) / 1.1), pitch = 1.1, x0 = P.x0, x1 = P.x1, z0 = P.z0 + 0.35, z1 = P.z1;
+  return {
+    plot: P, rows, pitch, x0, x1, z0, z1, len: x1 - x0 - 1.2, lanes: rows, dir: Math.PI / 2,
+    lane: (i: number, u: number) => ({ x: x0 + 0.6 + (x1 - x0 - 1.2) * u, z: z0 + pitch * (i + 0.5) + 0.45 }),
+    bund: { x: P.x0 - 0.55, z: P.z0 + 9.5, yaw: Math.PI / 2 } as Spot, bund2: { x: P.x0 - 0.55, z: P.z0 + 10.6, yaw: Math.PI / 2 } as Spot,
+    set: { x: P.x0 - 0.75, z: P.z0 + 8.6, yaw: Math.PI / 2 } as Spot, wait: { x: P.x0 - 2.3, z: P.z0 + 8.0, yaw: Math.PI / 2 + 0.5 } as Spot,
+    ox: { x: P.x0 + 4.0, z: P.z0 - 1.4, yaw: Math.PI / 2 } as Spot,
+  };
+})();
+/** 菜地（路东那一畦菜）：锄草的人沿着垄一处处蹲过去 */
+export const VEG = (() => { const P = PLOTS.find((p) => p.crop === 'veg') ?? PLOTS[0]; return { plot: P, at: (k: number) => ({ x: P.x0 + 2.2 + (k % 6) * 1.6, z: P.z0 + 2.0 + Math.floor(k / 6) * 1.4, yaw: Math.PI / 2 }) }; })();
+
+/** 茶亭（build/more.ts teaShed）：板凳东头（打更的午后坐这里）、茶瓮前（舀茶的人站这里，面朝东）、亭西的空地（晒药） */
+export const TEA_MORE = (() => {
+  const T = X.teaShed, y0 = ground(T.x, T.z - 1.3), b = beside(T, -0.25, 0.68), inn = beside(T, -0.7, -0.35);
+  return {
+    seat2: seatAt(b.x + 0.35, b.z, T.yaw + Math.PI, 0.44, 0.34, y0, [inn.x + 0.9, inn.z]),
+    jar: beside(T, 0.12, -0.35, Math.PI / 2), jarTop: { ...beside(T, 0.63, -0.3), y: y0 + 0.52 + 0.5 },
+    herbs: [beside(T, -2.6, -0.4), beside(T, -2.6, 0.75), beside(T, -3.5, 0.2)] as Spot[],
+    herbAt: (i: number) => beside(T, -2.6 - (i === 2 ? 0.9 : 0) + 0.62, (i === 0 ? -0.4 : i === 1 ? 0.75 : 0.2), -Math.PI / 2),
+  };
+})();
+/** 打更绕村一圈要经过的几处（各家门前、村塾前、槐树下、井边、村口土地庙） */
+export const ROUND: Array<[number, number]> = (() => {
+  const pts: Array<[number, number]> = [];
+  const add = (s: { x: number; z: number }) => pts.push([s.x, s.z]);
+  add({ x: X.shrine.x + 1.2, z: X.shrine.z + 1.6 });
+  if (H('f')) add(atHouse('f', 0.2, H('f').d / 2 + 3.2));
+  add(atHouse('a', 0.15, 7.6)); add({ x: SITE.well.x + 0.5, z: SITE.well.z + 2.6 }); add(atHouse('b', -0.6, 6.0));
+  add({ x: SITE.elm.x - 3.0, z: SITE.elm.z - 3.1 }); add(atHouse('school', 0, 4.4)); add(atHouse('d', 0.6, 6.0));
+  if (H('g')) add(atHouse('g', 0, H('g').d / 2 + 5.2));
+  add({ x: SITE.elm.x + 0.6, z: SITE.elm.z + 3.9 }); add(atHouse('e', -1.5, 5.3));
+  return pts;
+})();

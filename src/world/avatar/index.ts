@@ -9,7 +9,8 @@ import type { Look } from './types';
 export { Figure } from './figure';
 export type { GroundFn } from './figure';
 export { SCHOLAR } from './parts';
-export type { Avatar, HandsName, HatKind, Look, PoseName, ReachOpts, Seat, Side } from './types';
+export type { Avatar, GestureName, HandsName, HatKind, Look, PoseName, ReachOpts, Seat, Side } from './types';
+export { Idle } from './idle';
 
 /**
  * 造一个人。look 不给就是你操纵的那个读书人（月白长衫、软巾）；给几样就只改那几样（村里的人都是这么来的）。

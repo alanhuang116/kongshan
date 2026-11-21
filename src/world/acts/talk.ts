@@ -1,100 +1,347 @@
 /**
- * 与村里人说话：遇农夫问桑麻，遇渔樵听他们问答，遇老者、童子、采桑人、修桥人说几句家常。
- * 人走到跟前作个揖，对方停下手里的活转过身来；一句一句地说，「再问」换一句，「别过」各忙各的。
- * 话在 src/data/talk.ts（自撰的家常话）与 almanac.ts（二十四节气的农事、古书里的话）里；还没备好时用这里几句垫着。
- * 这里不问吉凶——农夫只说这个时节田里该做什么。
+ * 与村里人说话。
+ *
+ * 走到跟前作个揖，对方停下手里的活、转过身来（attend）。他先招呼一声——看时辰、天气，看跟你熟到几分；
+ * 然后有三四样可说：问他在忙什么、问农事问手艺、闲话家常、他托你的事、送他样东西、告辞。
+ * 签上的字是先生说的那一句，他接一句；有时他也回问先生一句，先生再答。
+ * 熟了以后不一样：招呼的话、叫法变了，话多了，会主动说家里的事，见面塞东西给你，远远看见会招手（人情账在 favor.ts）。
+ *
+ * 话在 src/data/talk2.ts（各人自己的话）、talk.ts（原先的家常话 LINES、渔樵问对）、almanac.ts（节气农事）；托事在 favors.ts。
+ * 这里不问吉凶——有人问年景，先生只说「春种秋收，便是大吉」。
  */
 import * as THREE from 'three';
 import type { Anlewo, NpcLike } from '../Anlewo';
 import type { Season } from '../env/atmos';
-import { standable } from '../walk';
+import { ITEMS } from '../bag';
+import { blocked, groundAt, setDynamic, standable } from '../walk';
 import type { Act } from './types';
 import { reveal } from './xiang';
+import { POEMS } from './lib';
+import { fill, folkOf, people, person, stepAt, wetNow, type Person, type Turn } from './favor';
+import { BOOKS, type Book, type L, type O } from '../../data/talk2';
+import { LINES, YUQIAO, YUQIAO_SCENE } from '../../data/talk';
+import { TERMS } from '../../data/almanac';
 
-interface Line { id: string; who: string; when?: string[]; text: string; reply?: string }
-interface Term { id: string; name: string; hou: string[]; work: string[]; quote?: { text: string; source: string } }
-const DATA = import.meta.glob<Record<string, unknown>>(['../../data/talk.ts', '../../data/almanac.ts'], { eager: true });
-const pick = <T,>(key: string): T | null => { for (const m of Object.values(DATA)) if (m[key]) return m[key] as T; return null; };
-const LINES = pick<Line[]>('LINES') ?? [], TERMS = pick<Term[]>('TERMS') ?? [], YUQIAO = pick<Array<{ q: string; a: string; source: string }>>('YUQIAO') ?? [];
-
-/** 文字没备好时垫着的几句 */
-const SPARE: Record<string, string[]> = {
-  farmer: ['先生来了。地刚翻过，趁墒情好，这两天就下种。', '春种秋收，年年如此，错不了时候就好。'],
-  picker: ['桑叶要趁露水干了再采，蚕才肯吃。'], kid: ['先生，今天教的我都背下来了。', '先生晚上还教我们认星星么？'],
-  elder: ['坐，坐。今年雨水匀，是个好年成。'], teacher: ['孩子们念书的声音，先生在那边也听得见吧。'],
-  carpenter: ['桥板朽了两块，换了新的，再走十年不成问题。'], fisher: ['水清，鱼就少些；水浑，网又难下。都有它的道理。'],
-  woodcutter: ['一担柴，够烧三天。山里的事，慢慢来。'], neighbor: ['先生吃了没有？灶上还温着粥。'],
-  washer: ['水是从山口那边流下来的，清得很。'], herdboy: ['它认得路，我只管吹我的笛。'], keeper: ['新酿的，先生带一壶回去？'],
-  peddler: ['针线、饴糖、小儿的拨浪鼓——先生看看？'], miller: ['一斗米舂得半个时辰，水不歇，碓也不歇。'],
-  guest: ['一阳初动处，万物未生时——先生这两句，我路上想了一路。', '今日不谈别的，只看这一树花开到几分。'],
-};
 /** 每一季里取哪几个节气的话（农夫说的是「这个时节」） */
 const SEASON_TERMS: Record<Season, string[]> = { spring: ['立春', '雨水', '惊蛰', '春分', '清明', '谷雨'], summer: ['立夏', '小满', '芒种', '夏至', '小暑', '大暑'], autumn: ['立秋', '处暑', '白露', '秋分', '寒露', '霜降'], winter: ['立冬', '小雪', '大雪', '冬至', '小寒', '大寒'] };
+type Npc = NpcLike & { act?: string | null; doing?: string };
+interface Choice { id: string; label: string; main?: boolean; sub?: string }
 
-const WHO: Array<{ npc: string; who: string; label: string; ask?: 'almanac' | 'yuqiao' }> = [
-  { npc: 'farmer', who: 'farmer', label: '问桑麻', ask: 'almanac' }, { npc: 'picker', who: 'picker', label: '采桑人' },
-  { npc: 'kid1', who: 'kid', label: '童子' }, { npc: 'kid2', who: 'kid', label: '童子' }, { npc: 'kid3', who: 'kid', label: '童子' },
-  { npc: 'elder', who: 'elder', label: '老者' }, { npc: 'teacher', who: 'teacher', label: '塾师' }, { npc: 'carpenter1', who: 'carpenter', label: '修桥人' },
-  { npc: 'fisher', who: 'fisher', label: '渔父', ask: 'yuqiao' }, { npc: 'woodcutter', who: 'woodcutter', label: '樵夫', ask: 'yuqiao' }, { npc: 'neighbor', who: 'neighbor', label: '邻妇' },
-  { npc: 'washer', who: 'washer', label: '浣衣人' }, { npc: 'herdboy', who: 'herdboy', label: '牧童' }, { npc: 'keeper', who: 'keeper', label: '酒家' },
-  { npc: 'peddler', who: 'peddler', label: '货郎' }, { npc: 'miller', who: 'miller', label: '舂米人' }, { npc: 'guest', who: 'guest', label: '客' }, { npc: 'elder2', who: 'elder', label: '弈者' },
-];
+/** 此刻的时令、时辰、天气（话的 when 里用的那些字） */
+function tagsOf(k: Anlewo): Set<string> {
+  const a = k.atmos, h = a.hour, s = new Set<string>([k.season, 'any']);
+  if (a.night > 0.5) s.add('night');
+  else { s.add('day'); s.add(a.dawn > 0.35 || h < 7 ? 'dawn' : a.dusk > 0.35 || h >= 17.5 ? 'dusk' : h >= 11 && h < 13.5 ? 'noon' : h < 11 ? 'am' : 'pm'); }
+  if (a.w.rain > 0.5) s.add('rain'); else if (a.w.snow > 0.5) s.add('snow'); else s.add('fair');
+  if (a.w.mist > 0.5) s.add('mist');
+  if (k.term && SEASON_TERMS[k.season].includes(k.term)) s.add(k.term);
+  return s;
+}
 
-function make(k: Anlewo, w: (typeof WHO)[number], npc: NpcLike): Act {
-  const tmp = new THREE.Vector3();
-  let turn = 0, said: string[] = [];
-  /** 这会儿说得上的话：按时令、时辰筛过，打乱 */
-  const lines = (): string[] => {
-    const a = k.atmos, tags = new Set<string>([k.season, a.night > 0.5 ? 'night' : a.dawn > 0.4 ? 'dawn' : a.dusk > 0.4 ? 'dusk' : a.hour > 11 && a.hour < 13.5 ? 'noon' : 'day', ...(a.w.rain > 0.5 ? ['rain'] : []), ...(a.w.snow > 0.5 ? ['snow'] : []), 'any']);
-    const out: string[] = LINES.filter((l) => l.who === w.who && (!l.when?.length || l.when.some((t) => tags.has(t)))).map((l) => (l.reply ? `${l.text}\n——${l.reply}` : l.text));
-    if (w.ask === 'almanac') {
-      // 农夫：先说这个时节田里的活，再带一句古书里的话
-      const names = SEASON_TERMS[k.season], want = k.term && names.includes(k.term) ? k.term : names[Math.floor((turn / 2) % names.length)];
-      const t = TERMS.find((x) => x.name === want);
-      if (t) { out.unshift(`${t.name}。${t.work.join('')}`); if (t.quote) out.splice(1, 0, `「${t.quote.text}」——${t.quote.source}`); if (t.hou?.length) out.splice(2, 0, `${t.name}三候：${t.hou.join('；')}。`); }
-    }
-    if (w.ask === 'yuqiao') for (const y of YUQIAO) out.push(`问：${y.q}\n答：${y.a}\n——${y.source}`);
-    return out.length ? out : SPARE[w.who] ?? ['……'];
+/** 一句话合不合此刻：时令时辰、情分、说到的家里人、话里提到的人都在、他此刻做的事 */
+interface Ctx { tags: Set<string>; lv: number; family: string[]; act: string | null }
+const textOf = (l: L) => (typeof l === 'string' ? l : l[0]);
+const optOf = (l: L): O => (typeof l === 'string' ? {} : l[1]);
+const refsOf = (t: string) => [...t.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((m) => m[1]);
+function fitsNow(l: L, c: Ctx): boolean {
+  const o = optOf(l);
+  if (o.when?.length && !o.when.some((w) => c.tags.has(w))) return false;
+  if ((o.bond ?? 0) > c.lv) return false;
+  if (o.fam?.some((f) => !c.family.includes(f))) return false;
+  if (o.act?.length && (!c.act || !o.act.includes(c.act))) return false;
+  if (o.about?.some((id) => !person(id))) return false;
+  return refsOf(textOf(l)).every((id) => !!person(id));
+}
+/** 从一组话里挑一句：合此刻的、这一阵没说过的；时令时辰对得上的、正合这一档情分的更可能被挑中 */
+function pick(list: L[] | undefined, c: Ctx, used: Set<string>): L | null {
+  const ok = (list ?? []).filter((l) => fitsNow(l, c));
+  if (!ok.length) return null;
+  const fresh = ok.filter((l) => !used.has(textOf(l))), pool = fresh.length ? fresh : ok;
+  const w = pool.map((l) => { const o = optOf(l); return 1 + (o.when?.length ? 2 : 0) + ((o.bond ?? 0) === c.lv && c.lv > 1 ? 1.5 : 0); });
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+
+/** 没给他写话时垫着的几句（按男女老少） */
+function spare(P: Person, what: 'greet' | 'bye' | 'like' | 'ok' | 'no' | 'idle' | 'busy'): L[] {
+  const kid = (P.age ?? 30) < 14, old = (P.age ?? 30) >= 60;
+  switch (what) {
+    case 'greet': return kid ? ['{先生}！', '{先生}来啦。'] : old ? ['{先生}来了，坐。', '{先生}好兴致。'] : ['{先生}。', '{先生}来了。'];
+    case 'bye': return kid ? ['{先生}再来！', '{先生}慢走！'] : ['{先生}慢走。', '{先生}得空再来。'];
+    case 'like': return kid ? ['给我的？{先生}真好！'] : ['这怎么好意思……正是我想要的。', '{先生}怎知道我好这一口？'];
+    case 'ok': return kid ? ['谢谢{先生}！'] : ['{先生}客气了，那我收下。', '多谢{先生}惦记。'];
+    case 'no': return kid ? ['我娘不让我收这个。'] : ['这个我用不上，{先生}留着自己用。'];
+    case 'idle': return old ? ['人老了，话就多。{先生}别嫌。'] : kid ? ['{先生}，你看那边！'] : ['这几日天气还好。'];
+    case 'busy': return ['手上一点活，不碍事。'];
+  }
+}
+
+/**
+ * 说话时镜头放哪：两个人的侧面（左右两边、远近两档）、斜后方、从先生肩后看过去——挑一处看得见两个人的
+ * （中间没有树干、墙、桌凳挡着，镜头也不钻进坡里、屋里）。同样看得清时取侧面。
+ */
+function talkShot(k: Anlewo, npc: Npc) {
+  const p = k.player.pos, q = npc.pos, dx = q.x - p.x, dz = q.z - p.z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l, nx = -uz, nz = ux;
+  const mx = (p.x + q.x) / 2, mz = (p.z + q.z) / 2, y = p.y;
+  // 竖着的手机画面窄：张角放大些、侧面的机位往后退，两个人都进画（横屏不变）
+  const aspect = (k.world.camera as THREE.PerspectiveCamera).aspect || 1.6, fov = aspect < 1.1 ? 48 : 38;
+  const half = Math.atan(Math.tan(((fov * Math.PI) / 180) / 2) * aspect), s = Math.max(1, (l / 2 + 0.55) / Math.tan(half) / 4.4);
+  // [x, z, 高, 看哪里：0 两人当中，1 偏向他]
+  const C: Array<[number, number, number, number]> = [
+    [mx + nx * 4.4 * s, mz + nz * 4.4 * s, 1.9, 0], [mx - nx * 4.4 * s, mz - nz * 4.4 * s, 1.9, 0],
+    [mx + (nx * 3.6 - ux * 1.8) * s, mz + (nz * 3.6 - uz * 1.8) * s, 1.85, 0.3], [mx - (nx * 3.6 + ux * 1.8) * s, mz - (nz * 3.6 + uz * 1.8) * s, 1.85, 0.3],
+    [mx + nx * 2.9 * s, mz + nz * 2.9 * s, 1.7, 0], [mx - nx * 2.9 * s, mz - nz * 2.9 * s, 1.7, 0],
+    [p.x - ux * 2.3 + nx * 1.0, p.z - uz * 2.3 + nz * 1.0, 1.75, 0.6], [p.x - ux * 2.3 - nx * 1.0, p.z - uz * 2.3 - nz * 1.0, 1.75, 0.6],
+  ];
+  let best = C[0], bs = Infinity;
+  setDynamic([]);                                                   // 只看不动的东西：人自己不算挡
+  try {
+    C.forEach((c, i) => {
+      let s = i * 0.05;
+      if (blocked(c[0], c[1], 'ground', 0.3)) s += 40;
+      const g = groundAt(c[0], c[1]);
+      if (g != null && g > y + c[2] - 0.7) s += 25;
+      for (const [tx, tz, w] of [[q.x, q.z, 3], [p.x, p.z, 1]] as Array<[number, number, number]>) {
+        for (let j = 1; j <= 9; j++) { const t = (j / 10) * 0.86, x = c[0] + (tx - c[0]) * t, z = c[1] + (tz - c[1]) * t; if (blocked(x, z, 'ground', 0.05)) s += w; }
+      }
+      if (s < bs) { bs = s; best = c; }
+    });
+  } finally { setDynamic(k.life?.blockers ?? []); }
+  const lx = mx + (q.x - mx) * best[3], lz = mz + (q.z - mz) * best[3];
+  return { pos: new THREE.Vector3(best[0], y + best[2], best[1]), look: new THREE.Vector3(lx, y + 1.15, lz), fov, yaw: 30, up: 12, down: 8 };
+}
+
+/** 这一句之后，先生怎么告辞（签上的字） */
+function byeLabel(P: Person, tags: Set<string>, lv: number): string {
+  if ((P.age ?? 30) < 14) return tags.has('night') ? '快回家吧' : '去玩吧';
+  if (tags.has('night')) return '早些歇着';
+  return lv >= 3 ? '改日再来' : '你忙，我走了';
+}
+
+function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
+  const F = folkOf(k), id = P.id, tmp = new THREE.Vector3();
+  const kindLines = P.kind ? LINES.filter((l) => l.who === P.kind) : [];
+  const used = new Set<string>();
+  let asked = new Set<string>(), backQ: [string, string] | null = null, yesno: Turn['yesno'] | null = null, gifting = false;
+  let ai = 0, sub = 0, chatN = 0, turns = 0, yq = Math.floor(Math.random() * Math.max(1, YUQIAO.length)), frame = Math.floor(Math.random() * 8);
+  const ctx = (): Ctx => ({ tags: tagsOf(k), lv: F.level(id), family: P.family, act: actNow() });
+  const actNow = (): string | null => (typeof npc.act === 'string' ? npc.act : stepAt(P, k.atmos.hour, k.season, wetNow(k))?.act ?? null);
+  const you = () => B.calls?.[Math.max(0, F.level(id) - 1)] ?? P.you;
+  /** 挑一句、记下说过、把 {某人}、{先生} 换掉；带着回问的，记下等先生答 */
+  const say = (list: L[] | undefined, fb?: L[]): string | null => {
+    const l = pick(list, ctx(), used) ?? (fb ? pick(fb, ctx(), used) : null);
+    if (!l) return null;
+    used.add(textOf(l));
+    const o = optOf(l);
+    if (o.back) backQ = o.back;
+    return fill(textOf(l), you());
   };
-  const say = () => {
-    if (!said.length) said = lines();
-    const text = said[turn % said.length];
-    act.state = { kind: 'talk', title: w.label, who: npc.name, text, choices: [{ id: 'more', label: '再问' }, { id: 'bye', label: '别过' }] };
+  /** 签：先生此刻可说的三四样 */
+  const menu = (): Choice[] => {
+    const cs: Choice[] = [], tags = tagsOf(k), lv = F.level(id);
+    if (backQ) cs.push({ id: 'back', label: fill(backQ[0], you()), main: true });
+    for (const c of F.favorChoices(id, asked)) if (cs.length < 3) cs.push(c);
+    if (cs.length < 3 && !asked.has('offer')) { const o = F.offer(id); if (o) cs.push({ id: `fv:${o.id}:ask`, label: lv >= 3 ? '什么事？' : '可要帮手？' }); }
+    const giftable = !asked.has('gift') && k.bag.list().some((x) => x.def.id !== 'coin');
+    const room = 3 - (giftable ? 1 : 0);
+    const topics: Choice[] = [];
+    if (!asked.has('busy')) topics.push({ id: 'busy', label: busyLabel() });
+    const q = B.ask?.[ai];
+    if (q && sub < 3) topics.push({ id: 'ask', label: sub > 0 ? (q.more ?? '还有呢？') : fill(q.q, you()) });
+    if (!asked.has('home') && B.home.some((l) => fitsNow(l, ctx()))) topics.push({ id: 'home', label: B.homeQ ?? '家里都好？' });
+    if (kindLines.length || B.idle?.length) topics.push({ id: 'chat', label: chatN ? '再说说' : '说会儿闲话' });
+    for (const t of topics) if (cs.length < room) cs.push(t);
+    if (giftable && cs.length < 3) cs.push({ id: 'gift', label: '带了样东西给你' });
+    cs.push({ id: 'bye', label: byeLabel(P, tags, lv) });
+    return cs;
+  };
+  const busyLabel = () => {
+    const a = actNow();
+    if (a && B.busyQ?.[a]) return B.busyQ[a];
+    if (a && /noon|lunch|shade|rest|sheepRest|teaShed|idle/.test(a)) return '歇着呢？';
+    if (a === 'listen') return '今晚说的哪一段？';
+    return (P.age ?? 30) < 14 ? '做什么呢？' : '忙什么呢？';
+  };
+  /** 把这一轮的话交给界面 */
+  const show = (said: string | null, text: string, extra: Record<string, unknown> = {}) => {
+    turns++;
+    act.state = { kind: 'talk', title: P.name, who: `${P.tag} · ${F.bondName(id)}`, said, text, choices: yesno ? [{ id: `fv:${yesno.fid}:yes`, label: yesno.yes, main: true }, { id: `fv:${yesno.fid}:no`, label: yesno.no }] : menu(), ...extra };
     k.emitAct();
   };
+
+  // —— 头一句：招呼 ——
+  const greet = () => {
+    const met = F.meet(id), lv = F.level(id), parts: string[] = [];
+    let g = met.again ? say(B.again, ['又见着{先生}了。']) : met.gap >= 3 && B.long ? say(B.long) : null;
+    if (!g) g = say(B.greet, spare(P, 'greet'));
+    if (g) parts.push(g);
+    // 熟了：主动说说家里的事；见面塞一样东西
+    if (lv >= 3 && !met.again && Math.random() < 0.45) { const h = say(B.home); if (h) { parts.push(h); asked.add('home'); } }
+    if (!met.again) {
+      const gift = F.treat(id);
+      if (gift) parts.push(fill((say(B.treat, ['{先生}拿着这个。']) ?? '').replace(/\{物\}/g, ITEMS[gift]?.name ?? ''), you()));
+    }
+    // 相得以后，有求于你的会自己开口
+    if (lv >= 3 && F.offer(id)) parts.push(fill(B.favorHint ?? '{先生}，正好有件事想求你。', you()));
+    show(null, parts.join('\n'));
+  };
+
+  // —— 各样话 ——
+  const busy = () => {
+    asked.add('busy');
+    const a = actNow(), s = stepAt(P, k.atmos.hour, k.season, wetNow(k));
+    // 他自己的话；日程之外临时做的事（货郎来了跑去看……）没写话的，就照村人那一路给的 doing 说
+    let t = a && B.busy[a] ? say(B.busy[a]) : null;
+    if (!t && a) { const d = typeof npc.doing === 'string' && npc.doing ? npc.doing : s?.doing; if (d) t = `${d.replace(/[。，]$/, '')}呢。`; }
+    if (!t) t = say(B.busy['*']) ?? say(spare(P, 'busy'));
+    show(busyLabel(), t ?? '……');
+  };
+  const ask = () => {
+    const q = B.ask?.[ai];
+    if (!q) return;
+    const label = sub > 0 ? (q.more ?? '还有呢？') : fill(q.q, you());
+    let text = '', extra: Record<string, unknown> = {};
+    if (q.special === 'almanac') {
+      // 农事：这个节气田里做什么；再问是古书里的一句、三候
+      const names = SEASON_TERMS[k.season], want = k.term && names.includes(k.term) ? k.term : names[((k.day % names.length) + names.length) % names.length];
+      const t = TERMS.find((x) => x.name === want);
+      if (!t) { ai++; sub = 0; return ask(); }
+      if (sub === 0) text = `${t.name}。${t.work.join('')}`;
+      else if (sub === 1 && t.quote) { text = `老辈人传下来一句：${t.quote.text}`; extra = { source: t.quote.source }; }
+      else { text = `${t.name}三候：${t.hou.join('；')}。这是看天看物看出来的，错不了几天。`; sub = 2; }
+      sub++;
+      if (sub >= 3) { ai++; sub = 0; }
+    } else if (q.special === 'yuqiao' && YUQIAO.length) {
+      // 渔樵：樵者问，渔者答（原文）。两个人都在跟前时，头一回先说一说那一幕
+      const y = YUQIAO[yq++ % YUQIAO.length], both = !!k.life?.npcs.fisher?.present && !!k.life?.npcs.woodcutter?.present;
+      text = `${sub === 0 && both ? `${YUQIAO_SCENE.open}\n` : ''}樵者问：${y.q}\n渔者答：${y.a}`;
+      extra = { source: y.source };
+      sub++;
+      if (sub >= 3) { ai++; sub = 0; }
+    } else if (q.special === 'verse') {
+      // 童子背书：《山村咏怀》（数数的歌）
+      const p = POEMS.find((x) => x.id === 'shancun');
+      text = say(q.a) ?? '我背给先生听。';
+      if (p) extra = { lines: p.lines, source: `${p.author}《${p.title}》` };
+      ai++; sub = 0;
+    } else {
+      text = say(q.a) ?? '……';
+      // 还有没说过的，就留着「还有呢？」；说完了换下一个问题
+      if (q.more && sub < 2 && q.a.some((l) => fitsNow(l, ctx()) && !used.has(textOf(l)))) sub++; else { ai++; sub = 0; }
+    }
+    show(label, text, extra);
+  };
+  const home = () => {
+    asked.add('home');
+    show(B.homeQ ?? '家里都好？', say(B.home) ?? '都好，都好。');
+  };
+  const chat = () => {
+    chatN++;
+    // 原先的家常话（客的话带着先生接的那一句）与各人自己的闲话
+    const pool: L[] = [...kindLines.map((l) => [l.reply ? `${l.text}\n——${l.reply}` : l.text, { when: l.when }] as L), ...(B.idle ?? [])];
+    show(chatN > 1 ? '再说说' : '说会儿闲话', say(pool, spare(P, 'idle')) ?? '……');
+  };
+  const gift = () => {
+    gifting = true;
+    const items = k.bag.list().filter((x) => x.def.id !== 'coin').map((x) => ({ id: x.def.id, n: x.n }));
+    const ask = B.giftAsk ?? ((P.age ?? 30) < 14 ? '给我的？是什么？' : '{先生}太客气了。是什么？');
+    act.state = { kind: 'talk', title: P.name, who: `${P.tag} · ${F.bondName(id)}`, said: '带了样东西给你', text: fill(ask, you()), items, choices: [{ id: 'menu', label: '先不了' }] };
+    k.emitAct();
+  };
+  const give = (item: string) => {
+    if (!gifting) return;
+    gifting = false; asked.add('gift');
+    const d = ITEMS[item], r = F.give(id, item), parts: string[] = [];
+    const said = d ? `这${d.unit}${d.name}，给你。` : '这个给你。';
+    if (r.kind === 'favor' && r.turn) { show(said, r.turn.text, r.turn.lines?.length ? { lines: r.turn.lines, source: r.turn.source } : {}); return; }
+    if (r.kind === 'no') parts.push(say(B.no, spare(P, 'no')) ?? '');
+    else {
+      const kind = r.kind === 'like' ? 'like' : 'ok';
+      parts.push(say(B.got?.[item]) ?? say(kind === 'like' ? B.like : B.ok, spare(P, kind)) ?? '');
+      if (r.learned) k.note(`${P.name}喜欢${d?.name ?? item}`, 'folk');
+      if (r.back) parts.push(fill((say(B.back, ['{先生}拿着这个，别嫌弃。']) ?? '').replace(/\{物\}/g, ITEMS[r.back.item]?.name ?? ''), you()));
+    }
+    const extra = item === 'poem' && r.kind !== 'no' && F.poem ? { lines: F.poem.lines, source: F.poem.source } : {};
+    show(said, parts.filter(Boolean).join('\n'), extra);
+  };
+  const favor = (c: string) => {
+    const t = F.run(c, id);
+    // 签是旧的（事已经变了）：话不变，签重新排一遍
+    if (!t) { yesno = null; show(typeof act.state.said === 'string' ? act.state.said : null, String(act.state.text ?? '')); return; }
+    if (c.endsWith(':ask')) asked.add('offer');
+    if (c.endsWith(':where')) asked.add(c);
+    yesno = t.yesno ?? null;
+    show(t.said, t.text, t.lines?.length ? { lines: t.lines, source: t.source } : {});
+  };
+  const bye = () => {
+    // 朋友讲习：与客说过话，显出「丽泽，兑」
+    if (id === 'guest' && turns >= 2 && !k.found.has('兑') && act.state.kind !== 'xiang') { const r = reveal(k, '兑'); act.state = { kind: 'xiang', title: '对坐', gua: r.gua, found: r.found, choices: [{ id: 'bye', label: '毕' }] }; k.emitAct(); return; }
+    const line = say(B.bye, spare(P, 'bye'));
+    k.log({ kind: 'talk', text: P.name });
+    k.exitAct();
+    if (line) k.note(`${P.name}：${line}`, 'talk');
+  };
+
   const act: Act & { on(): boolean } = {
-    id: `talk:${w.npc}`, name: w.label,
+    id: `talk:${id}`, name: P.name,
     anchor: new THREE.Vector3(), spot: { x: npc.pos.x, z: npc.pos.z + 1.3, yaw: Math.PI },
     radius: 3.2, state: {},
     on: () => npc.present,
     enter() {
-      // 家常话从随便哪一句说起（几个孩子、两位老人不至于开口都是同一句）；农夫先说时令、渔樵先问答
-      turn = w.ask ? 0 : Math.floor(Math.random() * 1000); said = [];
+      asked = new Set(); backQ = null; yesno = null; gifting = false; ai = 0; sub = 0; chatN = 0; turns = 0;
       npc.attend(k.player.pos);
       const p = k.player, av = p.av;
       av.setHands('sleeve'); av.bow = 0.32; av.lookAt(tmp.copy(npc.pos).setY(npc.pos.y + 1.3));
       window.setTimeout(() => { if (k.act === act) av.bow = 0; }, 900);
-      // 机位：两个人的侧面
-      const mx = (p.pos.x + npc.pos.x) / 2, mz = (p.pos.z + npc.pos.z) / 2, dx = npc.pos.x - p.pos.x, dz = npc.pos.z - p.pos.z, l = Math.hypot(dx, dz) || 1;
-      k.nav.setPose({ pos: new THREE.Vector3(mx - (dz / l) * 4.4, p.pos.y + 1.9, mz + (dx / l) * 4.4), look: new THREE.Vector3(mx, p.pos.y + 1.15, mz), fov: 38, yaw: 30, up: 12, down: 8 });
-      say();
+      // 机位：两个人的侧面（挑一处看得见两个人的）
+      k.nav.setPose(talkShot(k, npc));
+      // 他转过来，「嗯」一声（声音那一路的 greet；没有这一声就不出）
+      k.sfxAt('greet', { vel: 0.5, x: npc.pos.x, z: npc.pos.z });
+      greet();
     },
-    exit() { npc.attend(null); k.player.av.lookAt(null); k.player.av.bow = 0; },
+    exit() { npc.attend(null); k.player.av.lookAt(null); k.player.av.bow = 0; gifting = false; yesno = null; },
     update() {
-      // 人在动（耕田的、采桑的）：标记与站位跟着他；站在他朝着行者来的那一侧
-      const p = k.player.pos, dx = p.x - npc.pos.x, dz = p.z - npc.pos.z, l = Math.hypot(dx, dz) || 1;
-      let sx = npc.pos.x + (dx / l) * 1.3, sz = npc.pos.z + (dz / l) * 1.3;
-      if (standable(sx, sz) == null) { sx = npc.pos.x; sz = npc.pos.z + 1.3; }
-      act.spot.x = sx; act.spot.z = sz; act.spot.yaw = Math.atan2(npc.pos.x - sx, npc.pos.z - sz);
+      // 说着话他走了（回家了、走远了）：就作罢。说着话的时候站位不动
+      if (k.act === act) { if (!npc.present) k.exitAct(); return; }
       act.anchor.set(npc.pos.x, npc.pos.y + 1.95, npc.pos.z);
-    },
-    cmd(name) {
-      if (name === 'more') { turn++; k.sfx('page', { vel: 0.25 }); say(); }
-      else if (name === 'bye' || name === 'done') {
-        // 朋友讲习：与客说过话，显出「丽泽，兑」
-        if (w.npc === 'guest' && turn >= 1 && !k.found.has('兑') && act.state.kind !== 'xiang') { const r = reveal(k, '兑'); act.state = { kind: 'xiang', title: '对坐', gua: r.gua, found: r.found, choices: [{ id: 'bye', label: '毕' }] }; k.emitAct(); return; }
-        k.log({ kind: 'talk', text: w.label }); k.exitAct();
+      const p = k.player.pos, q = npc.pos, dx = p.x - q.x, dz = p.z - q.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
+      // 已经在他跟前（三米以内；他被人围着、骑在牛上时四米多）：就近站着说，不必再挤过去（听书时人挤在一起，走不进去）。
+      // 站位只朝他挪一小步——人堆里几个人都够得着时，离得最近的那个最先被「走近」
+      const crowded = d > 3 && d <= 4.4 && (k.life?.blockers ?? []).some((b) => { if (!(b.r > 0)) return false; const e = Math.hypot(b.x - q.x, b.z - q.z); return e > 0.05 && e < 1.6; });
+      if (d <= 3 || crowded) { act.spot.x = p.x - dx * 0.12; act.spot.z = p.z - dz * 0.12; act.spot.yaw = Math.atan2(-dx, -dz); return; }
+      // 站在他朝着你来的那一侧：先找一米多远处站不站得住，站不住就往你这边退一退、再往两边让一让。
+      // 离得远时不必每帧找（隔几帧找一回，远的只取那条线上的一点）
+      if (++frame % (d < 8 ? 1 : 8) !== 0) return;
+      let sx = q.x + ux * 1.3, sz = q.z + uz * 1.3;
+      if (d < 26) {
+        let ok = standable(sx, sz) != null;
+        for (const r of [1.8, 2.4, 3.0, 3.6]) { if (ok || r > d - 0.4) break; sx = q.x + ux * r; sz = q.z + uz * r; ok = standable(sx, sz) != null; }
+        for (const a of [0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
+          if (ok) break;
+          const c = Math.cos(a), s = Math.sin(a), vx = ux * c - uz * s, vz = ux * s + uz * c;
+          sx = q.x + vx * 1.6; sz = q.z + vz * 1.6; ok = standable(sx, sz) != null;
+        }
+        // 他那一圈都站不住（坐在屋里桌后、船上）：离得不远就在你站的地方朝他说，远了先往他那边走
+        if (!ok) { if (d < 6.5) { sx = p.x - dx * 0.12; sz = p.z - dz * 0.12; } else { sx = q.x + ux * 1.3; sz = q.z + uz * 1.3; } }
       }
+      act.spot.x = sx; act.spot.z = sz; act.spot.yaw = Math.atan2(q.x - sx, q.z - sz);
+    },
+    cmd(name, arg) {
+      if (name !== 'menu' && name !== 'bye' && name !== 'done') k.sfx('page', { vel: 0.2 });
+      // 他回问的那一句，先生没接、说起别的了：就不再等
+      const pending = backQ;
+      if (name !== 'back' && name !== 'item') backQ = null;
+      if (name === 'back' && pending) { backQ = null; show(fill(pending[0], you()), fill(pending[1], you())); }
+      else if (name.startsWith('fv:')) favor(name);
+      else if (name === 'busy') busy();
+      else if (name === 'ask') ask();
+      else if (name === 'home') home();
+      else if (name === 'chat') chat();
+      else if (name === 'gift') gift();
+      else if (name === 'item' && typeof arg === 'string') give(arg);
+      else if (name === 'menu') { gifting = false; show(null, fill(B.after ?? '{先生}还有什么话？', you())); }
+      else if (name === 'bye' || name === 'done') bye();
     },
   };
   act.update!(0, 0);
@@ -103,7 +350,10 @@ function make(k: Anlewo, w: (typeof WHO)[number], npc: NpcLike): Act {
 
 export function create(k: Anlewo): Act[] {
   const out: Act[] = [];
-  for (const w of WHO) { const n = k.life?.npcs[w.npc]; if (n) out.push(make(k, w, n)); }
+  for (const P of people()) {
+    const n = k.life?.npcs[P.id] as Npc | undefined, B = BOOKS[P.id];
+    if (n && B) out.push(make(k, P, n, B));
+  }
   // 人在走动：没在说话时也要每帧把标记挪到他身上
   if (out.length) k.world.tick.push(() => { for (const a of out) if (k.act !== a) a.update?.(0, 0); });
   return out;

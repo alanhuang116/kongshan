@@ -21,7 +21,8 @@ export function createStubAvatar(): Avatar {
   handL.position.set(0.24, 0.85, 0.08); handR.position.set(-0.24, 0.85, 0.08);
   root.add(body, hips, chest, head, handL, handR);
   let pose: PoseName = 'stand', k = 1, kGoal = 1, bowNow = 0, phase = 0;
-  const H: Record<PoseName, number> = { stand: 1, kneel: 0.62, sit: 0.55, crouch: 0.6, bench: 0.74 };
+  // （替身躺下就是矮成一截，不真的放平）
+  const H: Record<PoseName, number> = { stand: 1, kneel: 0.62, sit: 0.55, crouch: 0.6, bench: 0.74, lie: 0.3 };
   const rest = { L: handL.position.clone(), R: handR.position.clone() };
   const goal: Record<Side, THREE.Vector3 | null> = { L: null, R: null };
   const tmp = new THREE.Vector3();

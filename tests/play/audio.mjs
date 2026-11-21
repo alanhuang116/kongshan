@@ -133,6 +133,13 @@ if (want('rules')) {
   mf = await day('summer', 14, { focus: 'nothing-like-this' });
   m = await day('summer', 14);
   R.ok('不认得的 focus 当作没有', mf.cicadas === m.cicadas && mf.brook === m.brook);
+  // 观星：不提哪一层，整个夜静下来——风更轻、蛙退得最多、蟋蟀退一半，夜的底稍显；村里那一层照旧（远处的犬吠、更梆由它排）
+  m = await day('summer', 22); mf = await day('summer', 22, { focus: 'stars' });
+  R.ok('观星：风更轻、蛙与蟋蟀退下去、夜的底稍显，村里那一层还在', mf.air < m.air * 0.7 && mf.bamboo < m.bamboo * 0.6 && mf.frogs < m.frogs * 0.4 && mf.crickets < m.crickets * 0.6 && mf.night > m.night * 1.1 && mf.village === m.village,
+    `气 ${m.air.toFixed(2)}→${mf.air.toFixed(2)}，蛙 ${m.frogs.toFixed(2)}→${mf.frogs.toFixed(2)}，蟋蟀 ${m.crickets.toFixed(2)}→${mf.crickets.toFixed(2)}，夜 ${m.night.toFixed(2)}→${mf.night.toFixed(2)}`);
+  // 野（鹊、鸦、鹿、松鼠）：一直「在」，各样什么时候叫在层里算；大雨里收着
+  m = await day('autumn', 17.3); mf = await day('autumn', 17.3, { rain: 1 });
+  R.ok('野的那一层（鹊、鸦、鹿、松鼠）平时在，大雨里收着', m.wild > 0.9 && mf.wild < 0.35, `晴 ${m.wild.toFixed(2)}，大雨 ${mf.wild.toFixed(2)}`);
   // 旧的叫法（界面没迁完时）：只给 hour / weather / season / indoor / water / height
   m = await mix({ hour: 21, weather: 'rain', season: 'summer', indoor: 1, water: 0.3, height: 0 });
   R.ok('旧的场景写法也认（weather: rain → 雨；没给 near 就按处取）', m.rain === 1 && m.brook > 0, `rain=${m.rain} brook=${m.brook.toFixed(2)}`);
@@ -149,7 +156,7 @@ const SHOTS = [
   ['bowl', {}, 0.8, { peak: [0.04, 0.3] }], ['bowl·sip', { variant: 'sip' }, 1.8, { peak: [0.04, 0.3] }], ['stone', {}, 0.5, { peak: [0.03, 0.25], bursts: [1, 1] }],
   ['lamp', {}, 0.8, { peak: [0.02, 0.15] }], ['ignite', {}, 1, { peak: [0.02, 0.15] }], ['ash', {}, 0.6, { peak: [0.02, 0.2] }],
   ['broom', { dur: 0.6 }, 1, { peak: [0.03, 0.25] }], ['broom·stone', { dur: 0.6, variant: 'stone' }, 1, { peak: [0.03, 0.25] }], ['water', {}, 2, { peak: [0.04, 0.3] }],
-  ['gate', {}, 1.6, { peak: [0.03, 0.3] }], ['door', {}, 1.4, { peak: [0.05, 0.3] }], ['knock', {}, 1.6, { peak: [0.05, 0.35], bursts: [3, 3] }],
+  ['gate', {}, 1.6, { peak: [0.03, 0.3] }], ['door', {}, 1.4, { peak: [0.05, 0.3] }], ['knock（门环）', {}, 1.6, { peak: [0.05, 0.35], bursts: [2, 3], tail: [0.5, 1.6] }],
   ['dew', {}, 0.7, { peak: [0.008, 0.06], bursts: [2, 2] }], ['drip', {}, 0.6, { peak: [0.03, 0.2] }], ['plop', {}, 0.9, { peak: [0.05, 0.3] }], ['plop·frog', { variant: 'frog' }, 1.2, { peak: [0.04, 0.3] }], ['ripple', {}, 1.2, { peak: [0.04, 0.25] }],
   // 抚琴
   ['qin·散三弦', { tech: 'open', string: 3 }, 6, { peak: [0.06, 0.4], pitch: 98 }], ['qin（pitch 0）', { pitch: 0 }, 6, { peak: [0.06, 0.4], pitch: 98 }], ['qin（pitch 7）', { pitch: 7 }, 6, { peak: [0.06, 0.4], pitch: 146.8 }],
@@ -167,37 +174,79 @@ const SHOTS = [
   ['sparrow', {}, 2.8, { peak: [0.02, 0.15] }], ['cuckoo（远）', {}, 1.8, { peak: [0.008, 0.08], bursts: [2, 2], near: { dist: 0 } }], ['cuckoo·x3', { variant: 'x3' }, 4.6, { peak: [0.008, 0.08] }], ['goose·wild（远）', { variant: 'wild' }, 5, { peak: [0.006, 0.08] }],
   ['flute（远）', {}, 6.5, { peak: [0.01, 0.12] }], ['flute·近', { far: 0.1, n: 5 }, 6, { peak: [0.04, 0.3] }],
   ['hammer', {}, 1, { peak: [0.08, 0.4], bursts: [1, 1] }], ['saw·push', { variant: 'push' }, 0.8, { peak: [0.03, 0.25] }], ['saw·pull', { variant: 'pull' }, 0.8, { peak: [0.02, 0.2] }], ['plane', {}, 1.3, { peak: [0.03, 0.25] }],
-  ['hoe', {}, 0.8, { peak: [0.05, 0.35] }], ['plough', {}, 3.2, { peak: [0.04, 0.3] }], ['bucket', {}, 4.8, { peak: [0.04, 0.3] }], ['bucket·splash', { variant: 'splash' }, 1.6, { peak: [0.04, 0.3] }],
+  ['hoe', {}, 0.8, { peak: [0.05, 0.35] }], ['plough', {}, 3.2, { peak: [0.04, 0.3] }], ['bucket·well', { variant: 'well' }, 4.8, { peak: [0.04, 0.3] }], ['bucket·splash', { variant: 'splash' }, 1.6, { peak: [0.04, 0.3] }],
   ['pound', {}, 0.8, { peak: [0.06, 0.4], bursts: [1, 1] }], ['millThump', {}, 1.1, { peak: [0.08, 0.45] }], ['rattle', {}, 1.6, { peak: [0.04, 0.3] }], ['swing', {}, 3.4, { peak: [0.01, 0.15] }],
   ['oar', {}, 2.6, { peak: [0.03, 0.25] }], ['net', {}, 1.4, { peak: [0.04, 0.3] }],
   ['flap', {}, 0.9, { peak: [0.01, 0.15] }], ['chirp', {}, 0.8, { peak: [0.01, 0.12] }], ['tumble', {}, 1.4, { peak: [0.01, 0.15] }], ['thresh', {}, 0.8, { peak: [0.03, 0.3] }], ['laugh', {}, 1.4, { peak: [0.02, 0.2] }],
   ['cluck', {}, 2.6, { peak: [0.04, 0.3] }], ['quack', {}, 2.8, { peak: [0.04, 0.3] }],
+  // 后来添的：每一个都要出得来、不出 NaN、不爆音、时长合理（tail：这一声本身 −30 分贝处的秒数范围）、半中间不咔哒、窗口里收得住
+  // 桶：入水、提起
+  ['bucket', {}, 2.8, { peak: [0.04, 0.3], tail: [1.2, 2.8] }], ['bucket·dip', { variant: 'dip' }, 1.3, { peak: [0.04, 0.3], tail: [0.4, 1.3] }], ['bucket·lift', { variant: 'lift' }, 2, { peak: [0.02, 0.2], tail: [0.6, 2] }],
+  ['knock·knuckle', { variant: 'knuckle' }, 1.6, { peak: [0.05, 0.35], bursts: [3, 3] }],
+  // 农事
+  ['sickle', {}, 1, { peak: [0.02, 0.15], tail: [0.3, 1] }], ['sheaf', {}, 2.3, { peak: [0.02, 0.15], tail: [0.6, 2.3] }], ['flail', {}, 1.1, { peak: [0.06, 0.35], tail: [0.3, 1.1] }],
+  ['winnow', {}, 3.8, { peak: [0.015, 0.12], tail: [1.5, 3.8] }], ['millstone', {}, 3.4, { peak: [0.04, 0.25], tail: [2, 3.4] }], ['sow', {}, 1.3, { peak: [0.015, 0.15], tail: [0.4, 1.3] }],
+  ['dig', {}, 1.2, { peak: [0.05, 0.3], tail: [0.4, 1.2] }], ['pluck', {}, 1.3, { peak: [0.015, 0.12], tail: [0.4, 1.3] }], ['grain', {}, 2, { peak: [0.02, 0.15], tail: [0.8, 2] }],
+  ['grain·sack', { variant: 'sack' }, 2.2, { peak: [0.015, 0.15], tail: [0.8, 2.2] }], ['chop', {}, 1, { peak: [0.05, 0.35], tail: [0.1, 1] }], ['split', {}, 0.9, { peak: [0.02, 0.2], tail: [0.15, 0.9] }],
+  ['loom', {}, 1.2, { peak: [0.04, 0.3], tail: [0.3, 1.2] }], ['pull', {}, 1, { peak: [0.02, 0.2], tail: [0.2, 1] }], ['pole', {}, 1.4, { peak: [0.02, 0.2], tail: [0.4, 1.4] }],
+  ['rustle', {}, 1.8, { peak: [0.02, 0.2], tail: [0.5, 1.8] }], ['fruitFall', {}, 1.4, { peak: [0.02, 0.25], tail: [0.4, 1.4] }], ['scoop', {}, 1, { peak: [0.02, 0.2], tail: [0.15, 1] }], ['stir', {}, 1, { peak: [0.015, 0.2], tail: [0.2, 1] }], ['windlass', { dur: 2.6 }, 3.6, { peak: [0.01, 0.12], tail: [1.5, 3.6] }],
+  // 禽兽虫鱼
+  ['frog', {}, 3, { peak: [0.04, 0.3], tail: [0.5, 3] }], ['oriole', {}, 2.4, { peak: [0.03, 0.2], tail: [0.5, 2.4] }], ['magpie', {}, 3.4, { peak: [0.04, 0.25], tail: [0.4, 3.4] }],
+  ['crow', {}, 3.2, { peak: [0.03, 0.2], tail: [0.6, 3.2] }], ['crow·flock', { variant: 'flock' }, 8, { peak: [0.015, 0.15], tail: [3, 8] }], ['geese（远）', {}, 9.5, { peak: [0.005, 0.08], tail: [3, 9.5] }],
+  ['deer（远）', {}, 2.4, { peak: [0.008, 0.1], tail: [0.4, 2.4] }], ['goat', {}, 3, { peak: [0.04, 0.25], tail: [0.5, 3] }], ['goat·kid', { variant: 'kid' }, 2.8, { peak: [0.03, 0.25], tail: [0.4, 2.8] }],
+  ['donkey', {}, 6, { peak: [0.04, 0.3], tail: [2.5, 6] }], ['bee', {}, 3, { peak: [0.02, 0.15], tail: [1, 3] }], ['wings', {}, 2, { peak: [0.04, 0.3], tail: [0.6, 2] }],
+  ['fishJump', {}, 1.8, { peak: [0.05, 0.3], tail: [0.5, 1.8] }], ['purr', {}, 4.6, { peak: [0.03, 0.2], tail: [1.5, 4.6] }], ['peck', {}, 2, { peak: [0.01, 0.12], tail: [0.2, 2] }],
+  ['squirrel', {}, 2.4, { peak: [0.015, 0.12], tail: [0.4, 2.4] }], ['frogPlop', {}, 1, { peak: [0.04, 0.3], tail: [0.3, 1] }], ['cackle', {}, 5, { peak: [0.05, 0.35] }],
+  ['sheep', {}, 3, { peak: [0.03, 0.25], tail: [0.6, 3] }], ['lamb', {}, 1.6, { peak: [0.02, 0.2], tail: [0.2, 1.6] }], ['crane（远景）', {}, 3.2, { peak: [0.006, 0.1], tail: [0.5, 3.2] }], ['crane·近些', { dist: 0.5 }, 3.2, { peak: [0.02, 0.2], tail: [0.5, 3.2] }],
+  ['munch', {}, 3.8, { peak: [0.02, 0.2], tail: [1, 3.8] }], ['dogWhine', {}, 1.8, { peak: [0.02, 0.2], tail: [0.4, 1.8] }],
+  // 器物与游戏
+  ['cast', {}, 1.4, { peak: [0.015, 0.2], tail: [0.3, 1.4] }], ['cast·land', { variant: 'land' }, 1.8, { peak: [0.03, 0.2], tail: [0.8, 1.8] }], ['strike', {}, 1, { peak: [0.02, 0.2], tail: [0.2, 1] }],
+  ['fishSplash', {}, 1.8, { peak: [0.04, 0.3], tail: [0.4, 1.8] }], ['flop', {}, 1.6, { peak: [0.03, 0.25], tail: [0.3, 1.6] }], ['reel', {}, 2.4, { peak: [0.02, 0.15], tail: [1, 2.4] }], ['bite', {}, 1.2, { peak: [0.015, 0.12], tail: [0.3, 1.2] }],
+  ['kite', {}, 4.4, { peak: [0.01, 0.1], tail: [2, 4.4] }], ['shuttle', {}, 0.6, { peak: [0.03, 0.2], tail: [0.1, 0.6] }], ['arrowPot', {}, 1.8, { peak: [0.02, 0.15], tail: [0.4, 1.8] }],
+  ['arrowMiss', {}, 1, { peak: [0.01, 0.12], tail: [0.2, 1] }], ['potRim', {}, 1.4, { peak: [0.02, 0.2], tail: [0.2, 1.4] }], ['potEar', {}, 1.3, { peak: [0.02, 0.2], tail: [0.2, 1.3] }],
+  ['toss', {}, 0.7, { peak: [0.01, 0.12], tail: [0.1, 0.7] }], ['catch', {}, 0.5, { peak: [0.02, 0.2], tail: [0.05, 0.5] }], ['swish', {}, 1, { peak: [0.01, 0.15], tail: [0.3, 1] }], ['skip', {}, 2.4, { peak: [0.015, 0.12], tail: [0.6, 2.4] }], ['snowCrunch', {}, 0.8, { peak: [0.015, 0.12], tail: [0.15, 0.8] }],
+  ['snowCrunch·roll', { variant: 'roll' }, 2.2, { peak: [0.015, 0.12], tail: [1, 2.2] }], ['chime', {}, 4.4, { peak: [0.008, 0.08], tail: [0.8, 4.4] }], ['lantern', {}, 3.4, { peak: [0.02, 0.15], tail: [1.2, 3.4] }],
+  ['starTap', {}, 0.6, { peak: [0.004, 0.04], tail: [0.1, 0.6] }], ['starLight·第一宿', { pitch: 0 }, 2.4, { peak: [0.01, 0.08], tail: [0.5, 2.4], pitch: 784 }], ['starLight·第三宿', { pitch: 2 }, 2.4, { peak: [0.01, 0.08], pitch: 987.8 }],
+  ['matUnroll', {}, 1.8, { peak: [0.02, 0.15], tail: [0.6, 1.8] }], ['matRoll', {}, 1.8, { peak: [0.015, 0.15], tail: [0.6, 1.8] }], ['boatBump', {}, 1, { peak: [0.05, 0.35], tail: [0.2, 1] }],
+  ['flutter', {}, 1.2, { peak: [0.02, 0.2], tail: [0.3, 1.2] }], ['kiteFall', {}, 1.2, { peak: [0.015, 0.2], tail: [0.2, 1.2] }], ['snap', {}, 0.7, { peak: [0.02, 0.25], tail: [0.05, 0.7] }], ['snowPat', {}, 0.9, { peak: [0.02, 0.25], tail: [0.1, 0.9] }],
+  // 人
+  ['clapper（远：没说远近）', {}, 4.6, { peak: [0.005, 0.06], tail: [0.4, 4.6] }], ['clapper·三更', { n: 3, dist: 0 }, 4.6, { peak: [0.03, 0.25], bursts: [3, 3] }], ['gong（远）', {}, 3.4, { peak: [0.005, 0.06], tail: [0.8, 3.4] }],
+  ['gong·近', { dist: 0 }, 3.4, { peak: [0.03, 0.2], tail: [0.8, 3.4] }], ['wood', {}, 0.6, { peak: [0.05, 0.35], tail: [0.1, 0.6] }], ['murmur（远）', {}, 8.5, { peak: [0.008, 0.08], tail: [2, 8.5] }],
+  ['kidsLaugh', {}, 2.2, { peak: [0.03, 0.2], tail: [0.6, 2.2] }], ['greet', {}, 1.4, { peak: [0.02, 0.15], tail: [0.3, 1.4] }], ['whip', {}, 1, { peak: [0.05, 0.4], tail: [0.15, 1] }],
+  ['drum（书鼓）', {}, 0.9, { peak: [0.03, 0.3], tail: [0.1, 0.9] }], ['drum·temple', { variant: 'temple' }, 3, { peak: [0.05, 0.45] }],
   // 天上
   ['thunder', {}, 11, { peak: [0.03, 0.3] }], ['thunder·近些', { dist: 0.3, dur: 6 }, 8, { peak: [0.05, 0.4] }], ['thunder·极远', { dist: 0.95, dur: 10 }, 12, { peak: [0.003, 0.1] }],
   ['gust', {}, 5.6, { peak: [0.03, 0.25] }], ['gust·bamboo', { variant: 'bamboo' }, 5.6, { peak: [0.03, 0.25] }], ['gust·pine', { variant: 'pine' }, 5.6, { peak: [0.03, 0.25] }],
+  ['meteor（几乎无声）', {}, 1.8, { peak: [0.001, 0.015], tail: [0.5, 1.8] }],
   // 界面
   ['tick', {}, 0.5, { peak: [0.02, 0.15] }], ['open', {}, 0.6, { peak: [0.02, 0.15] }], ['close', {}, 0.6, { peak: [0.02, 0.15] }],
 ];
+/** 后来添的这一批（与改过的桶、叩门环）：另查半中间不咔哒、窗口里收得住 */
+const NEWER = new Set(['bucket', 'knock', 'swing', 'laugh', 'sickle', 'sheaf', 'flail', 'winnow', 'millstone', 'sow', 'dig', 'pluck', 'grain', 'windlass', 'frog', 'oriole', 'magpie', 'crow', 'geese', 'deer', 'goat', 'donkey', 'bee', 'wings', 'fishJump', 'purr', 'peck', 'squirrel', 'frogPlop', 'cackle', 'sheep', 'lamb', 'crane', 'munch', 'dogWhine', 'cast', 'strike', 'fishSplash', 'flop', 'reel', 'bite', 'kite', 'shuttle', 'arrowPot', 'arrowMiss', 'potRim', 'potEar', 'toss', 'catch', 'swish', 'skip', 'snowCrunch', 'chime', 'lantern', 'starTap', 'starLight', 'matUnroll', 'matRoll', 'boatBump', 'clapper', 'gong', 'wood', 'murmur', 'kidsLaugh', 'greet', 'meteor', 'chop', 'split', 'loom', 'whip', 'drum', 'pull', 'pole', 'rustle', 'fruitFall', 'scoop', 'stir', 'flutter', 'kiteFall', 'snap', 'snowPat']);
 if (want('shots')) {
   head('一击（默认力度 0.7，室外，总音量 0.8）', COLS);
   let k = 1;
   for (const [name, opts, seconds, exp] of SHOTS) {
     k++;
     if (!match(name)) continue;
-    const shot = name.split(/[·（]/)[0];
+    const shot = name.split(/[·（]/)[0], newer = NEWER.has(shot);
     await seed(k * 7919);
     const st = await call('__render', shotSpec(shot, opts, seconds));
-    // 数段数、量音高用贴近的干声（回声会把字与字之间填上）
+    // 数段数、量音高用贴近的干声（回声会把字与字之间填上）；后来添的都另渲染一遍干声，看半中间有没有突然断掉（咔哒）
     let dry = null;
-    if (exp.bursts || exp.pitch || exp.beats) { await seed(k * 7919); dry = await call('__render', shotSpec(shot, { ...opts, ...exp.near, space: 'near' }, seconds)); }
+    if (exp.bursts || exp.pitch || exp.beats || newer) { await seed(k * 7919); dry = await call('__render', shotSpec(shot, { ...opts, ...exp.near, space: 'near' }, seconds)); }
     const notes = [];
     if (dry && exp.bursts) notes.push(`干声 ${dry.bursts.length} 段 [${dry.bursts.map(([a, b]) => `${a}–${b}`).join(' ')}]`);
     if (dry && exp.beats) notes.push(`一个孩子的干声 ${dry.beats.length} 下 [${dry.beats.join(' ')}]`);
     if (dry && dry.pitches.some((p) => p > 0) && dry.bursts.length <= 12) notes.push(`音高 ${dry.pitches.join(' ')}`);
+    if (newer) notes.push(`节点 ${st.nodes}`);
     row(name, st, notes.join('  '));
     const bad = [];
     if (st.nan) bad.push('有 NaN');
     if (st.peak < exp.peak[0] || st.peak > exp.peak[1]) bad.push(`峰值 ${st.peak} 不在 ${exp.peak[0]}–${exp.peak[1]}`);
+    if (exp.tail && (st.tail30 < exp.tail[0] || st.tail30 > exp.tail[1])) bad.push(`这一声本身 ${st.tail30} 秒，不在 ${exp.tail[0]}–${exp.tail[1]}`);
+    if (newer && dry.cuts > 0) bad.push(`干声里有 ${dry.cuts} 处突然断掉（咔哒）`);
+    if (newer && st.endDb > -24) bad.push(`到窗口末尾还没收住（末一格比最响处只低 ${-st.endDb} 分贝）`);
     // 很短的一声，这一小段里的平均值不会正好是零（一个低的闷响只有一两个周期）：按峰值的百分之五放宽
     if (Math.abs(st.dc) > Math.max(0.003, 0.05 * st.peak)) bad.push(`直流 ${st.dc}`);
     if (st.hf > 0.6) bad.push(`6kHz 以上占 ${st.hf}，太亮`);
@@ -217,6 +266,28 @@ if (want('shots')) {
     const lens = st.bursts.map(([a, b]) => b - a);
     R.ok('书声末一个字拖得最长', lens.length >= 3 && lens[lens.length - 1] >= Math.max(...lens.slice(0, -1)), `各段 ${lens.map((x) => x.toFixed(2)).join(' ')} 秒`);
   }
+  // 和同类声的差别：后来添的每一样与它最像的那一样比——各倍频程（相对各自最响的一段）平均差 4 分贝以上，
+  // 或频谱重心差三成以上，或长短差四成以上，或颗粒感（10 毫秒一格的响度平均跳多少）差 1.5 分贝以上：不是同一个声音换了个名字
+  if (match('差别')) {
+    const PAIRS = [
+      ['sickle', {}, 'broom', {}], ['flail', {}, 'thresh', {}], ['dig', {}, 'hoe', {}], ['winnow', {}, 'broom', {}], ['grain', {}, 'pour', { variant: 'water' }], ['sow', {}, 'winnow', {}],
+      ['magpie', {}, 'duck', {}], ['crow', {}, 'magpie', {}], ['crow', {}, 'goose', {}], ['goat', {}, 'cat', {}], ['donkey', {}, 'ox', {}], ['deer', { dist: 0 }, 'cuckoo', { dist: 0 }], ['oriole', {}, 'chirp', {}],
+      ['geese', { dist: 0.3 }, 'goose', { variant: 'wild', dist: 0.3 }], ['wings', {}, 'flap', {}], ['frogPlop', {}, 'plop', { variant: 'frog' }], ['fishJump', {}, 'plop', {}], ['frog', {}, 'duck', {}],
+      ['millstone', {}, 'plough', {}], ['windlass', { dur: 2.6 }, 'bucket', { variant: 'creak' }], ['snowCrunch', {}, 'broom', {}], ['clapper', { dist: 0 }, 'knock', { variant: 'knuckle' }],
+      ['gong', { dist: 0 }, 'bowl', {}], ['knock', {}, 'knock', { variant: 'knuckle' }], ['chime', {}, 'windbell', {}], ['wood', {}, 'hammer', {}], ['murmur', { dist: 0 }, 'recite', {}], ['greet', {}, 'ox', {}],
+      ['bite', {}, 'drip', {}], ['skip', {}, 'plop', {}], ['shuttle', {}, 'knock', { variant: 'knuckle' }], ['arrowPot', {}, 'cup', {}], ['potRim', {}, 'arrowPot', {}], ['potEar', {}, 'potRim', {}], ['toss', {}, 'cast', {}], ['sheep', {}, 'goat', {}], ['lamb', {}, 'goat', { variant: 'kid' }], ['crane', { dist: 0.5 }, 'geese', { dist: 0.5 }], ['munch', {}, 'peck', {}], ['dogWhine', {}, 'dog', { variant: 'woof' }], ['dogWhine', {}, 'cat', {}], ['rustle', {}, 'gust', {}], ['fruitFall', {}, 'peck', {}], ['scoop', {}, 'winnow', {}], ['stir', {}, 'grain', {}], ['flutter', {}, 'flap', {}], ['kiteFall', {}, 'arrowMiss', {}], ['snap', {}, 'whip', {}], ['snowPat', {}, 'snowCrunch', {}], ['pull', {}, 'dig', {}], ['pole', {}, 'swing', {}], ['starTap', {}, 'tick', {}], ['starLight', {}, 'chime', {}], ['matUnroll', {}, 'paper', { variant: 'unroll' }], ['boatBump', {}, 'door', {}], ['chop', {}, 'hammer', {}], ['split', {}, 'sickle', {}], ['loom', {}, 'knock', { variant: 'knuckle' }], ['whip', {}, 'wood', {}], ['drum', {}, 'knock', { variant: 'knuckle' }], ['strike', {}, 'cast', {}], ['fishSplash', {}, 'fishJump', {}], ['flop', {}, 'pound', {}], ['catch', {}, 'shuttle', {}], ['swish', {}, 'gust', {}], ['purr', {}, 'ox', { variant: 'breath' }],
+    ];
+    const sec = (n, o) => (o.variant === 'flock' ? 8 : ({ geese: 9.5, murmur: 8.5, donkey: 6, windlass: 3.6 })[n] ?? 3);
+    let k2 = 900;
+    for (const [a, oa, b, ob] of PAIRS) {
+      k2++;
+      await seed(k2); const A = await call('__render', shotSpec(a, { ...oa, space: 'near' }, sec(a, oa)));
+      await seed(k2); const B = await call('__render', shotSpec(b, { ...ob, space: 'near' }, sec(b, ob)));
+      const band = A.bands.reduce((s, x, i) => s + Math.abs(Math.max(-50, x) - Math.max(-50, B.bands[i])), 0) / A.bands.length;
+      const cen = Math.abs(Math.log2(Math.max(1, A.centroid) / Math.max(1, B.centroid))), len = Math.abs(Math.log2(Math.max(0.05, A.tail30) / Math.max(0.05, B.tail30))), grit = Math.abs(A.grit - B.grit);
+      R.ok(`差别：${a}${oa.variant ? '·' + oa.variant : ''} 与 ${b}${ob.variant ? '·' + ob.variant : ''}`, band >= 4 || cen >= 0.38 || len >= 0.5 || grit >= 1.5, `倍频程平均差 ${band.toFixed(1)} 分贝，重心 ${A.centroid}/${B.centroid}Hz，长短 ${A.tail30}/${B.tail30} 秒，颗粒 ${A.grit}/${B.grit} 分贝`);
+    }
+  }
   // 鸡鸣：第三段最高、末一段从高处落下来
   if (match('rooster')) {
     await seed(99);
@@ -228,27 +299,51 @@ if (want('shots')) {
 
 // ———————————————————————————— 三、脚步 ————————————————————————————
 if (want('steps')) {
-  head('脚步（力度 0.4：走路时的样子）', COLS);
-  for (const g of ['earth', 'grass', 'stone', 'plank', 'floor', 'water']) {
-    for (const wet of g === 'water' || g === 'plank' || g === 'floor' ? [0] : [0, 1]) {
-      const name = `foot·${g}${wet ? '·湿' : ''}`;
+  head('脚步（走：力度 0.4；跑：力度 0.57、4.5 米/秒）', COLS);
+  for (const g of ['earth', 'grass', 'stone', 'plank', 'floor', 'water', 'snow']) {
+    for (const [wet, run] of g === 'water' || g === 'plank' || g === 'floor' || g === 'snow' ? [[0, false], [0, true]] : [[0, false], [1, false], [0, true]]) {
+      const name = `foot·${g}${wet ? '·湿' : ''}${run ? '·跑' : ''}`;
       if (!match(name)) continue;
+      const o = run ? { ground: g, vel: 0.57, run: true, speed: 4.5 } : { ground: g, wet, vel: 0.4 };
       await seed(31 + g.length);
-      const spec = shotSpec('foot', { ground: g, wet, vel: 0.4 }, 0.8), st = await call('__render', spec);
+      const spec = shotSpec('foot', o, 0.8), st = await call('__render', spec);
       await seed(31 + g.length);
-      const dry = await call('__render', shotSpec('foot', { ground: g, wet, vel: 0.4, space: 'near' }, 0.8));
+      const dry = await call('__render', shotSpec('foot', { ...o, space: 'near' }, 0.8));
       // 表里的「这一声本身」取干声的（带着回声量不出一步有多长）
       row(name, { ...st, tail30: dry.tail30 }, `这一步本身 ${dry.tail30} 秒`);
       const bad = [];
       if (st.nan) bad.push('有 NaN');
-      if (st.peak < 0.01 || st.peak > 0.15) bad.push(`峰值 ${st.peak} 不在 0.01–0.15`);
+      if (st.peak < 0.01 || st.peak > (run ? 0.2 : 0.15)) bad.push(`峰值 ${st.peak} 不在 0.01–${run ? 0.2 : 0.15}`);
       if (st.hf > 0.25) bad.push(`6kHz 以上占 ${st.hf}：脚步不该「嗒」`);
-      if (dry.tail30 > 0.4) bad.push(`这一步本身 ${dry.tail30} 秒，太长（每秒一步半）`);
+      // 跑起来一秒近三步：一步本身要更短
+      if (dry.tail30 > (run ? 0.3 : 0.4)) bad.push(`这一步本身 ${dry.tail30} 秒，太长（${run ? '一秒近三步' : '每秒一步半'}）`);
       if (st.lf > 0.5) bad.push(`一半以上的力气在 100Hz 以下（${st.lf}），小喇叭上听不见`);
-      if (st.centroid > 2600) bad.push(`重心 ${st.centroid}Hz，太亮`);
+      // 雪是「咯吱」，本来就比土路亮
+      if (st.centroid > (g === 'snow' ? 3800 : 2600)) bad.push(`重心 ${st.centroid}Hz，太亮`);
+      if (dry.cuts > 0) bad.push(`干声里有 ${dry.cuts} 处突然断掉`);
       R.ok(name, !bad.length, bad.join('；'));
-      await png('foot-' + g + (wet ? '-wet' : ''), name, spec);
+      await png('foot-' + g + (wet ? '-wet' : '') + (run ? '-run' : ''), name, spec);
     }
+  }
+  // 跑：比走重（同一种地面，各量六步取平均），而且仍然短；快走（3.0 米一秒，世界那边也算 run）在两者之间。
+  // 力度照界面那一层按速度给的：走 1.4 → 0.38，快走 3.0 → 0.5，跑 4.6 → 0.62（各含随机的一半）
+  if (match('跑')) {
+    for (const g of ['earth', 'grass', 'stone', 'snow']) {
+      let w = 0, f = 0, r = 0;
+      for (let i = 0; i < 6; i++) {
+        await seed(400 + i); w += (await call('__render', shotSpec('foot', { ground: g, vel: 0.38, speed: 1.4, space: 'near' }, 0.6))).rms;
+        await seed(400 + i); f += (await call('__render', shotSpec('foot', { ground: g, vel: 0.5, run: true, speed: 3, space: 'near' }, 0.6))).rms;
+        await seed(400 + i); r += (await call('__render', shotSpec('foot', { ground: g, vel: 0.62, run: true, speed: 4.6, space: 'near' }, 0.6))).rms;
+      }
+      R.ok(`走 < 快走 < 跑：${g}`, w < f && f < r && r > w * 1.5, `均方根 走 ${f3(w / 6)}，快走 ${f3(f / 6)}，跑 ${f3(r / 6)}（跑比走 ${(20 * Math.log10(r / w)).toFixed(1)} 分贝）`);
+    }
+  }
+  // 雪地：和草地、土路听得出不一样（「咯吱」在中高处）
+  if (match('snow')) {
+    await seed(51); const s = await call('__render', shotSpec('foot', { ground: 'snow', vel: 0.4, space: 'near' }, 0.6));
+    await seed(51); const gr = await call('__render', shotSpec('foot', { ground: 'grass', vel: 0.4, space: 'near' }, 0.6));
+    await seed(51); const ea = await call('__render', shotSpec('foot', { ground: 'earth', vel: 0.4, space: 'near' }, 0.6));
+    R.ok('雪地的脚步：比土路、草地亮（「咯吱」）', s.centroid > ea.centroid * 2 && s.centroid > gr.centroid * 1.2, `重心 雪 ${s.centroid}Hz，草 ${gr.centroid}Hz，土 ${ea.centroid}Hz`);
   }
   // 每一步都不一样
   await seed(5);
@@ -261,7 +356,7 @@ if (want('steps')) {
 const BEDS = [
   ['air', 20, [0.002, 0.012]], ['pines', 20, [0.005, 0.03]], ['bamboo', 20, [0.004, 0.03]], ['leaves', 20, [0.003, 0.02]], ['fieldwind', 20, [0.004, 0.025]],
   ['brook', 16, [0.008, 0.03]], ['pond', 30, [0.0006, 0.008]], ['river', 20, [0.006, 0.025]], ['waterfall', 20, [0.006, 0.025]],
-  ['birds', 30, [0.002, 0.02]], ['swallows', 30, [0.0005, 0.01]], ['cicadas', 30, [0.004, 0.02]], ['frogs', 30, [0.002, 0.02]], ['crickets', 30, [0.002, 0.012]], ['geese', 16, [0.0004, 0.01]],
+  ['birds', 30, [0.002, 0.02]], ['swallows', 30, [0.0005, 0.01]], ['cicadas', 30, [0.004, 0.02]], ['frogs', 30, [0.002, 0.02]], ['crickets', 30, [0.002, 0.012]], ['geese', 16, [0.0004, 0.01]], ['wild', 30, [0.0004, 0.02]],
   ['rain', 16, [0.012, 0.045]], ['drips', 16, [0.001, 0.012]], ['snow', 16, [0.001, 0.008]], ['night', 16, [0.001, 0.008]],
   ['village', 30, [0.001, 0.03]], ['school', 30, [0.006, 0.03]], ['work', 30, [0.0015, 0.04]], ['mill', 20, [0.005, 0.03]],
 ];
@@ -311,7 +406,7 @@ function bedScene(name) {
   const near = { stream: 1, pond: 1, river: 1, waterfall: 1, bamboo: 1, pines: 1, grove: 1, fields: 1, village: 1, school: 1, work: 1, mill: 1 };
   const base = {
     leaves: { season: 'summer' }, pond: { season: 'summer' }, river: { hour: 10 }, birds: { hour: 6.2, season: 'spring' }, swallows: { hour: 7, season: 'spring' }, cicadas: { hour: 14, season: 'summer' },
-    frogs: { hour: 22, season: 'summer' }, crickets: { hour: 22, season: 'autumn' }, geese: { hour: 17.5, season: 'autumn' }, rain: { rain: 1, wind: 0.2 }, drips: { place: 'yard' }, snow: { snow: 1, season: 'winter' },
+    frogs: { hour: 22, season: 'summer' }, crickets: { hour: 22, season: 'autumn' }, geese: { hour: 17.5, season: 'autumn' }, wild: { hour: 17.3, season: 'autumn' }, rain: { rain: 1, wind: 0.2 }, drips: { place: 'yard' }, snow: { snow: 1, season: 'winter' },
     night: { hour: 23 }, village: { hour: 6.2, place: 'village' }, school: { hour: 9.5, place: 'village' }, work: { hour: 9.5, place: 'village' },
   };
   return { place: 'grove', hour: 9, season: 'spring', rain: 0, snow: 0, mist: 0, storm: 0, wind: 0.09, indoor: 0, near, ...base[name] };
@@ -320,15 +415,25 @@ function bedScene(name) {
 // ———————————————————————————— 五、一直响着的 ————————————————————————————
 if (want('loops')) {
   head('一直响着的（setLoop）', COLS);
-  for (const [name, seconds, range] of [['kettle', 10, [0.004, 0.05]], ['inkstone', 6, [0.004, 0.04]], ['saw', 6, [0.006, 0.06]], ['plough', 8, [0.01, 0.08]]]) {
+  const LOOPS = [
+    ['kettle', 10, [0.004, 0.05]], ['inkstone', 6, [0.004, 0.04]], ['saw', 6, [0.006, 0.06]], ['plough', 8, [0.01, 0.08]],
+    // 后来添的六样
+    ['millstone', 10, [0.004, 0.04]], ['windlass', 8, [0.002, 0.03]], ['frog', 14, [0.002, 0.03]], ['bee', 10, [0.001, 0.02]], ['kite', 10, [0.001, 0.02]], ['murmur', 14, [0.0008, 0.02]], ['line', 8, [0.0008, 0.02]], ['boatWater', 8, [0.002, 0.03]], ['snowRoll', 8, [0.002, 0.03]],
+  ];
+  for (const [name, seconds, range] of LOOPS) {
     if (!match(name)) continue;
     await seed(name.length * 17);
-    const spec = { seconds, auto: false, loops: { [name]: 1 }, scene: { indoor: name === 'kettle' || name === 'inkstone' ? 1 : 0 } }, st = await call('__render', spec);
-    row(name, st, `直流 ${st.dc}`);
+    const spec = { seconds, auto: false, loops: { [name]: 1 }, scene: { indoor: name === 'kettle' || name === 'inkstone' ? 1 : 0, hour: name === 'frog' ? 22 : 10, season: 'summer' } }, st = await call('__render', spec);
+    const half = Math.floor(st.env.length / 2), r1 = Math.hypot(...st.env.slice(2, half)) / Math.sqrt(half - 2), r2 = Math.hypot(...st.env.slice(half)) / Math.sqrt(st.env.length - half);
+    row(name, st, `直流 ${st.dc}  前后半 ${f3(r1)}/${f3(r2)}  节点 ${st.nodes}`);
     const bad = [];
     if (st.nan) bad.push('有 NaN');
     if (st.rms < range[0] || st.rms > range[1]) bad.push(`均方根 ${st.rms} 不在 ${range[0]}–${range[1]}`);
     if (st.peak > 0.5) bad.push(`峰值 ${st.peak}`);
+    if (Math.abs(st.dc) > 0.0015) bad.push(`直流 ${st.dc}`);
+    // 一直响着的不该越来越响或越来越轻（煮水是慢慢开的，除外）
+    if (name !== 'kettle' && (r2 > r1 * 2.5 || r1 > r2 * 2.5)) bad.push(`前后半差太多 ${f3(r1)} / ${f3(r2)}`);
+    if (name !== 'kettle' && st.cuts > 0) bad.push(`有 ${st.cuts} 处突然断掉`);
     R.ok(name, !bad.length, bad.join('；'));
     await png('loop-' + name, name, spec);
   }
@@ -353,8 +458,8 @@ if (want('mix')) {
     row(name, st, `直流 ${st.dc}  算 ${st.ms} 毫秒  建 ${st.nodes} 个节点`);
     const bad = [];
     if (st.nan) bad.push('有 NaN');
-    // 这是个安静的地方：底要低（雨天、雷雨可以高一些）
-    const top = scene.rain > 0.5 ? 0.06 : 0.035, low = scene.indoor > 0.5 && scene.hour > 20 ? 0.0015 : 0.003;   // 夜里在屋里本来就近乎无声
+    // 这是个安静的地方：底要低（雨天、雷雨可以高一些）；夜里在屋里、观星时本来就近乎无声
+    const top = scene.rain > 0.5 ? 0.06 : 0.035, low = (scene.indoor > 0.5 && scene.hour > 20) || scene.focus === 'stars' ? 0.0012 : 0.003;
     if (st.rms < low || st.rms > top) bad.push(`均方根 ${st.rms} 不在 ${low}–${top}`);
     if (st.peak > 0.45) bad.push(`峰值 ${st.peak}`);
     if (Math.abs(st.dc) > 0.0015) bad.push(`直流 ${st.dc}`);
@@ -384,6 +489,20 @@ if (want('mix')) {
     console.log(pad('雨中观物亭 · 4–12 秒听雨', 26) + spark(st.env) + `  前 ${f3(before)} 刚听 ${f3(early)} 听着 ${f3(mid)} 放开后 ${f3(after)}`);
     R.ok('凝神听雨：提上来了（约 +7 分贝），是渐变的，放开后还原', mid > before * 1.8 && mid < before * 2.8 && early < mid * 0.9 && after < before * 1.25, `前 ${f3(before)} → 听着 ${f3(mid)}（${(20 * Math.log10(mid / before)).toFixed(1)} 分贝）→ 放开后 ${f3(after)}`);
     await png('mix-focus-rain', '雨中观物亭 · 4–12 秒听雨', spec);
+  }
+  // 观星：同一个夏夜的溪桥上，凝神看星时整个静下来（不是哪一层没了，是都退了一些）
+  if (match('观星')) {
+    const p = presets.find(([n]) => n.includes('观星'));
+    await seed(83); const a = await call('__render', { seconds: 30, scene: { ...p[1], focus: null } });
+    await seed(83); const b = await call('__render', { seconds: 30, scene: p[1] });
+    R.ok('观星：夜更静（整体退 3 分贝以上），不是一片死寂', b.rms < a.rms * 0.72 && b.rms > a.rms * 0.2, `均方根 ${a.rms} → ${b.rms}（${(20 * Math.log10(b.rms / a.rms)).toFixed(1)} 分贝）`);
+  }
+  // 雪后：地上白着时外头也闷一点（积雪吃声音）
+  if (match('雪后')) {
+    const p = presets.find(([n]) => n.includes('雪后'));
+    await seed(84); const a = await call('__render', { seconds: 20, scene: { ...p[1], cover: 0 } });
+    await seed(84); const b = await call('__render', { seconds: 20, scene: p[1] });
+    R.ok('雪后：积雪把高处吃掉一些，四下里散回来的也少（整体轻一些）', b.hf < a.hf * 0.9 && b.rms < a.rms * 0.95, `6kHz 以上 ${a.hf} → ${b.hf}，重心 ${a.centroid} → ${b.centroid}Hz，均方根 ${a.rms} → ${b.rms}`);
   }
   // 做事时压低
   if (match('压低')) {
@@ -437,11 +556,20 @@ if (want('live')) {
     let worst = 0, sum = 0;
     for (let k = 0; k < 100; k++) { const a = performance.now(); e.setScene({ near: { stream: (k % 10) / 10 } }); e.pump(e.now + 0.25 + k * 0.1); const d = performance.now() - a; sum += d; worst = Math.max(worst, d); }
     res.pumpAvg = +(sum / 100).toFixed(2); res.pumpWorst = +worst.toFixed(1);
-    // loop 开了又关
-    au.setLoop('kettle', 1); au.setLoop('saw', 1, { at: [30, 0] });
-    await wait(500);
-    res.loopsOn = e.activeLayers().filter((l) => l === 'kettle' || l === 'saw').length;
-    au.setLoop('kettle', 0); au.setLoop('saw', 0);
+    // loop 开了又关（连同后来添的六样）；不认得的名字什么都不做
+    const LOOPS = ['kettle', 'saw', 'millstone', 'windlass', 'frog', 'bee', 'kite', 'murmur', 'line', 'boatWater', 'snowRoll'];
+    for (const l of LOOPS) au.setLoop(l, 1, l === 'saw' ? { at: [30, 0] } : l === 'bee' ? { at: [2, 1] } : {});
+    au.setLoop('no-such-loop', 1); au.setLoop('frog', NaN);
+    au.setLoop('frog', 1);
+    await wait(1500);
+    res.loopsOn = e.activeLayers().filter((l) => LOOPS.includes(l)).length;
+    res.loopsWant = LOOPS.length;
+    res.badLoop = e.activeLayers().includes('no-such-loop');
+    for (const l of LOOPS) au.setLoop(l, 0);
+    // 不认得的一击、带坏数的一击：不出声，也不报错
+    au.play('no-such-sound', { vel: 0.5 }); au.play('magpie', { vel: NaN, at: [NaN, 3] }); au.play('crow', { variant: 'flock', at: [40, 40] });
+    // 跑、踩雪
+    for (let k = 0; k < 6; k++) { au.step(k % 2 ? 'snow' : 'earth', { run: true, speed: 4.6, vel: 0.6 }); await wait(120); }
     // 全都静下来：场景关掉，等各层拆掉
     au.setAuto(false);
     await wait(18000);
@@ -461,10 +589,34 @@ if (want('live')) {
   R.ok('解锁', r.ready);
   R.ok('每帧交场景不费事', r.setScene600 < 30, `600 次 setScene 共 ${r.setScene600} 毫秒`);
   R.ok('排程不卡', r.pumpAvg < 4, `连排一百次（每次场景都变），平均 ${r.pumpAvg} 毫秒，最长 ${r.pumpWorst} 毫秒`);
-  R.ok('loop 开得起来', r.loopsOn === 2);
+  R.ok('loop 开得起来（连同后来添的推磨、辘轳、蛙、蜂、纸鸢、人声）', r.loopsOn === r.loopsWant && !r.badLoop, `${r.loopsOn}/${r.loopsWant}${r.badLoop ? '，不认得的名字也建了一层' : ''}`);
   R.ok('场景关掉后各层都拆了', r.afterOff === '', `剩 ${r.afterOff || '无'}`);
   R.ok('再打开各层回来', r.backOn > 2, `${r.backOn} 层`);
-  R.ok(`把 ${r.shots} 种一击轮着点了一遍，没有报错`, logs.length === 0, logs.slice(0, 6).join('\n'));
+  R.ok(`把 ${r.shots} 种一击轮着点了一遍（外加不认得的名字、带坏数的、跑与踩雪），没有报错`, logs.length === 0, logs.slice(0, 6).join('\n'));
+  // 界面那一层（src/app/sound.ts）：认世界的叫法与别名；不认得的名字只记一回警告、不报错
+  logs.length = 0;
+  const s = await page.evaluate(async () => {
+    const snd = await import('/src/app/sound.ts'), au = window.__audio;
+    await snd.loadSound();
+    snd.unlock({ master: 0.8, muted: false, levels: {} });
+    await new Promise((f) => setTimeout(f, 300));
+    const v0 = au.engine.voices;
+    snd.play('cackle', { vel: 0.5, x: 3, z: 2 }); snd.play('crows', { vel: 0.5 }); snd.play('henEgg', { vel: 0.4 }); snd.play('snowball', { vel: 0.4 });
+    const v1 = au.engine.voices;
+    for (let k = 0; k < 3; k++) { snd.play('no-such-thing', { vel: 0.5 }); snd.loop('no-such-loop', 1); }
+    snd.loop('millstone', 0.6, { x: 5, z: 5 }); snd.loop('bees', 0.5);
+    snd.step('earth', { run: true, speed: 4.4 }); snd.step('snow', { run: false }); snd.step('wet', { wading: true, run: true, speed: 5 });
+    await new Promise((f) => setTimeout(f, 400));
+    const layers = au.engine.activeLayers();
+    snd.loop('millstone', 0); snd.loop('bees', 0);
+    return { played: v1 - v0, unknown: [...snd.unknown], layers };
+  });
+  const warns = logs.filter((l) => l.includes('不认得'));
+  R.ok('界面那一层：别名（cackle、crows、henEgg、snowball）都出得来', s.played >= 4, `多了 ${s.played} 声`);
+  R.ok('界面那一层：持续声认别名、给了位置也行（millstone、bees）', s.layers.includes('millstone') && s.layers.includes('bee'), s.layers.join(' '));
+  R.ok('界面那一层：不认得的名字略过，各只记一回警告', s.unknown.includes('no-such-thing') && s.unknown.includes('loop:no-such-loop') && warns.length === 2 && logs.length === warns.length, `警告 ${warns.length} 条：${warns.join(' / ')}；别的 ${logs.length - warns.length} 条`);
+  // 这两条警告是故意引出来的：查过了就不再列进末尾的「页面上的报错」
+  for (let i = logs.length - 1; i >= 0; i--) if (logs[i].includes('no-such-')) logs.splice(i, 1);
 }
 
 if (logs.length) console.log('\n页面上的报错：\n' + logs.slice(0, 20).join('\n'));

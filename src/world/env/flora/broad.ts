@@ -22,7 +22,7 @@ export interface BroadSpec {
   /** 干斜多少（正切） */ lean: number;
   /** 干顶先分几股粗枝（0：枝直接从干上出）；梢枝数；每枝的小枝数 [少, 多]；小枝上再出细枝否；枝折的幅度 */
   prim: number; limbs: number; subs: [number, number]; fine: boolean; zig: number;
-  /** 叶：哪一层、用哪些笔、一笔多大、笔最多转多少、枝梢一团叶几笔 */ layer: Broad; leaf: number[]; dab: [number, number]; rot: number; per: number;
+  /** 叶：哪一层、用哪些笔、一笔多大、笔最多转多少、枝梢一团叶几笔（香椿放在「桃梅的叶」那一层：春天只有梢上几簇嫩的） */ layer: Broad | 'fruitLeaf'; leaf: number[]; dab: [number, number]; rot: number; per: number;
   /** 冬天梢上的笔 */ twig: number[];
   bark: RGB;
   lite?: boolean;
@@ -150,6 +150,21 @@ export const fruitSpec = (kind: 'jujube' | 'persimmon' | 'pomegranate', R: Rand,
   if (kind === 'persimmon') return { H: 6.4, fork: R.r(1.6, 1.9), r0: 0.2, cy: 4.3, rx: 3.0, ry: 2.2, lean: 0.1, prim: 3, limbs: 6, subs: [1, 3], fine: false, zig: 0.36, layer: 'broadB', leaf: HUN, dab: [0.66, 1.0], rot: 0.4, per, twig: [I.xiezhao, ...LUJIAO], bark: [0.52, 0.5, 0.49], lite };
   return { H: 3.4, fork: R.r(0.45, 0.7), r0: 0.09, cy: 2.2, rx: 1.6, ry: 1.3, lean: 0.2, prim: 3, limbs: 6, subs: [1, 2], fine: false, zig: 0.4, layer: 'broadC', leaf: JIE, dab: [0.36, 0.56], rot: 0.5, per: per - 2, twig: LUJIAO, bark: [0.62, 0.58, 0.54], lite };
 };
+
+/**
+ * 新添的三种（各家门前屋后、草堂院里，位置由 extras.ts 定）：
+ *   香椿 —— 干直而高，分枝晚，冠窄；叶是一串串的羽状叶。春天只梢上几簇带红的嫩芽（就是人吃的椿芽），叶出得晚；冬天光枝上挂着干裂的蒴果。
+ *   皂角 —— 老树，干粗、皮黑、带刺，冠大而散；叶细碎（羽状的小叶），秋冬一树长荚（捶衣洗东西用）。
+ *   梧桐 —— 青桐：干是青绿的、光的，枝几乎一轮一轮从干上出；叶大，掌状；秋天叶黄得早（「一叶落」）。
+ * 其余（枣、柿、石榴）照旧走 fruitSpec。
+ */
+export function treeSpec(kind: string, R: Rand, lite: boolean): BroadSpec {
+  const per = lite ? 6 : 8;
+  if (kind === 'toona') { const H = R.r(8.6, 9.6); return { H, fork: R.r(3.4, 4.0), r0: 0.2, cy: H - 2.5, rx: R.r(2.1, 2.5), ry: 2.5, lean: 0.04, prim: 0, limbs: 5, subs: [1, 2], fine: false, zig: 0.14, layer: 'fruitLeaf', leaf: [...HUAI, ...JIE], dab: [0.7, 1.05], rot: 0.45, per, twig: LUJIAO, bark: [0.58, 0.53, 0.5], lite }; }
+  if (kind === 'gleditsia') return { H: 9.6, fork: R.r(2.4, 2.8), r0: 0.33, cy: 6.4, rx: 4.3, ry: 2.8, lean: 0.08, prim: 3, limbs: 9, subs: [2, 3], fine: !lite, zig: 0.32, layer: 'broadC', leaf: [...PEPPER, ...HUAI, ...PEPPER], dab: [0.64, 1.0], rot: 0.6, per: per + 1, twig: [I.xiezhao, I.xiezhao, ...LUJIAO], bark: [0.5, 0.47, 0.45], lite };
+  if (kind === 'firmiana') { const H = R.r(8.2, 8.9); return { H, fork: R.r(2.8, 3.2), r0: 0.21, cy: H - 2.2, rx: 2.9, ry: 2.3, lean: 0.03, prim: 0, limbs: 6, subs: [1, 2], fine: false, zig: 0.18, layer: 'broadA', leaf: SANG, dab: [0.85, 1.2], rot: 0.5, per, twig: LUJIAO, bark: [0.7, 0.74, 0.64], lite }; }
+  return fruitSpec(kind === 'jujube' || kind === 'persimmon' ? kind : 'pomegranate', R, lite);
+}
 
 /** 桑：矮干，顶上一个攥紧的「拳」（年年采叶、剪条），从拳上直直地抽出七八根条，条上是大叶 */
 export function mulberry(S: Sink, R: Rand, o: { lite?: boolean } = {}) {

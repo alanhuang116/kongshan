@@ -72,6 +72,15 @@ export const AT = {
   chain(lane[5], AT.elmN1, AT.elmN2, lane[6]);
   chain(lane[5], AT.elmS0, AT.elmS2, AT.elmS3, lane[6]);
   chain(lane[5], AT.elmW, AT.elmSW, AT.elmS2); chain(AT.elmSW, AT.elmS0); chain(AT.elmN1, AT.elmNW, AT.elmW);
+  // 庚家（陶家）在村路东头南边的溪岸上：屋西是坯棚与码着的缸罐，过不去；从门前绕到屋东，往北上村路的东头
+  if (SITE.houses.some((h) => h.id === 'g')) {
+    chain(front('g', 0.3, 3.3), front('g', 4.7, 2.9), front('g', 5.6, -3.4), lane[lane.length - 1]);
+    // 屋西的坯棚（build/homes.ts potShed）：棚口朝着它自己的 +z（眼下朝北，对着村路），从村路东头那一折下去就到棚口
+    const P = SITE.crafts?.potShed;
+    if (P) chain([P.x + Math.sin(P.yaw) * 2.2, P.z + Math.cos(P.yaw) * 2.2], lane[lane.length - 2]);
+  }
+  // 甲家墙口往东直接连到井边那一折会擦着井台西边的石槽（屋舍那边后来添的）：拿掉，往东走村路
+  unlink(node(AT.gateAOut[0], AT.gateAOut[1]), node(lane[4][0], lane[4][1]));
   // 井田的两条纵路，北头接到桃林那条路上
   for (const x of [-42, -13]) chain([x, 45.5], at(peach, x));
 }

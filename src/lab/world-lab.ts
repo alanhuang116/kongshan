@@ -1,6 +1,6 @@
 /**
  * 整景的台子（只在开发时用；正式的界面在 src/app）：把整个安乐窝装起来走一走。
- *   /world.html?s=<处>&t=<now|dawn|day|dusk|night|几点>&season=&w=&q=&act=<事>&hud=0
+ *   /world.html?s=<处>&t=<now|dawn|day|dusk|night|几点>&season=&w=&q=&act=<事>&hud=0&flow=<每秒几个钟头>&run=1
  *   s：grove bridge yard hall pavilion fields village ferry
  * WASD 走、拖动转镜头、滚轮远近、点地面走过去、走近一件事按 E 做、Esc 作罢。
  * 1 2 3 4 换晨昼昏夜，5 6 7 8 换四季，9 0 - = 换晴雾雨雪。
@@ -18,10 +18,13 @@ async function main() {
   const tq = qs.get('t') ?? 'day';
   const time: TimeMode | number = /^[\d.]+$/.test(tq) ? Number(tq) : (tq as TimeMode);
   const season = (qs.get('season') as Season) ?? 'spring';
-  let place = '', near = '';
+  let place = '', near = '', note = '', noteT = 0;
   const ks = await Anlewo.create(document.getElementById('c') as HTMLCanvasElement, {
     quality: qs.get('q'), season, weather: (qs.get('w') as Weather) ?? 'clear', hour: 9, moonPhase: 0.42, start: qs.get('s') ?? 'grove',
+    // 时辰流转：&flow=0.0167 是画里一个钟头一分钟（界面里默认的那一档）；不给就停着
+    flow: qs.get('flow') ? Number(qs.get('flow')) || 0 : 0,
     events: {
+      note: (t) => { note = t; noteT = performance.now(); },
       progress: (k, s) => { hud.textContent = `${Math.round(k * 100)}%  ${s}`; },
       place: (id) => { place = id; },
       near: (th) => { near = th ? `${th.label}（E）` : ''; },
@@ -30,6 +33,7 @@ async function main() {
   });
   ks.setTime(time, true);
   ks.veil = 0;
+  if (qs.get('run') === '1') ks.setRun(true);
   if (qs.get('over') === '1') ks.setOverview(true);
   const W = window as unknown as Record<string, unknown>;
   W.__ks = ks; W.__walk = walk;
@@ -48,8 +52,9 @@ async function main() {
       el.style.left = `${m.x}px`; el.style.top = `${m.y - 26}px`;
     }
     if (qs.get('hud') !== '0') {
-      const p = ks.player.pos, w = ks.world;
-      hud.textContent = `${place}  (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})  ${near}\n三角 ${w.stats.tris}  绘制 ${w.stats.calls}  ${w.frameMs.toFixed(1)}ms  ${ks.q.tier}\n${Object.entries(ks.timings).map(([a, b]) => `${a} ${b}`).join('  ')}`;
+      const p = ks.player.pos, w = ks.world, h = ks.atmos.hour, bag = ks.bag.list().map((x) => `${x.def.name}${x.n}`).join(' ');
+      const clock = `第${ks.day}日 ${Math.floor(h)}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}${ks.player.run ? ' 跑' : ''}  ${bag}${performance.now() - noteT < 3000 ? `  「${note}」` : ''}`;
+      hud.textContent = `${place}  (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})  ${near}  ${clock}\n三角 ${w.stats.tris}  绘制 ${w.stats.calls}  ${w.frameMs.toFixed(1)}ms  ${ks.q.tier}\n${Object.entries(ks.timings).map(([a, b]) => `${a} ${b}`).join('  ')}`;
     } else hud.textContent = '';
   });
   ks.start();

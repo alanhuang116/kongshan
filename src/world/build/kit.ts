@@ -10,7 +10,11 @@ import * as THREE from 'three';
 import { Builder, cyl, norm, rockGeo, uvBox, type Axis, type Geo } from '../core/geo';
 import { mulberry32 } from '../core/rng';
 import type { Quality } from '../core/World';
-import { PIG, wash, type RGB } from '../ink/ink';
+import type { Season } from '../env/atmos';
+import { PIG, wash, type Dab, type RGB } from '../ink/ink';
+
+/** 四季（随季节换的东西按这个次序分摊） */
+export const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 
 export type V3 = THREE.Vector3;
 export const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -48,6 +52,7 @@ export interface Mats {
   /** 屋里的黑（不进去的屋，门缝里、窗洞里） */ dark: THREE.ShaderMaterial;
   /** 小物件：颜料全在顶点色里（陶、布、绳、书、草编……） */ obj: THREE.ShaderMaterial;
   /** 带字带图的面：同 obj，另乘一张图集 */ label: THREE.ShaderMaterial;
+  /** 炭火、窑火：白天是暗红的炭，夜里自己透出一点红光 */ ember: THREE.ShaderMaterial;
 }
 /** 夜里窗纸、屋里各亮成什么颜色（灯全亮时） */
 export const GLOW_PAPER: RGB = [0.6, 0.4, 0.15], GLOW_ROOM: RGB = [0.3, 0.2, 0.085];
@@ -66,6 +71,8 @@ export function makeMats(atlasMap: THREE.Texture): Mats {
     dark: wash({ pig: PIG.jiao, dens: 2.7, flat: 1, grain: 0.6, line: 0.6, snow: 0 }),
     obj: wash({ pig: [1, 1, 1], dens: 1, shade: 1.5, grain: 2.2, side: THREE.DoubleSide }),
     label: wash({ pig: [1, 1, 1], dens: 1, shade: 1.3, grain: 2.2, map: atlasMap, side: THREE.DoubleSide }),
+    // 炭：颜料也在顶点色里（暗的炭、红的火心）；夜里的光只给一点点，免得成了灯
+    ember: wash({ pig: [1, 1, 1], dens: 1, shade: 1.2, flat: 0.4, body: 0.35, grain: 3, line: 0.25, glow: [0.42, 0.13, 0.03], snow: 0 }),
   };
 }
 
@@ -288,6 +295,8 @@ export interface Solid {
   x: number; z: number; w?: number; d?: number; yaw?: number; r?: number;
   /** 顶面的高度（世界坐标）。walk 为真时是能踩上去的面（桥面、亭台、踏脚石），否则只是「多高」 */
   top?: number; walk?: boolean;
+  /** 有顶的小棚：檐口多高（世界坐标）。给画法的「屋顶底下不积雪」用（Anlewo 的 roofsFrom） */
+  roof?: number;
 }
 
 /** 攒料的一摊：几处各并各的（视锥外的那一处整块不画） */
@@ -310,7 +319,15 @@ export interface Ctx {
   solid(s: Solid): void;
   /** 每帧要动的东西（水碓、秋千……）往这里登记 */
   tick: Array<(dt: number, t: number) => void>;
+  /** 随季节换的东西（屋里的火盆竹席、瓶里的花枝、门上的桃符……）：各季一摊，只显出当季的那一摊。坐标是世界坐标 */
+  season: Record<Season, Builder>;
+  /** 晒着的东西（匾里的笋干、柿饼，摊开的书）：各季一摊；下雨、入夜就收进去 */
+  dry: Record<Season, Builder>;
+  /** 点上去的花（瓶里的桃、荷、菊、梅）：各季一份笔；tile 是 VASE 里的第几格 */
+  dabs: Record<Season, Dab[]>;
 }
+/** 瓶花的笔（make.ts 现画一张小图集）：桃花一簇、梅花一朵、莲、莲苞、菊正面、菊侧面 */
+export const VASE = { peach: 0, plum: 1, lotus: 2, lotusBud: 3, mum: 4, mumSide: 5 } as const;
 
 /** 朝向：把 +z 转到 (dx, dz) 这个方向要转多少 */
 export const yawTo = (dx: number, dz: number) => Math.atan2(dx, dz);

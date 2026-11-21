@@ -89,5 +89,10 @@ export const MODELS: Record<string, LabMake> = {
   grass: (ctx) => whole(ctx, { az: 200, el: 9, d: 12, tx: -100, ty: 6.2, tz: 37 }),
   // 人家门前屋后的零碎（果树、蜀葵、南瓜、葱）：镜头摆在村里
   homes: (ctx) => whole(ctx, { az: 20, el: 14, d: 42, tx: 76, ty: 7, tz: 6 }),
+  // 添的草木（wild.ts）：药圃、篾匠家的丝瓜与香椿、溪边的蓼与浮萍、院里的梧桐
+  herbs: (ctx) => whole(ctx, { az: 210, el: 22, d: 13, tx: -21.5, ty: 8.6, tz: -5.5 }),
+  loofah: (ctx) => whole(ctx, { az: 160, el: 10, d: 12, tx: 40.5, ty: 9, tz: -6 }),
+  creek: (ctx) => whole(ctx, { az: 170, el: 12, d: 16, tx: 22, ty: 6, tz: 31 }),
+  wutong: (ctx) => whole(ctx, { az: 150, el: 10, d: 22, tx: -7.5, ty: 11, tz: -2 }),
   floraAll: (ctx) => whole(ctx, { az: 250, el: 12, d: 60, tx: 0, ty: 8, tz: 24 }),
 };

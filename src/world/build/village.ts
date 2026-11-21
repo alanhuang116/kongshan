@@ -40,7 +40,7 @@ function chimneyGeo(h: number, seed: number): [Geo, Geo] {
 }
 
 /** 一道矮土墙（院墙）：夯土的，墙头压一溜草。a → e */
-function lowWall(b: Builder, a: [number, number], e: [number, number], h: number, seed: number): void {
+export function lowWall(b: Builder, a: [number, number], e: [number, number], h: number, seed: number): void {
   const dx = e[0] - a[0], dz = e[1] - a[1], len = Math.hypot(dx, dz), ry = Math.atan2(-dz, dx);
   const g = sbox(len, h + 0.2, 0.3, 0.5).translate(0, (h - 0.2) / 2, 0);
   wobble(g, 0.03, 0.9, seed, 40, 0.8);
@@ -53,7 +53,7 @@ function lowWall(b: Builder, a: [number, number], e: [number, number], h: number
   b.add('thatch', tint(cap, 0.93, 0.93, 0.92).applyMatrix4(M.mul(M.t((a[0] + e[0]) / 2, 0, (a[1] + e[1]) / 2), M.ry(ry))));
 }
 
-interface Cottage {
+export interface Cottage {
   id: string; wall: number; roof: 'hip' | 'gable'; rise: number; over: number; hip?: number;
   door: { x: number; w: number; state: 'closed' | 'half' }; windows: number[];
   chimney: [number, number]; tone: number; seed: number;
@@ -62,7 +62,7 @@ interface Cottage {
 }
 
 /** 一户寻常人家。坐标：屋正中为原点，+z 是门朝的方向，y=0 是屋基 */
-function cottage(c: Ctx, b: Builder, h: { id: string; x: number; z: number; w: number; d: number; yaw: number }, o: Cottage, obj: Bin): void {
+export function cottage(c: Ctx, b: Builder, h: { id: string; x: number; z: number; w: number; d: number; yaw: number }, o: Cottage, obj: Bin): void {
   const y0 = houseY(h.id), w = h.w, d = h.d, x0 = w / 2, z0 = d / 2, wt = 0.34, fl = 0.12, wh = o.wall, sky = wh - 0.6, tn = o.tone, sd = o.seed;
   b.push(M.trs(h.x, y0, h.z, h.yaw));
   // 台
@@ -149,7 +149,7 @@ function wheelbarrow(seed: number): Geo[] {
 }
 
 /** 一副晒匾：两副竹马、两根横竿，上面搁两只圆匾（里面晒着东西）。沿 x 摆，底在 y=0 */
-function dryingTrays(b: Builder, obj: Bin, m: THREE.Matrix4, R: Rand): void {
+export function dryingTrays(b: Builder, obj: Bin, m: THREE.Matrix4, R: Rand): void {
   for (const x of [-1.0, 1.0]) for (const s of [-1, 1]) b.add('bamboo', pole(v3(x + s * 0.02, -0.02, s * 0.5), v3(x, 0.98, -s * 0.06), 0.02, 0.016, 5).applyMatrix4(m));
   for (const z of [-0.2, 0.22]) b.add('bamboo', pole(v3(-1.3, 0.8 + Math.abs(z) * 0.3, z), v3(1.3, 0.82 + Math.abs(z) * 0.3, z), 0.018, 0.016, 5).applyMatrix4(m));
   [-0.55, 0.58].forEach((x, i) => {
@@ -332,10 +332,13 @@ export function buildVillage(c: Ctx, sub?: string[]): void {
     const ay = top + 1.32;
     for (const s of [-1, 1]) for (const e of [-1, 1]) b.add('wood', pole(v3(Wl.x + s * 0.98, gy - 0.1, Wl.z + e * 0.4), v3(Wl.x + s * 0.92, ay + 0.2, Wl.z - e * 0.07), 0.045, 0.036, 6));
     b.add('wood', pole(v3(Wl.x - 1.12, ay, Wl.z), v3(Wl.x + 1.2, ay, Wl.z), 0.045, 0.045, 7, 2));
-    b.add('wood', cyl(0.13, 0.13, 0.5, 10).rotateZ(Math.PI / 2).translate(Wl.x, ay, Wl.z));
     obj.push(dye(cyl(0.142, 0.142, 0.3, 10).rotateZ(Math.PI / 2).translate(Wl.x + 0.02, ay, Wl.z), INK.hemp, 1.6));
-    b.add('wood', pole(v3(Wl.x + 1.18, ay, Wl.z), v3(Wl.x + 1.2, ay - 0.3, Wl.z + 0.1), 0.026, 0.024, 5));
-    b.add('wood', pole(v3(Wl.x + 1.19, ay - 0.3, Wl.z + 0.1), v3(Wl.x + 1.48, ay - 0.31, Wl.z + 0.1), 0.024, 0.022, 5));
+    // 绞筒与曲柄是一件（parts.windlass）：原点在轴心、绕 x 转，打水时农事那边摇它。曲柄垂直朝下时把手离轴 0.316 米
+    c.part('windlass', 'wood', [
+      cyl(0.13, 0.13, 0.5, 10).rotateZ(Math.PI / 2),
+      pole(v3(1.18, 0, 0), v3(1.2, -0.316, 0), 0.026, 0.024, 5),
+      pole(v3(1.19, -0.316, 0), v3(1.48, -0.326, 0), 0.024, 0.022, 5),
+    ], v3(Wl.x, ay, Wl.z));
     obj.push(dye(pole(v3(Wl.x + 0.05, ay - 0.14, Wl.z + 0.02), v3(Wl.x + 0.03, top - 0.2, Wl.z), 0.01, 0.01, 4), INK.hemp, 1.5));
     // 水桶（可提；原点在提梁顶上）：搁在井台上
     {

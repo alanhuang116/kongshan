@@ -26,7 +26,19 @@ function rolls(n: number, d: number, peak: number, slow: number): Float32Array<A
   return a;
 }
 
-export const SKY_SHOTS: Pick<Record<Shot, (v: Voice) => number>, 'thunder' | 'gust'> = {
+export const SKY_SHOTS: Pick<Record<Shot, (v: Voice) => number>, 'thunder' | 'gust' | 'meteor'> = {
+  /**
+   * 流星：几乎没有声音（流星离地几十上百里，传不过来）。这里只给一缕极轻、极高的「嘶——」，从天的一边划到另一边，越划越暗——
+   * 给看的人一个「好像听见了」的意思，不当真。远近不管（总是天上那么远）。
+   */
+  meteor(v) {
+    const a = 0.5 + 0.7 * v.vel, t = v.t, d = rand(0.7, 1.3), p = v.ctx.createStereoPanner(), from = (Math.random() < 0.5 ? -1 : 1) * rand(0.4, 0.75);
+    p.pan.setValueAtTime(from, t);
+    p.pan.linearRampToValueAtTime(-from * rand(0.4, 0.8), t + d);
+    p.connect(v.out);
+    hiss(v, { dur: d, f: 6200, f2: 3200, q: 0.9, hp: 2500, curve: wobble(12, 0.008 * a, 0.25, 0.1), dest: p });
+    return d + 0.3;
+  },
   /**
    * 远雷。dur 是这一滚有多长（默认 6–9 秒），dist 是远近（默认 0.7）：
    * 底是褐噪声过 200Hz 上下的低通（笔记本的小喇叭放不出这么低，所以另有一层 300–500Hz 的「隆隆」），都乘同一条一浪一浪的包络。

@@ -146,7 +146,7 @@ export const LINES: Line[] = [
   { id: 'miller-2', who: 'miller', text: '舂一石谷要大半天，急不得。' },
   { id: 'miller-3', who: 'miller', text: '糠留着喂猪，一点也不糟蹋。' },
   { id: 'miller-4', who: 'miller', text: '先生听，这碓一下一下，比更鼓还准。' },
-  { id: 'miller-5', who: 'miller', text: '舂好了，我叫孩子给先生送去。' },
+  { id: 'miller-5', who: 'miller', text: '舂好了，我给先生扛过去，不费事。' },
   { id: 'miller-6', who: 'miller', when: ['rain'], text: '山水大了，碓跳得快，我得去闸一闸。' },
   { id: 'miller-7', who: 'miller', when: ['autumn'], text: '新谷下来，各家排着来舂，忙到半夜。' },
   { id: 'miller-8', who: 'miller', when: ['winter'], text: '水小了，碓也懒，一天舂不了多少。' },

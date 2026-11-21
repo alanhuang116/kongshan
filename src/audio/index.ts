@@ -36,12 +36,23 @@ const LOOKAHEAD_HIDDEN = 3;
 
 type SyllableCb = (i: number, time: number) => void;
 const clean = <T extends object>(o: T): Partial<T> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+/** 世界交来的数里偶尔有 NaN、Infinity（某处除了零）：那几项当作没给，别让一个坏数把这一声连同引擎一起弄坏 */
+const NUMS = ['vel', 'pan', 'pitch', 'rate', 'dur', 'delay', 'dist', 'far', 'wet', 'speed', 'n', 'voices', 'string', 'step', 'slide', 'glide'] as const;
+function sane(o: PlayOpts): PlayOpts {
+  let out: PlayOpts | null = null;
+  for (const k of NUMS) {
+    const v = o[k];
+    if (v != null && (typeof v !== 'number' || !Number.isFinite(v))) { out ??= { ...o }; delete out[k]; }
+  }
+  if (o.at && !(Number.isFinite(o.at[0]) && Number.isFinite(o.at[1]))) { out ??= { ...o }; delete out.at; }
+  return out ?? o;
+}
 
 class AnlewoAudio {
   private e: Engine | null = null;
   private groups: Record<Group, number> = { ...DEFAULT_GROUPS };
   private user: Record<Layer, number> = { ...DEFAULT_LAYERS };
-  private loops: Record<Loop, { level: number; opts: LoopOpts }> = { kettle: { level: 0, opts: {} }, inkstone: { level: 0, opts: {} }, saw: { level: 0, opts: {} }, plough: { level: 0, opts: {} } };
+  private loops = Object.fromEntries(LOOP_NAMES.map((l) => [l, { level: 0, opts: {} }])) as Record<Loop, { level: number; opts: LoopOpts }>;
   private sc: Scene = { ...DEFAULT_SCENE };
   private dirty = false;
   private ear = { x: 0, z: 0, fx: 0, fz: -1 };
@@ -108,25 +119,32 @@ class AnlewoAudio {
   setMuted(m: boolean): void { this.muted = m; this.e?.setMuted(m); }
 
   // —— 一击 ——
-  /** 一击的声音。opts 见 PlayOpts；各声音各自认哪些选项见 docs/AUDIO.md */
+  /** 一击的声音。opts 见 PlayOpts；各声音各自认哪些选项见 docs/AUDIO.md。不认得的名字什么都不做 */
   play(shot: Shot, opts?: PlayOpts): void {
     if (!this.e || this.e.ctx.state !== 'running') return;
-    this.e.play(shot, opts);
+    this.e.play(shot, opts && sane(opts));
   }
   /**
-   * 一步。surface：earth 土路 / grass 草 / stone 石板 / plank 木板 / floor 屋里的夯土地 / water 浅水；不给就按人在哪一处猜。
+   * 一步。surface：earth 土路 / grass 草 / stone 石板 / plank 木板 / floor 屋里的夯土地 / water 浅水 / snow 积雪；不给就按人在哪一处猜。
    * 也认世界那边的叫法：wood 即 plank；wet 是「脚下是湿的」——真踩在水里（opts.wading）是 water，否则是湿了的土路
    * （没说 wading 时：正下着雨或雨刚停就当是湿地，不然就是水）。地湿不湿平时看场景里的雨，也可以用 opts.wet 指定。
+   * 地上积着雪（场景的 cover）时，外头的土路、草地上就是踩雪；石板上要积得厚一些才算。
+   * opts.run：在跑（opts.speed 米/秒，4–5）——一步更急、更重，偶尔带一下衣摆的窸窣。
    */
   step(surface?: Ground | 'wood' | 'wet', opts: PlayOpts & { wading?: boolean } = {}): void {
     this.foot = -this.foot;
     const { wading, ...rest } = opts;
     let ground: Ground | undefined = rest.ground, wet = rest.wet;
+    const sc = this.e?.scene;
     if (surface === 'wood') ground = 'plank';
     else if (surface === 'wet') {
-      const sc = this.e?.scene;
       if (wading ?? !(sc && Math.max(sc.rain, sc.wet) > 0.4)) ground = 'water'; else { ground = 'earth'; wet ??= 1; }
     } else if (surface && (GROUND_NAMES as string[]).includes(surface)) ground = surface;
+    // 积雪：屋外的土路、草地积了三四成就是雪了，石板（桥面）要积到一半多
+    if (sc && sc.indoor < 0.5 && !wading) {
+      const g = ground ?? (sc.place === 'hall' ? 'floor' : 'earth');
+      if (((g === 'earth' || g === 'grass') && sc.cover > 0.35) || (g === 'stone' && sc.cover > 0.55)) ground = 'snow';
+    }
     this.play('foot', { vel: 0.32 + Math.random() * 0.2, pan: this.foot * 0.06, ...rest, ground, wet });
   }
   /**
@@ -151,10 +169,16 @@ class AnlewoAudio {
     this.ear = { x, z, fx, fz };
     this.e?.setListener(x, z, fx, fz);
   }
-  /** 一直响着的声音：kettle 煮水 / inkstone 研墨 / saw 拉锯 / plough 犁地。level 0…1，0 即停。opts：pan、dist 或 at（世界里的位置）、fade */
+  /**
+   * 一直响着的声音：kettle 煮水 / inkstone 研墨 / saw 拉锯 / plough 犁地 / millstone 推磨 / windlass 辘轳 / frog 一片蛙鸣 /
+   * bee 蜂箱边的蜂 / kite 纸鸢的线 / murmur 远处几个人说话。level 0…1，0 即停。opts：pan、dist 或 at（世界里的位置）、fade。
+   * 不认得的名字什么都不做。
+   */
   setLoop(name: Loop, level: number, opts: LoopOpts = {}): void {
-    this.loops[name] = { level: clamp(level), opts };
-    this.e?.setLoop(name, level, opts);
+    if (!(LOOP_NAMES as string[]).includes(name)) return;
+    const lv = Number.isFinite(level) ? clamp(level) : 0;
+    this.loops[name] = { level: lv, opts };
+    this.e?.setLoop(name, lv, opts);
   }
   /** 环境声压低多少（0 不压 … 1 全压），fade 秒。做事时那件事自己的声音要听得清；一击的声音不受影响 */
   duck(amount: number, fade?: number): void {

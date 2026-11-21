@@ -1,26 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import { PLACES } from '../world/site';
 import { GuaGlyph } from './Gua';
+import { branchOf, cn } from './calendar';
 import { useBrush } from './face';
-import { doAct, getKs, openSheet, setStick, toggleMenu } from './ks';
+import { doAct, getKs, openSheet, setRun, setStick, toggleMenu } from './ks';
+import { hasSheet } from './sheets/extra';
 import { patch, saved, ui, useStore, type Sheet } from './store';
-import { xiaoxiAt } from './yi';
+import { XIAOXI } from './texts';
 
 const coarse = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
 /**
  * 画面上的标记：近处可以做的事，各是一枚小小的签，签下一根细线指着那样东西。位置每帧直接写到元素上（不经过 React）。
  * 走近了的那一枚添一点朱砂，并写上怎么做（按 E / 轻点）；点哪一枚，人就走过去做。
- * 签多了互相压着时，只留近的那一枚。走近了的那件事若不在画面里（在身后），下面另出一枚签。
+ * 签多了互相压着时，只留近的那一枚；也不压在右上那一条、简册、摇杆、「疾」、做事的印与走法的提示底下。
+ * 走近了的那件事若不在画面里（在身后、或被挡着），下面另出一枚签。
  */
+const KEEP_CLEAR = '.corner-bar, .menu, .stick, .run-key, .act-key, .walk-hint:not(.is-gone), .notes .note, .sky-card';
 function Markers({ touch }: { touch: boolean }) {
   const box = useRef<HTMLDivElement>(null), prompt = useRef<HTMLButtonElement>(null);
   const [list, setList] = useState<Array<{ id: string; label: string }>>([]);
   const near = useStore(ui, (s) => s.near);
   useEffect(() => {
-    let raf = 0, sig = '';
+    let raf = 0, sig = '', frame = 0;
     const widths = new Map<string, number>();
     const order: number[] = [], placed: Array<[number, number, number, number]> = [];
+    let clear: Array<[number, number, number, number]> = [];
     const hide = (c: HTMLElement) => { if (c.style.opacity !== '0') { c.style.opacity = '0'; c.style.pointerEvents = 'none'; } };
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -31,17 +36,31 @@ function Markers({ touch }: { touch: boolean }) {
       const s = `${ms.length}:${ms[0]?.id ?? ''}:${ms[ms.length - 1]?.id ?? ''}`;
       if (s !== sig) { sig = s; widths.clear(); setList(ms.map((m) => ({ id: m.id, label: m.label }))); return; }
       const kids = el.children;
+      // 界面上的几样东西占着的地方（隔几帧量一次）
+      if (frame++ % 15 === 0) {
+        clear = [];
+        for (const n of document.querySelectorAll<HTMLElement>(KEEP_CLEAR)) {
+          const r = n.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2 || getComputedStyle(n).opacity === '0') continue;
+          clear.push([r.left - 6, r.right + 6, r.top - 6, r.bottom + 6]);
+        }
+      }
+      // 抬着头看天的时候（往上拖过了平时的最低处）：画里的小签、下面那一枚都不出，天上干干净净
+      const up = k.nav.pitch < -0.3;
       // 先摆走近了的那一枚，再由近及远；与已经摆下的压着了就不出
       order.length = 0;
-      for (let i = 0; i < kids.length && i < ms.length; i++) { if (ms[i].visible && ms[i].id === (kids[i] as HTMLElement).dataset.id) order.push(i); else hide(kids[i] as HTMLElement); }
+      for (let i = 0; i < kids.length && i < ms.length; i++) { if (!up && ms[i].visible && ms[i].id === (kids[i] as HTMLElement).dataset.id) order.push(i); else hide(kids[i] as HTMLElement); }
       order.sort((a, b) => (ms[a].near ? -1 : ms[b].near ? 1 : ms[a].dist - ms[b].dist));
       placed.length = 0;
+      for (const c of clear) placed.push(c);
       let nearSeen = false;
       for (const i of order) {
         const m = ms[i], c = kids[i] as HTMLElement;
         let w = widths.get(m.id);
         if (!w) { w = c.offsetWidth || 60; widths.set(m.id, w); }
-        const ww = m.near ? w + 46 : w, x0 = m.x - ww / 2 - 6, x1 = m.x + ww / 2 + 6, y0 = m.y - 52, y1 = m.y + 4;
+        // 贴着屏边的：签往里挪，不让屏边裁掉半个字；签下那根线仍指着那样东西
+        const ww = m.near ? w + 46 : w, half = ww / 2 + 8, cx = Math.max(half, Math.min(innerWidth - half, m.x));
+        const x0 = cx - ww / 2 - 6, x1 = cx + ww / 2 + 6, y0 = m.y - 52, y1 = m.y + 4;
         let hit = false;
         for (const p of placed) if (x0 < p[1] && x1 > p[0] && y0 < p[3] && y1 > p[2]) { hit = true; break; }
         if (hit) { hide(c); continue; }
@@ -50,11 +69,13 @@ function Markers({ touch }: { touch: boolean }) {
         // 远的淡一些；走近了的那个是实的
         c.style.opacity = m.near ? '1' : Math.max(0.56, Math.min(0.9, 1.25 - m.dist / 18)).toFixed(2);
         c.style.pointerEvents = 'auto';
-        c.style.transform = `translate3d(${m.x.toFixed(1)}px, ${m.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+        c.style.transform = `translate3d(${cx.toFixed(1)}px, ${m.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+        const stem = c.lastElementChild as HTMLElement | null, dx = Math.max(-ww / 2 + 8, Math.min(ww / 2 - 8, m.x - cx));
+        if (stem) { const t = Math.abs(dx) > 0.5 ? `translateX(${dx.toFixed(1)}px)` : ''; if (stem.style.transform !== t) stem.style.transform = t; }
         if (c.classList.contains('is-near') !== m.near) c.classList.toggle('is-near', m.near);
       }
       const pr = prompt.current;
-      if (pr) { const on = !nearSeen && !!k.near; if (pr.classList.contains('is-on') !== on) pr.classList.toggle('is-on', on); }
+      if (pr) { const on = !nearSeen && !!k.near && !up; if (pr.classList.contains('is-on') !== on) pr.classList.toggle('is-on', on); }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -76,7 +97,7 @@ function Markers({ touch }: { touch: boolean }) {
   );
 }
 
-/** 摇杆（触屏）：左下一只浅浅的环，按住往哪边推，人就往哪边走；推到头是快走。 */
+/** 摇杆（触屏）：左下一圈下凹的底座，里面一枚凸起的钮；按住往哪边推，人就往哪边走；推到头是快走。 */
 function Stick() {
   const base = useRef<HTMLDivElement>(null), knob = useRef<HTMLElement>(null);
   const id = useRef<number | null>(null);
@@ -104,6 +125,40 @@ function Stick() {
     >
       <b ref={knob} />
     </div>
+  );
+}
+
+/** 「疾」（触屏）：摇杆旁一枚小键，点一下一直跑，再点一下放开；跑着的时候亮（跟着世界报来的 run 走） */
+function RunKey() {
+  const run = useStore(ui, (s) => s.run);
+  return (
+    <button className={`run-key${run ? ' is-on' : ''}`} onClick={() => setRun(!getKs()?.runLock)} aria-pressed={run} aria-label={run ? '在跑，点一下放慢' : '跑'} data-testid="run-key">
+      <span>疾</span>
+    </button>
+  );
+}
+
+/** 电脑上：会走了之后，提示一回「Shift 跑」（跑过一回、或过一会儿就收起，以后不再出） */
+function RunHint() {
+  const told = useStore(saved, (s) => s.runTold), walked = useStore(saved, (s) => s.walked);
+  const run = useStore(ui, (s) => s.run);
+  const [on, setOn] = useState(false), [gone, setGone] = useState(false);
+  useEffect(() => {
+    if (told || !walked) return;
+    const a = setTimeout(() => setOn(true), 1600), b = setTimeout(() => setGone(true), 11000);
+    return () => { clearTimeout(a); clearTimeout(b); };
+  }, [told, walked]);
+  useEffect(() => { if (on && run) setGone(true); }, [on, run]);
+  useEffect(() => {
+    if (!gone) return;
+    const t = setTimeout(() => patch({ runTold: true }), 1500);
+    return () => clearTimeout(t);
+  }, [gone]);
+  if (told || !walked || !on) return null;
+  return (
+    <p className={`walk-hint run-hint glass${gone ? ' is-gone' : ''}`} role="note" data-testid="run-hint">
+      <span><kbd className="is-wide">Shift</kbd>按住，快步跑</span><span><b>点一下</b>一直跑，再点放开</span>
+    </p>
   );
 }
 
@@ -151,15 +206,27 @@ function PlaceName({ id }: { id: string }) {
   );
 }
 
-/** 右上那一卷简册：六枚竹简，一枚一页 */
-const LEAVES: Array<[Exclude<Sheet, null>, string]> = [['map', '村图'], ['sky', '天时'], ['xiang', '观象册'], ['sound', '声音'], ['journal', '起居注'], ['about', '关于']];
+/**
+ * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（村图、天时、行囊、村人簿、星图），
+ * 左边一卷是记下的与设置（观象册、起居注、声音、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
+ * 村人簿、星图那两页的文件还没有时，那一枚不出。
+ */
+const ROLLS: Array<Array<[Exclude<Sheet, null>, string]>> = [
+  [['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['folk', '村人簿'], ['stars', '星图']],
+  [['xiang', '观象册'], ['journal', '起居注'], ['sound', '声音'], ['about', '关于']],
+];
+const rolls = () => ROLLS.map((r) => r.filter(([id]) => hasSheet(id))).filter((r) => r.length > 0);
 function Menu() {
   return (
     <>
       <div className="menu-back" onClick={() => toggleMenu(false)} />
-      <nav className="menu glass" aria-label="册">
-        {LEAVES.map(([id, name]) => (
-          <button key={id} className="slip" onClick={() => openSheet(id)} data-testid={`key-${id}`}><span>{name}</span></button>
+      <nav className="menu" aria-label="册">
+        {rolls().map((r, i) => (
+          <div className="roll" key={i}>
+            {r.map(([id, name]) => (
+              <button key={id} className="slip" onClick={() => openSheet(id)} data-testid={`key-${id}`}><span>{name}</span></button>
+            ))}
+          </div>
         ))}
       </nav>
     </>
@@ -173,8 +240,12 @@ export default function Hud() {
   const near = useStore(ui, (s) => s.near);
   const arrivedAt = useStore(ui, (s) => s.arrivedAt);
   const sheet = useStore(ui, (s) => s.sheet);
+  // 星笺开着（夜里点了天）：触屏上摇杆、「疾」、印先收起来，笺落在下面
+  const skyOn = useStore(ui, (s) => !!s.sky);
   const menu = useStore(ui, (s) => s.menu);
-  const hour = useStore(ui, (s) => s.hour);
+  // 只看时辰（画里的钟点每秒都在走，时辰换了才重画这一角）
+  const branch = useStore(ui, (s) => branchOf(s.hour));
+  const day = useStore(ui, (s) => s.day);
   const [touch] = useState(coarse);
   useEffect(() => {
     if (!menu) return;
@@ -182,27 +253,31 @@ export default function Hud() {
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [menu]);
-  const now = xiaoxiAt(hour);
+  const now = XIAOXI[branch];
   // 扫叶这样的事，做的时候人照常走动：摇杆得留着
   const free = !!(act && getKs()?.acts[act]?.free);
+  const dayName = `第${cn(day + 1)}日`;
   return (
-    <div className={`hud${busy ? ' is-busy' : ''}${act ? ' is-act' : ''}${free ? ' is-free' : ''}${sheet ? ' has-sheet' : ''}${touch ? ' is-touch' : ''}`}>
+    <div className={`hud${busy ? ' is-busy' : ''}${act ? ' is-act' : ''}${free ? ' is-free' : ''}${sheet ? ' has-sheet' : ''}${touch ? ' is-touch' : ''}${skyOn ? ' has-sky' : ''}`}>
       <Markers touch={touch} />
       <PlaceName key={`${place}:${arrivedAt}`} id={place} />
       <div className="corner">
-        <div className="corner-bar glass">
-          <button className="when" onClick={() => openSheet('sky')} aria-label={`${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when">
+        <div className="corner-bar">
+          <button className="when" onClick={() => openSheet('sky')} aria-label={`${dayName}，${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when">
+            <small className="when-day" data-testid="hud-day">{dayName}</small>
             <span>{now.branch}<i>·</i>{now.gua.name}</span>
             <GuaGlyph lines={now.gua.lines} />
           </button>
-          <button className={`menu-key${menu ? ' is-on' : ''}`} onClick={() => toggleMenu()} aria-expanded={menu} aria-label="册：村图、天时、观象册、声音、起居注、关于" data-testid="key-menu">册</button>
+          <button className={`menu-key${menu ? ' is-on' : ''}`} onClick={() => toggleMenu()} aria-expanded={menu} aria-label={`册：${rolls().flat().map(([, n]) => n).join('、')}`} data-testid="key-menu">册</button>
         </div>
         {menu && <Menu />}
       </div>
       <footer className="dock">
         <WalkHint touch={touch} />
+        {!touch && <RunHint />}
       </footer>
       {touch && <Stick />}
+      {touch && <RunKey />}
       {touch && near && (
         <button key={near.id} className="act-key glass" onClick={() => doAct()} data-testid="act-key" aria-label={near.label}>
           <span>{near.label}</span>

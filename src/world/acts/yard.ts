@@ -1,6 +1,7 @@
 /**
  * 院里院外的几件事：
  *   浇菊 —— 拿葫芦瓢从桶里舀水，绕着菊圃一丛一丛地浇。十六丛（一分为二、二分为四……到十六）。人可以走动。
+ *           一瓢水浇四丛就空了，回桶边再舀（桶上钉一枚「舀水」的签；走到桶边站一站也就舀了）。
  *   小车 —— 柴门外草棚下那辆小车。站在车旁，手搭在车帮上（邵雍出门坐的就是这样一辆小车）。
  *   讨茶 —— 路边茶亭里的茶瓮，谁渴了谁喝。
  */
@@ -24,14 +25,25 @@ function mums(k: Anlewo): Act | null {
   const edge = anchor(k, 'mumsEdge');
   if (!edge) return null;
   const { state, set } = base(k);
-  const M = SITE.mums, gourd = part(k, 'gourd');
+  const M = SITE.mums, gourd = part(k, 'gourd'), pail = part(k, 'pail');
+  /** 瓢里的水还够浇几丛；舀水的那一下 */
+  const SCOOP = 4;
+  let water = SCOOP, dipT = -1;
+  const pailAt = pail ? pail.getWorldPosition(new THREE.Vector3()) : edge.position.clone();
   // 十六丛：四行四列（与草木那边种的位置大致相合）
   const clumps: THREE.Vector3[] = [];
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) clumps.push(V(M.x0 + (M.x1 - M.x0) * (i + 0.5) / 4, YARD_Y, M.z0 + (M.z1 - M.z0) * (j + 0.5) / 4));
   const done = new Array<boolean>(16).fill(false);
   let undo: (() => void) | null = null, pouring = -1, pt = 0, queued = -1;
   const count = () => done.filter(Boolean).length;
-  const hint = () => set({ kind: 'mums', title: '浇菊', hint: count() === 0 ? '走到菊丛边，点哪一丛就浇哪一丛' : '', count: count(), total: 16, choices: [{ id: 'done', label: '罢' }] });
+  const hint = () => set({
+    kind: 'mums', title: '浇菊', count: count(), total: 16, choices: [{ id: 'done', label: '罢' }],
+    hint: dipT >= 0 ? '舀一瓢' : water <= 0 ? '瓢里没水了，到桶边舀一瓢' : count() === 0 ? '走到菊丛边，点哪一丛就浇哪一丛' : '',
+    meter: { v: water / SCOOP, label: '瓢' },
+    tags: water <= 0 && dipT < 0 ? [{ id: 'pail', text: '舀水', x: pailAt.x, y: pailAt.y + 0.25, z: pailAt.z, kind: 'hot' }] : [],
+  });
+  /** 到桶边舀水：弯腰，瓢伸进桶里，提起来 */
+  const dip = () => { if (dipT >= 0) return; dipT = 0; const p = k.player; p.stop(); p.faceTo = Math.atan2(pailAt.x - p.pos.x, pailAt.z - p.pos.z); hint(); };
   /** 菊圃边上离这一丛最近的能站处 */
   const edgeNear = (c: THREE.Vector3): [number, number] | null => {
     let best: [number, number] | null = null, bd = 1e9;
@@ -51,7 +63,7 @@ function mums(k: Anlewo): Act | null {
   const act: Act = {
     id: 'mums', name: '浇菊', anchor: edge.position.clone().add(V(0, 0.9, 0)), spot: before(edge, 0.5), radius: 2.2, state, free: true,
     enter() {
-      done.fill(false); pouring = -1; queued = -1;
+      done.fill(false); pouring = -1; queued = -1; water = SCOOP; dipT = -1;
       k.player.av.setHands('free');
       if (gourd) undo = hold(gourd, k.player.av.joints.handR, [0, 0.03, 0.03], [0, 0, 0]);
       hint();
@@ -59,6 +71,18 @@ function mums(k: Anlewo): Act | null {
     exit() { undo?.(); undo = null; k.player.av.reach('R', null); k.player.av.bow = 0; },
     update(dt) {
       const av = k.player.av;
+      // 舀水
+      if (dipT >= 0) {
+        dipT += dt;
+        const e = Math.min(1, dipT / 1.5);
+        av.bow = 0.42 * Math.sin(Math.PI * e);
+        av.reach('R', pailAt.clone().add(V(0, 0.05 - 0.18 * Math.sin(Math.PI * e), 0)), { rate: 7 });
+        if (gourd) gourd.rotation.z = 0.6 * Math.sin(Math.PI * e);
+        if (dipT > 0.7 && dipT - dt <= 0.7) k.sfx('ripple', { vel: 0.4 });
+        if (e >= 1) { dipT = -1; water = SCOOP; av.reach('R', null); hint(); }
+        return;
+      }
+      if (water <= 0 && !k.player.walking && Math.hypot(k.player.pos.x - pailAt.x, k.player.pos.z - pailAt.z) < 1.1) dip();
       if (queued >= 0 && !k.player.walking) { const q = queued; queued = -1; if (Math.hypot(k.player.pos.x - clumps[q].x, k.player.pos.z - clumps[q].z) < 3.4) pour(q); }
       if (pouring < 0) { av.bow = Math.max(0, av.bow - dt); return; }
       pt += dt;
@@ -68,7 +92,7 @@ function mums(k: Anlewo): Act | null {
       if (gourd) gourd.rotation.z = -1.0 * Math.sin(Math.PI * Math.min(1, e * 1.3));
       if (pt > 0.7 && pt - dt <= 0.7) k.fx?.burst('splash', c.clone().setY(YARD_Y + 0.25), 6);
       if (e >= 1) {
-        done[pouring] = true; pouring = -1; av.reach('R', null);
+        done[pouring] = true; pouring = -1; av.reach('R', null); water--;
         if (count() === 16) {
           const ju = POEMS.find((v) => v.lines.some((l) => l.includes('菊')));
           const sy = sayingFor('flower');
@@ -79,7 +103,8 @@ function mums(k: Anlewo): Act | null {
     },
     input: {
       tap(p) {
-        if (pouring >= 0) return true;
+        if (pouring >= 0 || dipT >= 0) return true;
+        if (water <= 0) { hint(); return false; }
         const ray = k.world.ray(p.nx, p.ny).ray;
         if (Math.abs(ray.direction.y) < 1e-4) return false;
         const s = (YARD_Y + 0.3 - ray.origin.y) / ray.direction.y;
@@ -94,7 +119,12 @@ function mums(k: Anlewo): Act | null {
         return true;
       },
     },
-    cmd(c) { if (c === 'done') k.exitAct(); },
+    cmd(c, arg) {
+      if (c === 'tag' && arg === 'pail' && water <= 0) {
+        const p = k.player, s = act.spot;
+        if (Math.hypot(p.pos.x - pailAt.x, p.pos.z - pailAt.z) < 1.1) dip(); else p.goTo(s.x, s.z, { r: 0.12, then: dip });
+      } else if (c === 'done') k.exitAct();
+    },
   };
   return act;
 }

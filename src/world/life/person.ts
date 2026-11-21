@@ -8,7 +8,9 @@
  *     没人看着、或时辰是被一下子拨过去的，就直接出现在该在的地方。
  *   被叫到（attend）—— 停下脚本，把手里的活放稳（各件事自己说怎么放），转过身（坐着的只转头）看着来人。
  *   留意（notice）—— 行者走到三米以内，不用谁叫：手里一顿，抬头看他，微微一点头，再接着干。
- *   远了就省：四十多米外隔帧动，九十米外四帧一动，看不见的只偶尔动一下，两百六十米外不画。
+ *   路上碰见（meet）—— 走着路碰见村里别的人：互相看一眼、点个头；两个都在走、又都是爱说话的，就站下来说一会儿
+ *          （一个说、一个点头，轮着来，有时笑一声），说完各走各的。碰见的是在干活的人，那人手里一顿、抬头点一点。
+ *   远了就省：二十来米内每帧动，五十米内隔帧，百米内三帧一动，再远五帧一动；看不见的偶尔动一下（身子不重摆），两百六十米外不画。
  */
 import * as THREE from 'three';
 import { Figure } from '../avatar/figure';
@@ -16,6 +18,7 @@ import type { HandsName, Look, PoseName } from '../avatar/types';
 import type { Quality } from '../core/World';
 import type { Season } from '../env/atmos';
 import { route } from './route';
+import { blocked } from '../walk';
 import { clearOfTrees, footY, type Seat } from './spots';
 
 export interface Ctx {
@@ -34,12 +37,14 @@ export type Act = (p: Person, c: Ctx) => Script;
 
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
 export const ease = (k: number) => k * k * (3 - 2 * k);
-const _s = new THREE.Sphere(), _v = new THREE.Vector3();
+const _s = new THREE.Sphere(), _v = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3();
 let SEQ = 0;
 
 export class Person {
   /** 试的时候用：当作人人都有人看着（换事一律走过去，每帧都动），好把一整天的路都走一遍 */
   static watchAll = false;
+  /** 全村的人（路上碰见谁，从这里找） */
+  static all: Person[] = [];
   root: THREE.Group; avatar: Figure; fig: Figure;
   /** 此刻在哪（世界坐标，脚下） */
   pos = new THREE.Vector3();
@@ -70,6 +75,24 @@ export class Person {
   dist = 1e6; inView = false;
   /** 这一步是不是「直接到位」的（没人看着时不做过渡） */
   snapNow = false;
+  /** 爱不爱在路上站下来说话（0…1；孩子小，老人、妇人大） */
+  chatty = 0.3;
+  /** 住哪一家（一家人一块儿出门不站在路上寒暄） */
+  household = '';
+  /** 碰见人时怎么打招呼：点头（nod）还是合十（pray，出家人） */
+  greetBy: 'nod' | 'pray' = 'nod';
+  /** 此刻正走着（walk 里）；trip：走的是一段远路（去上工、回家、串门），不是干活时挪一两步 */
+  walking = false; trip = false;
+  /** 正站在路上和谁说话 */
+  talkTo: Person | null = null;
+  private talkEnd = 0; private talkT0 = 0; private talkLead = false;
+  private met = new Map<Person, number>(); private meetNext = 0;
+  /** 走路时各个折点偏开多少（米，各人不同） */
+  private ox = 0; private oz = 0;
+  /** 招手：还剩几秒、朝哪、招之前面朝哪 */
+  private waveT = 0; private waveAt = new THREE.Vector3(); private waveYaw = 0;
+  /** 抬头看的是谁（null：看行者） */
+  private glanceAt: Person | null = null;
 
   private script: Script | null = null;
   private att: THREE.Vector3 | null = null; private attOn = false;
@@ -92,10 +115,20 @@ export class Person {
     this.root.name = `npc:${id}`;
     this.root.visible = false;
     this.scale = this.fig.look.scale;
+    Person.all.push(this);
+    { const a = this.idx * 2.39996, r = 0.18 + 0.2 * ((this.idx * 0.618) % 1); this.ox = Math.cos(a) * r; this.oz = Math.sin(a) * r; }
   }
 
   /** 让他停下手里的活、转过来对着某处（给 null 就接着干自己的） */
   attend(p: THREE.Vector3 | null) { this.att = p ? (this.att ?? new THREE.Vector3()).copy(p) : null; }
+  /**
+   * 远远地朝某人招一招手（说话那一路：相熟的人看见先生在十来步外）：手里的活停一停，转过身来，抬手摇两下，再转回去接着干。
+   * 正被叫着、正站在路上和人说话、已经在招手的时候不招。
+   */
+  wave(p: THREE.Vector3) {
+    if (!this.here || this.att || this.talkTo || this.waveT > 0) return;
+    this.waveAt.copy(p); this.waveT = 2.4; this.waveYaw = this.yaw;
+  }
 
   // —— 脚本里用的小步子 ——
   /** 他自己坐标里的一点（x 是他的左手边、y 朝上、z 朝前，米，按他的身量）在世界里的位置 */
@@ -152,31 +185,108 @@ export class Person {
     if (this.lift) { const l0 = this.lift; yield* this.tween(0.8, (k) => { this.lift = l0 * (1 - k); }); }
     this.fig.setSeat(null);
     const first = via?.[0] ?? [s.x, s.z];
-    if (!raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 3) for (const v of yield* this.way(first[0], first[1])) yield* this.walk(v[0], v[1], speed, 0.5);
-    if (via) for (const v of via) yield* this.walk(v[0], v[1], speed, 0.4);
+    this.trip = !raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 6;
+    // 路上的各个折点各人略偏一点（同一家几个人一块儿走，不叠成一个人）
+    if (!raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 3) for (const v of yield* this.way(first[0], first[1])) yield* this.walk(v[0] + this.ox, v[1] + this.oz, speed, 0.5);
+    // 远路走到头一点就算到了；余下那几步（进屋、绕到凳前坐下）不算赶路
+    if (via) { for (let i = 0; i < via.length; i++) { if (i === 1) this.trip = false; yield* this.walk(via[i][0], via[i][1], speed, 0.4); } this.trip = false; }
     yield* this.walk(s.x, s.z, speed);
+    this.trip = false;
     if (s.yaw != null) yield* this.face(s.yaw);
   }
   /** 认一条到 (x, z) 的路（这一帧已经有人在认了，就等下一帧） */
   private *way(x: number, z: number): Generator<void, Array<[number, number]>, void> {
     for (;;) { const r = route(this.pos.x, this.pos.z, x, z, this.c.frame); if (r) return r; yield; }
   }
-  /** 朝一点走过去（转着身走，转得急就先慢下来） */
+  /** 朝一点走过去（转着身走，转得急就先慢下来）；路上碰见人打个招呼，有时站下来说几句 */
   *walk(x: number, z: number, speed = 1.05, r = 0.1): Script {
     for (let n = 0; n < 9000; n++) {
       const dx = x - this.pos.x, dz = z - this.pos.z, d = Math.hypot(dx, dz);
-      if (d < r) return;
+      if (d < r) { this.walking = false; return; }
+      this.walking = true;
+      if (this.talkTo) { yield* this.roadTalk(); continue; }
+      // 快走到了就不再招呼人（几个人往同一处去，到了跟前不站在路上寒暄）
+      if (d > 4 && this.trip && this.c.t > this.meetNext) this.meet();
       const off = wrap(Math.atan2(dx, dz) - this.yaw), turn = Math.max(-3.4 * this.dt, Math.min(3.4 * this.dt, off));
       this.yaw = wrap(this.yaw + turn);
       const k = Math.max(0, Math.cos(Math.min(Math.abs(off), Math.PI / 2))) ** 0.7, step = Math.min(d, speed * (0.15 + 0.85 * k) * Math.min(1, 0.3 + d / 0.8) * this.dt);
       // 离得很近了又没对准：直接挪过去，免得绕着它打转
       if (d < 0.35) { this.pos.x += (dx / d) * step; this.pos.z += (dz / d) * step; } else { this.pos.x += Math.sin(this.yaw) * step; this.pos.z += Math.cos(this.yaw) * step; }
+      // 村里别的人挨得太近（一块儿走路的、迎面来的）：各往旁边让一点，不叠在一起
+      if ((n & 3) === 0) for (const q of Person.all) {
+        if (q === this || !q.here) continue;
+        const qx = this.pos.x - q.pos.x, qz = this.pos.z - q.pos.z, q2 = qx * qx + qz * qz;
+        if (q2 < 0.3 && q2 > 1e-6) { const ql = Math.sqrt(q2), push = (0.55 - ql) * 2.4 * this.dt, nx = this.pos.x + (qx / ql) * push, nz = this.pos.z + (qz / ql) * push; if (!blocked(nx, nz, 'ground', 0.18)) { this.pos.x = nx; this.pos.z = nz; } }
+      }
       // 行者正挡在跟前：往旁边让半步，绕过去
       const pl = this.c.player, px = pl.x - this.pos.x, pz = pl.z - this.pos.z, pd = px * px + pz * pz;
       if (pd < 0.72 && px * Math.sin(this.yaw) + pz * Math.cos(this.yaw) > 0) { const side = px * Math.cos(this.yaw) - pz * Math.sin(this.yaw) > 0 ? -1 : 1; this.pos.x += Math.cos(this.yaw) * side * 0.8 * this.dt; this.pos.z -= Math.sin(this.yaw) * side * 0.8 * this.dt; }
       yield;
     }
   }
+  /**
+   * 走着路看看身边有没有村里人：两三步内碰见了，互相点个头（两分钟内同一个人不再招呼）；
+   * 两个都在走、都还爱说话，就站下来说一会儿。
+   */
+  private meet() {
+    const c = this.c;
+    this.meetNext = c.t + 0.45;
+    for (const q of Person.all) {
+      if (q === this || !q.here || q.talkTo || (this.household && q.household === this.household)) continue;
+      const dx = q.pos.x - this.pos.x, dz = q.pos.z - this.pos.z;
+      if (dx * dx + dz * dz > 6.8 || c.t - (this.met.get(q) ?? -1e9) < 120) continue;
+      this.met.set(q, c.t); q.met.set(this, c.t);
+      if (q.walking && q.trip && Math.random() < Math.min(this.chatty, q.chatty)) {
+        // 站下来说话：谁先开口、说多久
+        const T = 5 + Math.random() * 6;
+        this.talkTo = q; q.talkTo = this;
+        this.talkEnd = q.talkEnd = c.t + T; this.talkT0 = q.talkT0 = c.t;
+        this.talkLead = true; q.talkLead = false;
+        c.sfx('murmur', this.pos.x, this.pos.z, 0.22);
+        return;
+      }
+      // 打个招呼：看一眼、点个头（出家人合十）；对方若在干活，手里一顿、抬头
+      this.greet(q);
+      if (q.curious || q.walking) q.greet(this);
+      c.sfx('greet', this.pos.x, this.pos.z, 0.2);
+      return;
+    }
+  }
+  /** 看某人一眼、点个头 */
+  greet(q: Person) {
+    if (this.nod > 0 || this.att) return;
+    this.glanceAt = q; this.glance = 2.2 + (this.idx % 3) * 0.3; this.nod = 1.1; this.bow0 = this.fig.bow;
+    if (this.greetBy === 'pray') this.fig.setHands('pray', 0.3);
+  }
+  /** 站在路上和 talkTo 说话：面对面，一个说（抬手比划）、一个听（点头），轮着来；有时笑一声 */
+  private *roadTalk(): Script {
+    const q = this.talkTo!, f = this.fig, c = this.c;
+    let laughed = 0;
+    for (;;) {
+      if (!q.here || q.talkTo !== this || c.t > this.talkEnd) break;
+      const off = wrap(Math.atan2(q.pos.x - this.pos.x, q.pos.z - this.pos.z) - this.yaw);
+      this.yaw = wrap(this.yaw + Math.max(-2.4 * this.dt, Math.min(2.4 * this.dt, off)));
+      f.lookAt(_t1.set(q.pos.x, q.pos.y + 1.42 * q.scale, q.pos.z));
+      // 每两三秒换一个人说；说的那个抬手比划、身子微微前倾，听的那个点头
+      const k = (c.t - this.talkT0) / 2.7, mine = (Math.floor(k) % 2 === 0) === this.talkLead, u = k % 1;
+      if (mine && this.greetBy !== 'pray') {
+        const g = Math.max(0, Math.sin(u * Math.PI)) * (0.6 + 0.4 * Math.sin(c.t * 3.1 + this.idx));
+        f.reach('R', this.loc(-0.2, 1.0 + 0.12 * g, 0.3 + 0.08 * g, _t1), { dir: this.dir(0.25, 0.5, 0.85, _t2), palm: this.dir(0, 0.7, 0.3, _t3), rate: 6 });
+        f.bow = 0.06 + 0.04 * g;
+      } else {
+        f.reach('R', null);
+        f.bow = 0.04 + 0.07 * Math.max(0, Math.sin(u * Math.PI * 4)) * (u < 0.5 ? 1 : 0);
+      }
+      // 说到高兴处笑一声（只一个人出声，免得两声叠在一起）
+      if (this.talkLead && laughed < 1 && c.t - this.talkT0 > 3 && Math.random() < this.dt * 0.12) { laughed++; c.sfx('laugh', this.pos.x, this.pos.z, 0.25 + 0.15 * Math.random()); }
+      yield;
+    }
+    f.reach('R', null); f.lookAt(null); f.bow = 0;
+    if (this.greetBy === 'pray') f.setHands('free', 0.4);
+    if (this.talkTo === q) this.talkTo = null;
+  }
+  /** 先等 sec 秒再做 g */
+  private *after(sec: number, g: Script): Script { yield* this.wait(sec); yield* g; }
   /** 原地转向 */
   *face(yaw: number, rate = 2.6): Script {
     for (let n = 0; n < 600; n++) {
@@ -215,16 +325,19 @@ export class Person {
     for (const o of this.held) o.visible = false;
     this.held.length = 0;
     f.reach('L', null); f.reach('R', null); f.lookAt(null); f.bow = 0;
-    this.rest = null; this.curious = true; this.tilt = 0; this.glance = 0; this.nod = 0;
+    this.rest = null; this.curious = true; this.tilt = 0; this.glance = 0; this.nod = 0; this.glanceAt = null; this.walking = false; this.trip = false; this.waveT = 0;
+    if (this.talkTo) { if (this.talkTo.talkTo === this) this.talkTo.talkEnd = 0; this.talkTo = null; }
   }
   /** 回家：认着路走到门口，不见了 */
   *goHome(): Script {
     this.fig.setHands('free');
     if (this.fig.pose !== 'stand') { this.fig.setPose('stand'); if (this.lift) { const l0 = this.lift; yield* this.tween(0.8, (k) => { this.lift = l0 * (1 - k); }); } }
     this.fig.setSeat(null);
-    yield* this.wait(0.5);
+    // 一家几个人一块儿收工：各人略等一等再走，不叠在一起
+    yield* this.wait(0.5 + (this.idx % 4) * 1.3);
     const h = this.home;
-    for (const v of yield* this.way(h[0][0], h[0][1])) yield* this.walk(v[0], v[1], 1.15, 0.5);
+    this.trip = true;
+    for (const v of yield* this.way(h[0][0], h[0][1])) yield* this.walk(v[0] + this.ox, v[1] + this.oz, 1.15, 0.5);
     for (const [x, z] of h) yield* this.walk(x, z, 1.15, 0.35);
     this.vanish();
   }
@@ -251,8 +364,11 @@ export class Person {
           this.snap = c.wound || (!Person.watchAll && (c.camPos.distanceTo(_v) > 110 || !c.frustum.containsPoint(_v)));
           this.fig.setPose('stand', 0); this.fig.setHands('free', 0); this.lift = 0; this.fig.setSeat(null);
         } else this.snap = !seen;
+        const fromDoor = !this.present && !this.snap;
         this.present = true; this.gone = false;
         this.script = this.acts[want](this, c);
+        // 从门里出来的：各人隔一两秒再出门（一家人同一个钟点出门，别叠成一串）
+        if (fromDoor && this.idx % 4) this.script = this.after((this.idx % 4) * 1.4, this.script);
       }
     } else if (want == null && this.present && !seen) this.vanish();      // 回家的路上没人看着了：就到家了
     if (!this.present) return;
@@ -261,7 +377,10 @@ export class Person {
     const vis = this.dist < 260 && !this.gone;
     this.root.visible = vis;
     this.acc += c.dt;
-    const stride = Person.watchAll ? 1 : !vis ? 8 : !this.inView ? 5 : this.dist < 45 ? 1 : this.dist < 90 ? 2 : 4;
+    // 离镜头二十来米内每帧动，五十米内隔帧，百米内三帧一动，再远五帧；在画面外的六帧一动（身子不重摆，见下）。
+    // 不走动的（坐着听书的、站着干活的）近处也隔帧动、中间三帧一动——一群人围着时省一半；正被叫着说话的每帧动
+    const calm = !this.walking && this.speed < 0.08 && !this.att;
+    const stride = Person.watchAll || this.att ? 1 : !vis ? 8 : !this.inView ? 6 : this.dist < 22 ? (calm ? 2 : 1) : this.dist < 50 ? (calm ? 3 : 2) : this.dist < 100 ? 3 : 5;
     if ((c.frame + this.idx) % stride !== 0 && !this.snap) return;
     const dt = Math.min(this.acc, 0.2); this.acc = 0;
     this.dt = dt; this.t = c.t;
@@ -282,10 +401,23 @@ export class Person {
         if (this.glance === 0 && pd < 3.2) { this.glance = 3.6 + (this.idx % 3) * 0.4; this.nod = 1.1; this.bow0 = f.bow; }
         else if (this.glance < 0 && pd > 5) this.glance = 0;
       }
-      if (this.nod > 0) {
+      if (this.waveT > 0) {
+        // 招手：先转过来（坐着的只转头），抬起右手左右摇，末了转回原来的朝向
+        this.waveT -= dt;
+        const w = this.waveAt, T = 2.4 - this.waveT, k = Math.min(1, T / 0.45) * Math.min(1, Math.max(0, this.waveT - 0.5) / 0.4);
+        if (!this.seated) {
+          const want = this.waveT > 0.5 ? Math.atan2(w.x - this.pos.x, w.z - this.pos.z) : this.waveYaw;
+          const off = wrap(want - this.yaw); this.yaw = wrap(this.yaw + Math.max(-3 * dt, Math.min(3 * dt, off)));
+        }
+        this.rest?.();
+        f.lookAt(this.waveT > 0.5 ? _v.set(w.x, w.y + 1.4, w.z) : null);
+        const sw = Math.sin(T * 9) * k;
+        f.reach('R', this.loc(-0.27, 1.2 + 0.42 * k, 0.16 + 0.04 * sw, _t1), { dir: this.dir(-0.1 + 0.4 * sw, 1, 0.15, _t2), palm: this.dir(0, 0, 1, _t3), rate: 14 });
+        if (this.waveT <= 0) { this.waveT = 0; f.reach('R', null); f.lookAt(null); if (!this.seated) this.yaw = this.waveYaw; }
+      } else if (this.nod > 0) {
         this.nod -= dt;
         f.bow = this.bow0 + 0.1 * Math.sin(Math.PI * Math.max(0, Math.min(1, (0.85 - this.nod) / 0.7)));
-        if (this.nod <= 0) f.bow = this.bow0;
+        if (this.nod <= 0) { f.bow = this.bow0; if (this.greetBy === 'pray' && !this.talkTo && f.hands === 'pray') f.setHands('free', 0.4); }
       } else {
         for (let n = 0; n < 2; n++) {
           const r = this.script?.next();
@@ -297,7 +429,8 @@ export class Person {
       }
       if (this.glance > 0) {
         this.glance -= dt;
-        if (this.glance > 0 && pd < 7) f.lookAt(_v.copy(c.player).setY(c.player.y + 1.4)); else { f.lookAt(null); this.glance = -1; }
+        const g = this.glanceAt, gd = g ? Math.hypot(g.pos.x - this.pos.x, g.pos.z - this.pos.z) : pd;
+        if (this.glance > 0 && gd < 7 && (!g || g.here)) f.lookAt(g ? _v.set(g.pos.x, g.pos.y + 1.42 * g.scale, g.pos.z) : _v.copy(c.player).setY(c.player.y + 1.4)); else { f.lookAt(null); this.glance = -1; this.glanceAt = null; }
       }
     }
     if (this.gone) { this.blocker.x = this.blocker.z = 1e6; this.blocker.r = 0; return; }
@@ -315,7 +448,7 @@ export class Person {
     this.root.rotation.set(0, this.yaw, this.tilt);
     const turn = dt > 0 ? wrap(this.yaw - this.lastYaw) / dt : 0;
     this.lastX = this.pos.x; this.lastZ = this.pos.z; this.lastYaw = this.yaw;
-    if (vis) f.update(dt, c.t, { speed: this.speed / s < 0.06 ? 0 : this.speed / s, climb: this.climb, turn: Math.abs(turn) < 8 ? turn : 0 });
+    if (vis && (this.inView || Person.watchAll)) f.update(dt, c.t, { speed: this.speed / s < 0.06 ? 0 : this.speed / s, climb: this.climb, turn: Math.abs(turn) < 8 ? turn : 0 });
     this.snapNow = false;
     const b = this.blocker; b.x = this.pos.x; b.z = this.pos.z; b.r = 0.3 * s;
   }

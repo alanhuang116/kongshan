@@ -1,7 +1,8 @@
-// 真的走一遍：题名页 → 入 → 进门的话 → 走几步 → 走近一件事按 E → 毕 → 简册 → 村图换处 → 天时 → 重开看记没记住
-// 用法：node tests/play/flow.mjs [desk|phone|land]（网址默认 http://localhost:3801/，或 KS_URL=…；截图在 shots/flow/）
-import { launch, open, shot, report, overflow } from './uikit.mjs';
-const size = process.argv[2] ?? 'desk', touch = size === 'phone' || size === 'land';
+// 真的走一遍：题名页 → 入 → 进门的话 → 走几步（「Shift 跑」/「疾」）→ 走近一件事按 E → 毕 → 简册 → 行囊 → 村图换处 → 天时（时辰流转）
+//   → 画面下方浮一句话 → 重开看记没记住
+// 用法：node tests/play/flow.mjs [desk|phone|land|<uikit 里的尺寸名>]（网址默认 http://localhost:3801/，或 KS_URL=…；截图在 shots/flow/）
+import { launch, open, shot, report, overflow, SIZES } from './uikit.mjs';
+const size = process.argv[2] ?? 'desk', touch = !!SIZES[size]?.mobile;
 const b = await launch();
 let fails = 0;
 const ok = (name, pass, note = '') => { if (!pass) fails++; console.log(`${pass ? '  ✓' : '  ✗'} ${name}${note ? '　' + note : ''}`); };
@@ -22,6 +23,14 @@ await wait(3400);
 ok('入了：在桃林、雾收尽、人看得见', await ev(() => { const k = window.__ks; return window.__ui.ui.get().phase === 'roam' && k.nav.cur === 'grove' && k.veil < 0.02 && k.player.av.root.visible !== false; }), await ev(() => `place=${window.__ks.nav.cur} veil=${window.__ks.veil.toFixed(2)} visits=${window.__ui.saved.get().visits}`));
 await shot(page, `flow-${size}-2-roam`);
 await overflow(page, 'roam');
+ok('右上写着第几日', await ev(() => document.querySelector('[data-testid="hud-day"]')?.textContent === `第${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][window.__ks.day] ?? ''}日`), await ev(() => `${document.querySelector('[data-testid="hud-day"]')?.textContent} day=${window.__ks.day}`));
+if (touch) {
+  // 「疾」：点一下一直跑，亮起来；再点放开
+  await page.tap('[data-testid="run-key"]'); await wait(300);
+  ok('点「疾」：一直跑、那一枚亮着', await ev(() => window.__ks.runLock === true && window.__ui.ui.get().run === true && document.querySelector('[data-testid="run-key"]').classList.contains('is-on')));
+  await page.tap('[data-testid="run-key"]'); await wait(300);
+  ok('再点「疾」：放开', await ev(() => window.__ks.runLock === false && window.__ui.ui.get().run === false));
+}
 
 // —— 走 ——
 const p0 = await ev(() => window.__ks.player.pos.toArray());
@@ -43,8 +52,17 @@ await wait(2400);
 const p1 = await ev(() => window.__ks.player.pos.toArray());
 const moved = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]);
 ok('走了几步', moved > 3, `走出 ${moved.toFixed(1)} 米`);
-ok('走过之后提示收起、记下「会走了」', await ev(() => window.__ui.saved.get().walked === true && !document.querySelector('.walk-hint:not(.is-gone)')));
+ok('走过之后提示收起、记下「会走了」', await ev(() => window.__ui.saved.get().walked === true && !document.querySelector('.walk-hint:not(.is-gone):not(.run-hint)')));
 ok('松手后摇杆归零', await ev(() => window.__ks.stick.length() < 0.01));
+if (!touch) {
+  // 会走了之后提示一回「Shift 跑」；按住 Shift 跑一下，提示收起、记下
+  await page.waitForSelector('[data-testid="run-hint"]', { timeout: 6000 }).catch(() => {});
+  ok('电脑上提示一回「Shift 跑」', await ev(() => !!document.querySelector('[data-testid="run-hint"]')));
+  await page.keyboard.down('Shift'); await page.keyboard.down('w'); await wait(900);
+  ok('按住 Shift：跑起来了（界面知道）', await ev(() => window.__ui.ui.get().run === true));
+  await page.keyboard.up('w'); await page.keyboard.up('Shift'); await wait(2400);
+  ok('跑过之后「Shift 跑」收起、记下，不再出', await ev(() => window.__ui.saved.get().runTold === true && window.__ui.ui.get().run === false));
+}
 
 // —— 走近一件事 ——
 await ev(() => { const k = window.__ks, a = k.acts['xiang:旅'] ?? Object.values(k.acts).find((x) => !x.on || x.on()); k.player.teleport(a.spot.x + 0.4, a.spot.z + 0.9, Math.PI); k.nav.snapBehind(); window.__near = a.id; });
@@ -62,9 +80,19 @@ if (touch) await page.tap('[data-testid="act-done"]'); else await page.keyboard.
 await wait(1200);
 ok(touch ? '点「毕」：起身' : 'Esc：起身', await ev(() => !window.__ks.act && window.__ui.ui.get().act === null));
 
-// —— 简册、村图 ——
+// —— 简册、行囊、村图 ——
 await tapSel('[data-testid="key-menu"]'); await wait(500);
-ok('简册展开：六枚', await ev(() => document.querySelectorAll('.menu .slip').length === 6));
+const slips = await ev(() => [...document.querySelectorAll('.menu .slip')].map((s) => s.textContent).join(' '));
+ok('简册展开：村图、天时、行囊、观象册、起居注、声音、关于都在（村人簿、星图有页才出）', ['村图', '天时', '行囊', '观象册', '起居注', '声音', '关于'].every((n) => slips.includes(n)), slips);
+await tapSel('[data-testid="key-bag"]'); await wait(900);
+ok('行囊开了（空的时候也有一句话）', await ev(() => window.__ui.ui.get().sheet === 'bag' && !!document.querySelector('.bag-empty, .bag-group')));
+await ev(() => window.__ks.bag.add('peach', 3));
+await wait(500);
+ok('收进三个桃：行囊页跟着添上一行', await ev(() => /三/.test(document.querySelector('[data-testid="bag-peach"]')?.textContent ?? '') && window.__ui.saved.get().world.bag?.peach === 3), await ev(() => JSON.stringify(window.__ui.saved.get().world.bag ?? null)));
+await shot(page, `flow-${size}-4b-bag`);
+if (touch) await page.tap('[data-testid="sheet-close"]'); else await page.keyboard.press('Escape');
+await wait(500);
+await tapSel('[data-testid="key-menu"]'); await wait(500);
 await tapSel('[data-testid="key-map"]'); await wait(900);
 ok('村图开了', await ev(() => window.__ui.ui.get().sheet === 'map' && !!document.querySelector('.map')));
 await tapSel('[data-testid="go-pavilion"]');
@@ -77,7 +105,16 @@ await shot(page, `flow-${size}-5-pavilion`);
 await tapSel('[data-testid="key-when"]'); await wait(900);
 ok('点时辰的卦：天时开了', await ev(() => window.__ui.ui.get().sheet === 'sky'));
 await tapSel('[data-testid="dial-9"]'); await wait(1500);            // 酉时 · 观
-ok('点「酉」：画里到酉时', await ev(() => Math.abs(window.__ks.atmos.hour - 18) < 0.01 && window.__ui.saved.get().time === 18), await ev(() => `hour=${window.__ks.atmos.hour} 右上=${document.querySelector('.when span')?.textContent}`));
+// 时辰流转着（默认每秒一分钟），点过之后会往前走一点
+ok('点「酉」：画里到酉时', await ev(() => Math.abs(window.__ks.atmos.hour - 18) < 0.15 && Math.abs(Number(window.__ui.saved.get().time) - 18) < 0.15), await ev(() => `hour=${window.__ks.atmos.hour.toFixed(3)} 右上=${document.querySelector('.when span')?.textContent}`));
+// 时辰流转：停
+await tapSel('[data-testid="flow-0"]'); await wait(400);
+ok('时辰流转选「停」：世界停了、存档记下', await ev(() => window.__ks.flow === 0 && window.__ui.saved.get().flow === 0));
+const h0 = await ev(() => window.__ks.atmos.hour); await wait(1500);
+ok('停着：时辰不走', await ev((h0) => Math.abs(window.__ks.atmos.hour - h0) < 1e-6, h0));
+await tapSel('[data-testid="flow-3"]'); await wait(1600);
+ok('选「疾」：时辰快快地走（一秒约三分钟）', await ev((h0) => window.__ks.flow > 0.04 && window.__ks.atmos.hour - h0 > 0.03, h0), await ev((h0) => `走了 ${((window.__ks.atmos.hour - h0) * 60).toFixed(1)} 分`, h0));
+await tapSel('[data-testid="flow-0"]'); await wait(300);
 await tapSel('[data-testid="season-autumn"]'); await wait(600);
 await tapSel('[data-testid="weather-mist"]'); await wait(600);
 ok('秋、雾：世界与存档都换了', await ev(() => window.__ks.season === 'autumn' && window.__ks.atmos.weather === 'mist' && window.__ui.saved.get().season === 'autumn' && window.__ui.saved.get().weather === 'mist'));
@@ -88,12 +125,21 @@ if (touch) await page.tap('.sheet-back', { position: { x: 20, y: 60 } }); else a
 await wait(600);
 ok(touch ? '点画面别处：册页收起' : 'Esc：册页收起', await ev(() => window.__ui.ui.get().sheet === null));
 
+// —— 画面下方浮一句话 ——
+await ev(() => window.__ks.note('得麦三捆', 'bag'));
+await wait(700);
+ok('世界说一句话：画面下方浮起来', await ev(() => [...document.querySelectorAll('.notes .note')].some((n) => n.textContent === '得麦三捆')));
+await shot(page, `flow-${size}-6b-note`);
+await wait(4600);
+ok('过一会儿那句话退下去', await ev(() => !document.querySelector('.notes .note')));
+
 // —— 重开：记住了没有 ——
 await wait(500);
 await page.goto(page.url().split('?')[0] + '?auto=1', { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true || !!document.querySelector('.fatal'), null, { timeout: 120000 });
 await wait(1200);
-ok('重开（auto）：直接在桃林，秋夜有雾（记着上回选的）', await ev(() => { const k = window.__ks; return k.nav.cur === 'grove' && k.season === 'autumn' && k.atmos.weather === 'mist' && k.timeMode === 'night' && window.__ui.ui.get().phase === 'roam'; }), await ev(() => `season=${window.__ks.season} w=${window.__ks.atmos.weather} time=${window.__ks.timeMode} visits=${window.__ui.saved.get().visits}`));
+ok('重开（auto）：直接在桃林，秋夜有雾（记着上回选的）', await ev(() => { const k = window.__ks, h = k.atmos.hour; return k.nav.cur === 'grove' && k.season === 'autumn' && k.atmos.weather === 'mist' && (k.timeMode === 'night' || (typeof k.timeMode === 'number' && (h > 19 || h < 5))) && window.__ui.ui.get().phase === 'roam'; }), await ev(() => `season=${window.__ks.season} w=${window.__ks.atmos.weather} time=${window.__ks.timeMode} visits=${window.__ui.saved.get().visits}`));
+ok('重开：时辰流转还是「停」、行囊里还有三个桃', await ev(() => window.__ks.flow === 0 && window.__ks.bag.count('peach') === 3));
 ok('重开：不再出走法提示', await ev(() => !document.querySelector('.walk-hint')));
 await shot(page, `flow-${size}-7-again`);
 report(`flow ${size}`, logs.filter((l) => !/没能备好|Failed to load|    at |声音没能打开/.test(l)));

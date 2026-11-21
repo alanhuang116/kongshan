@@ -19,17 +19,19 @@ const pw = (x: number, p: number) => Math.pow(clamp(x), p);
 /** 各层在场景给满（1）时的校准：离线渲染量过，见 docs/AUDIO.md 的表 */
 export const TRIM: Record<SlotId, number> = {
   air: 0.052, pines: 0.22, bamboo: 0.15, leaves: 0.3, fieldwind: 0.14, brook: 0.155, pond: 0.3, river: 0.11, waterfall: 0.09,
-  birds: 0.45, swallows: 0.6, cicadas: 0.14, frogs: 0.75, crickets: 0.5, geese: 0.5, rain: 0.62, drips: 0.3, snow: 0.33, night: 0.045,
+  birds: 0.45, swallows: 0.6, cicadas: 0.14, frogs: 0.75, crickets: 0.5, geese: 0.5, wild: 0.5, rain: 0.62, drips: 0.3, snow: 0.33, night: 0.045,
   village: 0.5, school: 0.6, work: 0.4, mill: 0.3,
   kettle: 0.58, inkstone: 0.72, saw: 0.72, plough: 0.47,
+  millstone: 0.36, windlass: 0.62, frog: 0.4, bee: 0.5, kite: 0.36, murmur: 0.6, line: 0.6, boatWater: 0.55, snowRoll: 0.7,
   chant: 1, qin: 1, bellfar: 0.4, eaves: 1.6,
 };
 /** 各层渐变的快慢（秒，约三分之一是时间常数）：跟着脚步走的快，跟着天时走的慢 */
 export const FADE: Record<SlotId, number> = {
   air: 4, pines: 2.4, bamboo: 2.4, leaves: 2.4, fieldwind: 3, brook: 1.5, pond: 2.5, river: 3, waterfall: 4,
-  birds: 6, swallows: 6, cicadas: 9, frogs: 9, crickets: 9, geese: 8, rain: 3, drips: 4, snow: 6, night: 10,
+  birds: 6, swallows: 6, cicadas: 9, frogs: 9, crickets: 9, geese: 8, wild: 6, rain: 3, drips: 4, snow: 6, night: 10,
   village: 4, school: 2.5, work: 2.5, mill: 2.5,
   kettle: 0.5, inkstone: 0.15, saw: 0.3, plough: 0.6,
+  millstone: 0.8, windlass: 0.3, frog: 3, bee: 1.2, kite: 1.5, murmur: 2, line: 0.25, boatWater: 0.6, snowRoll: 0.3,
   chant: 1.2, qin: 1.2, bellfar: 1.2, eaves: 1.2,
 };
 /** 有方位的层：它的声像跟着 bearing 里的哪一项 */
@@ -76,7 +78,7 @@ export function mergeScene(raw: Scene, p: Partial<Scene>) {
     else (raw as unknown as Record<string, unknown>)[k] = v;
   }
 }
-export function resolveScene(r: Scene, wet: number): SceneState {
+export function resolveScene(r: Scene, wet: number, cover = 0): SceneState {
   const h = ((r.hour % 24) + 24) % 24, [sr, ss] = SUN[r.season] ?? SUN.spring;
   const night = clamp(r.night ?? (h < 12 ? 1 - smooth(sr - 1.1, sr + 0.25, h) : smooth(ss + 0.15, ss + 1.5, h)));
   const dawn = clamp(r.dawn ?? Math.max(0, 1 - Math.abs(h - (sr + 0.15)) / 1.35));
@@ -98,12 +100,13 @@ export function resolveScene(r: Scene, wet: number): SceneState {
     // 没给风：晴天取平日的 0.09，雨雪天大一些（与 Atmos 的算法同）
     wind: clamp(((r.wind ?? 0.09 * (1 + 0.8 * (r.rain ?? (r.weather === 'rain' ? 1 : 0)) + 0.4 * (r.snow ?? (r.weather === 'snow' ? 1 : 0)))) / 0.25) * (1 + 0.3 * clamp(r.height ?? 0))),
     indoor: clamp(r.indoor ?? 0), near, bearing, focus: r.focus && FOCUS[r.focus] ? r.focus : null, wet: clamp(wet),
+    cover: clamp(r.cover ?? cover),
   };
 }
 /** 量化之后的指纹：每帧都交场景时，没变就什么都不做 */
 export function sceneSig(s: SceneState): string {
   const q = (x: number, n: number) => Math.round(x * n);
-  const a: Array<string | number> = [s.place, q(s.hour, 12), q(s.night, 40), q(s.dawn, 40), q(s.dusk, 40), s.season, q(s.rain, 40), q(s.snow, 40), q(s.mist, 20), q(s.storm, 10), q(s.wind, 30), q(s.indoor, 40), q(s.wet, 40), s.focus ?? ''];
+  const a: Array<string | number> = [s.place, q(s.hour, 12), q(s.night, 40), q(s.dawn, 40), q(s.dusk, 40), s.season, q(s.rain, 40), q(s.snow, 40), q(s.mist, 20), q(s.storm, 10), q(s.wind, 30), q(s.indoor, 40), q(s.wet, 40), q(s.cover, 20), s.focus ?? ''];
   for (const k of NEAR_KEYS) a.push(q(s.near[k], 50), q(s.bearing[k], 16));
   return a.join();
 }
@@ -167,13 +170,22 @@ export function workHours(s: SceneState): number {
 export const roosterTime = (s: SceneState) => smooth(0.12, 0.45, s.dawn);
 
 // ———————————————————————————— 混 ————————————————————————————
-/** 凝神听某一样时：哪几层提上来（头一个是主，其余是陪着的） */
+/** 凝神听某一样时：哪几层提上来（头一个是主，其余是陪着的）。stars 另算，见 STARS */
 export const FOCUS: Record<string, Bed[]> = {
   cicada: ['cicadas'], cicadas: ['cicadas'], rain: ['rain', 'drips'], stream: ['brook'], brook: ['brook'], birds: ['birds', 'swallows'], frogs: ['frogs'], crickets: ['crickets'],
   bamboo: ['bamboo'], pines: ['pines'], river: ['river'], waterfall: ['waterfall'], recite: ['school'], school: ['school'], snow: ['snow'],
+  stars: ['night'],
 };
 /** 主的那一层提多少、陪着的提多少、别的退到多少（+7.6 分贝 / +3 分贝 / −7.5 分贝） */
 const FOCUS_UP = 2.4, FOCUS_SIDE = 1.4, FOCUS_DOWN = 0.42;
+/**
+ * 观星（focus 'stars'）：不提哪一层，是整个夜静下来——风更轻（−4 到 −6 分贝），蛙退得最多、蟋蟀退一半
+ *（金铃子那一线细的在层里另留着，虫声就「细」了），水声远一些；夜的底稍稍显出来。远处偶尔的犬吠、更梆归村里那一层排。
+ */
+export const STARS: Partial<Record<Bed, number>> = {
+  air: 0.6, pines: 0.5, bamboo: 0.5, leaves: 0.5, fieldwind: 0.5, brook: 0.7, pond: 0.75, river: 0.75, waterfall: 0.7,
+  frogs: 0.32, crickets: 0.55, cicadas: 0.3, birds: 0.4, swallows: 0.4, geese: 0.8, wild: 0.7, school: 0.5, work: 0.5, mill: 0.6, night: 1.25,
+};
 
 export function mixScene(s: SceneState): Record<Bed, number> {
   const n = s.near, w = s.wind, winter = s.season === 'winter', trees = treesAt(s);
@@ -208,7 +220,14 @@ export function mixScene(s: SceneState): Record<Bed, number> {
     work: pw(n.work, 1.2) * workHours(s),
     // 水碓日夜不停（水一直在流）；冬天水小，转得慢些
     mill: pw(n.mill, 1.3) * (winter ? 0.7 : 1),
+    // 野：鹊、鸦、鹿、松鼠——没有常驻的声音，一直「在」（大雨里收着）；各样什么时候叫、离多远在层里算
+    wild: (1 - 0.7 * s.rain) * (1 - 0.4 * s.snow),
   };
+  // 观星：整个夜静下来，不提哪一层
+  if (s.focus === 'stars') {
+    for (const b of BED_NAMES) g[b] *= STARS[b] ?? 1;
+    return g;
+  }
   // 凝神听：那一层此刻真的在响，才把它提上来、把别的退下去
   const up = s.focus ? FOCUS[s.focus] : undefined;
   if (up && g[up[0]] > 0.02) for (const b of BED_NAMES) g[b] *= b === up[0] ? FOCUS_UP : up.includes(b) ? FOCUS_SIDE : FOCUS_DOWN;

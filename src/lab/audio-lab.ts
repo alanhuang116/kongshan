@@ -16,34 +16,43 @@ const SHOT_ZH: Record<Shot, string> = {
   qin: '琴', page: '翻书', paper: '纸', brush: '一笔', inkstone: '研墨', pour: '注', kettle: '煮水', fan: '扇炉', cup: '放盏', bowl: '茶碗', stone: '落子', lamp: '点灯', ignite: '点香', ash: '插香',
   broom: '扫', water: '浇菊', gate: '柴门', door: '板门', knock: '叩门', dew: '露水', drip: '水滴', plop: '落水', ripple: '拨水',
   rooster: '鸡鸣', hen: '母鸡', chick: '小鸡', duck: '鸭', goose: '鹅 / 雁', dog: '犬', cat: '猫', ox: '牛', recite: '书声', flute: '牧笛', sparrow: '麻雀', cuckoo: '布谷',
-  hammer: '锤', saw: '锯', plane: '刨', hoe: '锄', plough: '犁', bucket: '打水', pound: '捣衣', millThump: '水碓', rattle: '拨浪鼓', swing: '秋千', oar: '橹', net: '撒网', flap: '扑翅', chirp: '啾', tumble: '麻雀滚落', thresh: '打谷', laugh: '孩子笑', cluck: '咯（＝hen）', quack: '嘎（＝duck）',
-  thunder: '远雷', gust: '一阵风', foot: '一步', step: '步（旧名）', woodstep: '木步（旧名）', tick: '轻点', open: '开', close: '合',
-  bell: '钟', qing: '大磬', chime: '引磬', muyu: '木鱼', drum: '鼓', drumrim: '鼓边', bead: '念珠', beadturn: '掉头', sticks: '摇签', stickfall: '落签', windbell: '风铎',
+  hammer: '锤', saw: '锯', plane: '刨', hoe: '锄', plough: '犁', bucket: '桶', pound: '捣衣', millThump: '水碓', rattle: '拨浪鼓', swing: '秋千', oar: '橹', net: '撒网', flap: '扑翅', chirp: '啾', tumble: '麻雀滚落', thresh: '打谷', laugh: '孩子笑', cluck: '咯（＝hen）', quack: '嘎（＝duck）',
+  sickle: '割麦', sheaf: '捆麦', flail: '连枷', winnow: '扬场', millstone: '推磨', sow: '撒种', dig: '翻土', pluck: '摘果', grain: '倒粮', windlass: '辘轳', chop: '劈柴', split: '破篾', loom: '织机', pull: '拔一棵', pole: '挑麦上肩', rustle: '摇树', fruitFall: '果子落地', scoop: '木锨铲粮', stir: '拨碓臼',
+  frog: '蛙', oriole: '黄鹂', magpie: '喜鹊', crow: '寒鸦', geese: '雁阵', deer: '鹿鸣', goat: '羊', donkey: '驴', bee: '蜂', wings: '惊飞', fishJump: '鱼跃', purr: '猫呼噜', peck: '鸡啄食', squirrel: '松鼠', frogPlop: '青蛙跳水', cackle: '咯咯哒（＝hen·egg）', sheep: '绵羊', lamb: '羊羔', crane: '鹤唳', munch: '牛嚼草', dogWhine: '狗撒娇',
+  cast: '抛竿', strike: '提竿', fishSplash: '鱼挣水', flop: '鱼扑腾', reel: '收线', bite: '咬钩', kite: '纸鸢', shuttle: '毽子', arrowPot: '箭入壶', arrowMiss: '箭落地', potRim: '箭碰壶口', potEar: '贯耳', toss: '投出', catch: '接箭', swish: '秋千兜风', skip: '打水漂', snowCrunch: '踩雪', chime: '风铃', lantern: '点灯笼', starTap: '点星', starLight: '点亮一宿', matUnroll: '铺席', matRoll: '卷席', boatBump: '船碰岸', flutter: '纸鸢兜风', kiteFall: '纸鸢栽下', snap: '鸢线断', snowPat: '拍雪',
+  clapper: '更梆', gong: '更锣', wood: '醒木', murmur: '远处人声', kidsLaugh: '孩子笑闹', greet: '「嗯」', whip: '甩鞭',
+  thunder: '远雷', gust: '一阵风', meteor: '流星', foot: '一步', step: '步（旧名）', woodstep: '木步（旧名）', tick: '轻点', open: '开', close: '合',
+  bell: '钟', qing: '大磬', yinqing: '引磬', muyu: '木鱼', drum: '鼓（书鼓）', drumrim: '鼓边', bead: '念珠', beadturn: '掉头', sticks: '摇签', stickfall: '落签', windbell: '风铎',
 };
 const BED_ZH: Record<Bed, string> = {
   air: '气', pines: '松风', bamboo: '竹风', leaves: '叶声', fieldwind: '野风', brook: '溪', pond: '池', river: '河', waterfall: '瀑',
-  birds: '鸟', swallows: '燕', cicadas: '蝉', frogs: '蛙', crickets: '蟋蟀', geese: '雁', rain: '雨', drips: '檐滴', snow: '雪', night: '夜', village: '鸡犬', school: '书声', work: '修桥', mill: '水碓',
+  birds: '鸟', swallows: '燕', cicadas: '蝉', frogs: '蛙', crickets: '蟋蟀', geese: '雁', wild: '鹊鸦鹿', rain: '雨', drips: '檐滴', snow: '雪', night: '夜', village: '鸡犬', school: '书声', work: '修桥', mill: '水碓',
 };
 const GROUP_ZH: Record<Group, string> = { wind: '风', water: '水', birds: '鸟', insects: '虫蛙', weather: '雨雪', village: '村里' };
-const LOOP_ZH: Record<Loop, string> = { kettle: '煮水', inkstone: '研墨', saw: '拉锯', plough: '犁地' };
+const LOOP_ZH: Record<Loop, string> = { kettle: '煮水', inkstone: '研墨', saw: '拉锯', plough: '犁地', millstone: '推磨', windlass: '辘轳', frog: '一片蛙', bee: '蜂箱', kite: '纸鸢', murmur: '远处人声', line: '钓线吃劲', boatWater: '船底下的水', snowRoll: '推雪球' };
 const EXTRA_ZH: Record<Extra, string> = { chant: '诵经（旧）', qin: '远琴', bellfar: '远钟（旧）', eaves: '风铎（旧）' };
 const NEAR_ZH: Record<NearKey, string> = { stream: '溪', pond: '池', river: '伊水', waterfall: '瀑布', bamboo: '竹林', pines: '松', grove: '桃林', fields: '田', village: '邻家', school: '村塾', work: '修桥处', mill: '水碓' };
-const GROUND_ZH: Record<Ground, string> = { earth: '土路', grass: '草', stone: '石板', plank: '木板', floor: '屋里地', water: '浅水' };
+const GROUND_ZH: Record<Ground, string> = { earth: '土路', grass: '草', stone: '石板', plank: '木板', floor: '屋里地', water: '浅水', snow: '积雪' };
 const PLACE_ZH: Array<[string, string]> = [['grove', '桃林'], ['bridge', '石桥'], ['yard', '院中'], ['hall', '草堂'], ['pavilion', '观物亭'], ['fields', '田畴'], ['village', '邻家'], ['ferry', '渡口']];
-const SHOT_GROUP_ZH: Record<keyof typeof SHOT_GROUPS, string> = { study: '书房与院里', village: '村里', sky: '天上', steps: '脚步', ui: '界面', legacy: '旧（寺里的，新场景不用）' };
+const SHOT_GROUP_ZH: Record<keyof typeof SHOT_GROUPS, string> = { study: '书房与院里', village: '村里', farm: '农事', animals: '禽兽虫鱼', things: '器物与游戏', folk: '人', sky: '天上', steps: '脚步', ui: '界面', legacy: '旧（寺里的，新场景不用）' };
 /** 各声音的变体：[variant, 按钮上的字] */
 const VARIANTS: Partial<Record<Shot, Array<[string, string]>>> = {
   paper: [['', '拿放'], ['unroll', '展卷'], ['smooth', '抚平']], pour: [['', '注茶'], ['wine', '斟酒'], ['water', '注水']], cup: [['', '木案'], ['stone', '石桌']], bowl: [['', '放下'], ['sip', '啜一口再放下']],
-  broom: [['', '土地'], ['stone', '石板']], gate: [['', '开合'], ['open', '只开']], door: [['', '开合'], ['open', '只开']], plop: [['', '落物'], ['frog', '蛙'], ['turtle', '龟']],
+  broom: [['', '土地'], ['stone', '石板']], gate: [['', '开合'], ['open', '只开']], door: [['', '开合'], ['open', '只开']], knock: [['', '门环'], ['knuckle', '指节']], plop: [['', '落物'], ['frog', '蛙'], ['turtle', '龟']],
   rooster: [['', '近'], ['far', '远']], hen: [['', '咯咯'], ['egg', '下蛋']], dog: [['', '远吠'], ['woof', '近处一声']], ox: [['', '哞'], ['breath', '喷气']],
   cuckoo: [['', '一声'], ['x3', '三声']], goose: [['', '家鹅'], ['hiss', '嘶'], ['wild', '过雁']], recite: [['', '一句'], ['up', '上句'], ['down', '下句'], ['lead', '先生领读']], saw: [['push', '推'], ['pull', '拉']],
-  bucket: [['', '全'], ['creak', '辘轳'], ['splash', '落水']], gust: [['leaf', '叶'], ['bamboo', '竹'], ['pine', '松']],
+  bucket: [['', '入水提起'], ['dip', '入水'], ['lift', '提起'], ['well', '井上全套'], ['creak', '辘轳'], ['splash', '落井']], gust: [['leaf', '叶'], ['bamboo', '竹'], ['pine', '松']],
+  grain: [['', '倒进斗'], ['sack', '倒进袋']], cast: [['', '只甩竿'], ['land', '连落水']], crow: [['', '一只'], ['flock', '一群归林']], goat: [['', '羊'], ['kid', '小羊']], snowCrunch: [['', '踩一下'], ['roll', '滚雪球']], greet: [['', '随便'], ['man', '男'], ['woman', '女']],
 };
 /** 离线渲染各渲染多少秒（没列的 1.2 秒） */
 const SHOT_SECONDS: Partial<Record<Shot, number>> = {
-  bell: 26, qing: 13, chime: 6, drum: 3, windbell: 4, pour: 3.2, kettle: 8.5, rooster: 3.2, hen: 2.6, chick: 2, duck: 2.8, dog: 2.4, ox: 2.8, recite: 4.6, sparrow: 2.8, cuckoo: 1.8, goose: 5, cat: 1.4, flute: 6,
+  bell: 26, qing: 13, yinqing: 6, drum: 3, windbell: 4, pour: 3.2, kettle: 8.5, rooster: 3.2, hen: 2.6, chick: 2, duck: 2.8, dog: 2.4, ox: 2.8, recite: 4.6, sparrow: 2.8, cuckoo: 1.8, goose: 5, cat: 1.4, flute: 6,
   bowl: 1.6, stone: 0.5, pound: 0.8, millThump: 1.1, rattle: 1.5, swing: 3.4,
   hammer: 1, saw: 0.8, plane: 1.3, hoe: 0.8, plough: 3.2, bucket: 4.8, oar: 2.6, net: 1.4, thunder: 11, gust: 5.6, qin: 6, page: 0.9, paper: 1, inkstone: 1.5, water: 2, gate: 1.6, door: 1.4, knock: 1.6, dew: 0.7,
+  sickle: 1, sheaf: 2.3, flail: 1, winnow: 3.6, millstone: 3.4, sow: 1.3, dig: 1.1, pluck: 1.2, grain: 2, windlass: 2.6, chop: 1, split: 0.8, loom: 1.2, pull: 1, pole: 1.4, rustle: 1.8, fruitFall: 1.4, scoop: 1, stir: 1,
+  frog: 3, oriole: 2.4, magpie: 3.4, crow: 8, geese: 9.5, deer: 2.4, goat: 3, donkey: 6, bee: 3, wings: 2, fishJump: 1.8, purr: 4.6, peck: 2, squirrel: 2.2, frogPlop: 1, cackle: 5, sheep: 3, lamb: 1.4, crane: 3, munch: 3.6, dogWhine: 1.6,
+  cast: 1.8, strike: 1, fishSplash: 1.8, flop: 1.6, reel: 2.2, bite: 1.2, kite: 4.2, shuttle: 0.5, arrowPot: 1.8, arrowMiss: 0.9, potRim: 1.4, potEar: 1.3, toss: 0.7, catch: 0.5, swish: 1, skip: 2.4, snowCrunch: 0.7, chime: 4.4, lantern: 3.2, starTap: 0.6, starLight: 2.4, matUnroll: 1.8, matRoll: 1.8, boatBump: 1, flutter: 1.2, kiteFall: 1.2, snap: 0.7, snowPat: 0.9,
+  clapper: 4.6, gong: 3.2, wood: 0.6, murmur: 8.5, kidsLaugh: 2.2, greet: 1.4, whip: 1, meteor: 1.8,
 };
 /** 几个现成的场景（试听与检查脚本共用） */
 const PRESETS: Array<[string, Partial<Scene>, number?]> = [
@@ -59,6 +68,9 @@ const PRESETS: Array<[string, Partial<Scene>, number?]> = [
   ['冬日 · 院中', { place: 'yard', hour: 10, season: 'winter', wind: 0.14, near: { pines: 0.6, bamboo: 0.3, stream: 0.25 } }],
   ['雪 · 竹林', { place: 'pavilion', hour: 15, season: 'winter', snow: 1, near: { bamboo: 1, pond: 0.6 } }],
   ['夜 · 草堂里', { place: 'hall', hour: 23, season: 'spring', indoor: 1, near: { pines: 0.4, bamboo: 0.4, stream: 0.15 } }],
+  // 后来添的两个：夏夜在溪桥上观星（夜更静）；冬天黄昏雪停了、地上白着（寒鸦归林）
+  ['夏夜 · 观星', { place: 'bridge', hour: 22, season: 'summer', focus: 'stars', near: { stream: 0.9, grove: 0.4, fields: 0.3, pond: 0.2 } }],
+  ['冬暮 · 雪后', { place: 'yard', hour: 16.6, season: 'winter', cover: 0.8, wind: 0.05, near: { pines: 0.6, bamboo: 0.3, stream: 0.25, village: 0.15 } }],
 ];
 const BASE_SCENE: Scene = { ...DEFAULT_SCENE, rain: 0, snow: 0, mist: 0, storm: 0, wind: 0.09, indoor: 0, focus: null };
 const presetScene = (p: Partial<Scene>): Scene => ({ ...BASE_SCENE, ...p, near: { ...ZERO_NEAR, ...p.near }, bearing: { ...ZERO_NEAR } });
@@ -98,6 +110,15 @@ export interface Stats {
   /** 这一段渲染花了多少毫秒、其间一共建了多少个节点（看省不省：只有 __render 一类给） */
   ms?: number;
   nodes?: number;
+  /**
+   * 半中间突然断掉的地方有几处（咔哒）：2 毫秒一格的均方根，前一格还响（最响一格的二十分之一以上）、
+   * 后两格一下子落下去 28 分贝以上——自然的衰减再快也到不了（最快的槌头噪声两毫秒落十几分贝）。量贴近的干声时才准
+   */
+  cuts: number;
+  /** 末尾那一格比最响的一格低多少分贝：这一段渲染得够不够长、声音是不是自己收住了 */
+  endDb: number;
+  /** 颗粒感：响着的那一段里，10 毫秒一格的响度一格到下一格平均跳多少分贝（匀的风声、帚声小；一下一下的折响、碎响、发颤的嗓子大） */
+  grit: number;
 }
 
 function fft(re: Float64Array, im: Float64Array) {
@@ -258,7 +279,25 @@ export function analyze(buf: AudioBuffer, times = [0.06, 0.3, 1, 3, 10, 20]): St
   for (let i = 0; i + seg <= n; i += seg) { let s = 0; for (let k = 0; k < seg; k++) s += x[i + k] * x[i + k]; env.push(+Math.sqrt(s / seg).toPrecision(3)); }
   const e10 = envelope10(x, sr), bursts = findBursts(e10), pitches = bursts.length <= 40 ? bursts.map(([a, b]) => pitchAt(x, sr, a + (b - a) * 0.5)) : [];
   const beats = buf.duration <= 20 ? findBeats(e10) : [];
+  // 突然断掉的地方：半毫秒一格。前面两毫秒一直响着，下一格一下子落下去 34 分贝以上——
+  // 自然的衰减再快（降 60 分贝只要一毫秒的那种小「嗒」）半毫秒也只落三十分贝，到不了；只有声音被一刀切断才会这样
+  const w2 = Math.max(1, Math.floor(sr * 0.0005)), nw = Math.floor(n / w2), r2 = new Float32Array(nw);
+  let rmax = 1e-12;
+  for (let i = 0; i < nw; i++) { let s = 0; for (let k = 0; k < w2; k++) s += x[i * w2 + k] * x[i * w2 + k]; r2[i] = Math.sqrt(s / w2); if (r2[i] > rmax) rmax = r2[i]; }
+  let cuts = 0;
+  for (let i = 4; i < nw - 1; i++) {
+    const before = Math.min(r2[i - 4], r2[i - 3], r2[i - 2], r2[i - 1]);
+    if (before > 0.05 * rmax && r2[i] < 0.02 * r2[i - 1] && r2[i + 1] < 0.03 * r2[i - 1]) cuts++;
+  }
+  const endDb = +(20 * Math.log10((env[env.length - 1] ?? 0) / Math.max(...env, 1e-12) + 1e-9)).toFixed(1);
+  // 颗粒感
+  const w10 = Math.floor(sr * 0.01), n10 = Math.floor(n / w10), e10raw = new Float32Array(n10);
+  let etop = 1e-12;
+  for (let i = 0; i < n10; i++) { let s = 0; for (let k = 0; k < w10; k++) s += x[i * w10 + k] * x[i * w10 + k]; e10raw[i] = Math.sqrt(s / w10); if (e10raw[i] > etop) etop = e10raw[i]; }
+  let gs = 0, gn = 0;
+  for (let i = 1; i < n10; i++) if (e10raw[i] > 0.1 * etop && e10raw[i - 1] > 0.1 * etop) { gs += Math.abs(20 * Math.log10(e10raw[i] / e10raw[i - 1])); gn++; }
   return {
+    cuts, endDb, grit: gn ? +(gs / gn).toFixed(2) : 0,
     nan, peak: +peak.toPrecision(4), rms: +Math.sqrt(sq / (n * ch)).toPrecision(4), dc: +dc.toPrecision(2), seconds: buf.duration, tail60: +tail.toFixed(2), tail30: +tail30.toFixed(2),
     centroid: tot > 0 ? Math.round(cen / tot) : 0, hf: tot > 0 ? +(hf / tot).toPrecision(2) : 0, lf: tot > 0 ? +(lf / tot).toPrecision(2) : 0,
     bands: oct.map((p) => Math.round(10 * Math.log10(p / otop + 1e-12))), env, bursts, pitches, beats, lr, rmsAt, peaks, lowest, loudest,
@@ -357,7 +396,7 @@ function bedSpec(name: Bed, seconds = 10, scene: Partial<Scene> = {}, level = 1)
   const base: Record<Bed, Partial<Scene>> = {
     air: {}, pines: {}, bamboo: {}, leaves: { season: 'summer' }, fieldwind: {}, brook: {}, pond: { season: 'summer' }, river: { hour: 10 }, waterfall: {},
     birds: { hour: 6.2, season: 'spring' }, swallows: { hour: 7, season: 'spring' }, cicadas: { hour: 14, season: 'summer' }, frogs: { hour: 22, season: 'summer' }, crickets: { hour: 22, season: 'autumn' },
-    geese: { hour: 17.5, season: 'autumn' }, rain: { rain: 1, wind: 0.2 }, drips: { rain: 0, place: 'yard' }, snow: { snow: 1, season: 'winter' }, night: { hour: 23 },
+    geese: { hour: 17.5, season: 'autumn' }, wild: { hour: 17.3, season: 'autumn' }, rain: { rain: 1, wind: 0.2 }, drips: { rain: 0, place: 'yard' }, snow: { snow: 1, season: 'winter' }, night: { hour: 23 },
     village: { hour: 6.2, place: 'village' }, school: { hour: 9.5, place: 'village' }, work: { hour: 9.5, place: 'village' }, mill: { place: 'village' },
   };
   return { seconds, auto: false, beds: { [name]: level }, scene: { ...BASE_SCENE, near, ...base[name], ...scene }, wet: name === 'drips' ? 0.8 : undefined };
@@ -427,7 +466,8 @@ function drawScene() {
         slider('雾 mist', 0, 1, 0.01, scene.mist ?? 0, set('mist')),
         slider('风 wind', 0, 0.35, 0.005, scene.wind ?? 0.09, set('wind'), (v) => v.toFixed(3)),
         slider('屋里 indoor', 0, 1, 0.01, scene.indoor, set('indoor')),
-        select('凝神听 focus', [['', '（不）'], ['cicada', '蝉'], ['rain', '雨'], ['stream', '溪'], ['birds', '鸟'], ['frogs', '蛙'], ['crickets', '蟋蟀'], ['bamboo', '竹'], ['pines', '松'], ['recite', '书声']], scene.focus ?? '', (v) => { scene.focus = v || null; pushScene(); }),
+        select('凝神听 focus', [['', '（不）'], ['cicada', '蝉'], ['rain', '雨'], ['stream', '溪'], ['birds', '鸟'], ['frogs', '蛙'], ['crickets', '蟋蟀'], ['bamboo', '竹'], ['pines', '松'], ['recite', '书声'], ['stars', '观星（夜更静）']], scene.focus ?? '', (v) => { scene.focus = v || null; pushScene(); }),
+        slider('积雪 cover', -0.05, 1, 0.01, scene.cover ?? -0.05, (v) => { scene.cover = v < 0 ? undefined : v; pushScene(); }, (v) => (v < 0 ? '引擎自己估' : v.toFixed(2))),
         h('div', { className: 'row' }, [button('near 按这一处取个大概', () => { scene.near = { ...ZERO_NEAR, ...PLACE_NEAR[scene.place] }; drawScene(); pushScene(); })]),
       ]),
       h('div', {}, NEAR_KEYS.map((k) => h('div', { className: 'row tight' }, [
@@ -534,8 +574,15 @@ const walkBtn = button('走起来（每秒 1.7 步）', async () => {
   walkBtn.classList.add('gold');
   walking = setInterval(() => audio.step(walkGround, wetStep >= 0 ? { wet: wetStep } : undefined), 1000 / 1.7);
 });
+let running: ReturnType<typeof setInterval> | null = null;
+const runBtn = button('跑起来（每秒 2.8 步，4.5 米/秒）', async () => {
+  await ensure();
+  if (running) { clearInterval(running); running = null; runBtn.classList.remove('gold'); return; }
+  runBtn.classList.add('gold');
+  running = setInterval(() => audio.step(walkGround, { vel: 0.5 + Math.random() * 0.14, run: true, speed: 4.5, ...(wetStep >= 0 ? { wet: wetStep } : {}) }), 1000 / 2.8);
+});
 const stepRow = h('div', {}, [
-  h('div', { className: 'grid' }, [...GROUND_NAMES.map((g) => button(`${GROUND_ZH[g]} ${g}`, async () => { await ensure(); walkGround = g; audio.step(g, wetStep >= 0 ? { wet: wetStep } : undefined); })), walkBtn]),
+  h('div', { className: 'grid' }, [...GROUND_NAMES.map((g) => button(`${GROUND_ZH[g]} ${g}`, async () => { await ensure(); walkGround = g; audio.step(g, wetStep >= 0 ? { wet: wetStep } : undefined); })), walkBtn, runBtn]),
   slider('地湿 wet', -0.05, 1, 0.05, -0.05, (v) => { wetStep = v < 0 ? -1 : v; }, (v) => (v < 0 ? '随场景' : v.toFixed(2))),
 ]);
 
@@ -544,7 +591,7 @@ const specCanvas = h('canvas', { id: 'spec', width: 1140, height: 470 });
 const statsPre = h('pre', { id: 'stats', textContent: '（渲染之后这里是数值）' });
 const targetSel = h('select', { id: 'target' });
 for (const s of SHOT_NAMES) for (const [v, zh] of VARIANTS[s] ?? [['', '']]) targetSel.append(h('option', { value: `shot:${s}:${v}`, textContent: `一击 · ${SHOT_ZH[s]} ${s}${zh ? ` · ${zh}` : ''}` }));
-for (const g of GROUND_NAMES) targetSel.append(h('option', { value: `foot:${g}:`, textContent: `脚步 · ${GROUND_ZH[g]} ${g}` }));
+for (const g of GROUND_NAMES) for (const run of [false, true]) targetSel.append(h('option', { value: `foot:${g}:${run ? 'run' : ''}`, textContent: `脚步 · ${GROUND_ZH[g]} ${g}${run ? ' · 跑' : ''}` }));
 for (const b of BED_NAMES) targetSel.append(h('option', { value: `bed:${b}:`, textContent: `环境 · ${BED_ZH[b]} ${b}（单独一层）` }));
 for (const l of LOOP_NAMES) targetSel.append(h('option', { value: `loop:${l}:`, textContent: `一直响着 · ${LOOP_ZH[l]} ${l}` }));
 PRESETS.forEach(([name], i) => targetSel.append(h('option', { value: `mix:${i}:`, textContent: `整个场景 · ${name}` })));
@@ -556,7 +603,7 @@ const renderBtn = button('渲染并画频谱', async () => {
   try {
     let spec: OfflineSpec;
     if (kind === 'shot') spec = shotSpec(name as Shot, { ...play, variant: variant || undefined, seconds, scene });
-    else if (kind === 'foot') spec = shotSpec('foot', { ...play, ground: name as Ground, wet: wetStep >= 0 ? wetStep : undefined, seconds: seconds ?? 0.8, scene });
+    else if (kind === 'foot') spec = shotSpec('foot', { ...play, ground: name as Ground, wet: wetStep >= 0 ? wetStep : undefined, seconds: seconds ?? 0.8, scene, ...(variant === 'run' ? { run: true, speed: 4.5 } : {}) });
     else if (kind === 'bed') spec = bedSpec(name as Bed, seconds ?? 12);
     else if (kind === 'loop') spec = { seconds: seconds ?? 8, auto: false, loops: { [name]: 1 }, scene };
     else if (name === 'now') spec = { seconds: seconds ?? 30, scene, wet: audio.engine?.scene.wet };
@@ -607,6 +654,10 @@ root.append(
   h('h3', { textContent: '抚琴 qin' }), qinPanel,
   h('h3', { textContent: '一直响着的（setLoop）' }), loopRow,
   h('h3', { textContent: SHOT_GROUP_ZH.village }), shotButtons(SHOT_GROUPS.village),
+  h('h3', { textContent: SHOT_GROUP_ZH.farm }), shotButtons(SHOT_GROUPS.farm),
+  h('h3', { textContent: SHOT_GROUP_ZH.animals }), shotButtons(SHOT_GROUPS.animals),
+  h('h3', { textContent: SHOT_GROUP_ZH.things }), shotButtons(SHOT_GROUPS.things),
+  h('h3', { textContent: SHOT_GROUP_ZH.folk }), shotButtons(SHOT_GROUPS.folk),
   h('h3', { textContent: SHOT_GROUP_ZH.sky }), shotButtons(SHOT_GROUPS.sky),
   h('h3', { textContent: SHOT_GROUP_ZH.steps }), stepRow,
   h('h3', { textContent: SHOT_GROUP_ZH.ui }), shotButtons(SHOT_GROUPS.ui),

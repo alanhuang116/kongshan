@@ -21,7 +21,7 @@ export interface Disc { x: number; z: number; r: number }
 interface Surf { kind: 'rect' | 'disc'; x: number; z: number; hw: number; hd: number; c: number; s: number; r: number; y: number; R: number }
 const rectSurf = (x0: number, x1: number, z0: number, z1: number, y: number): Surf => { const hw = (x1 - x0) / 2, hd = (z1 - z0) / 2; return { kind: 'rect', x: (x0 + x1) / 2, z: (z0 + z1) / 2, hw, hd, c: 1, s: 0, r: 0, y, R: Math.hypot(hw, hd) }; };
 /** 屋舍那边报上来的一件东西占的地方（与 build/kit.ts 的 Solid 同形） */
-export interface SolidLike { id: string; kind: 'rect' | 'disc'; x: number; z: number; w?: number; d?: number; yaw?: number; r?: number; top?: number; walk?: boolean }
+export interface SolidLike { id: string; kind: 'rect' | 'disc'; x: number; z: number; w?: number; d?: number; yaw?: number; r?: number; top?: number; walk?: boolean; /** 敞棚的檐口多高（给屋顶遮罩；id 里带「檐」的不挡路） */ roof?: number }
 
 export const RADIUS = 0.26;
 /** 一步能跨的高差 */

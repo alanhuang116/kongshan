@@ -7,7 +7,7 @@
  *   西   桃林（沿溪两岸，入口在最西头）
  *   中   小石桥 → 柴门 → 院（菊圃、石桌石凳、老梅、双松）→ 草堂、东厢；屋后小池、观物亭、竹林
  *   南   田畴（麦、菜花、新翻的地、菜畦）、桑园，田间小路通到河滩的渡口
- *   东   邻家几户、村塾、大槐树、井；东头一座正在修的木桥
+ *   东   邻家几户、村塾、大槐树、井；西头篾匠家，东头陶家与窑；东头一座正在修的木桥
  *   远   伊水、伊阙、嵩山、邙山（env/far.ts）
  *
  * 这片地方暗里合着邵雍的先天之学：
@@ -53,6 +53,8 @@ export const SITE = {
     /** 酒瓮（堂屋西北角） */ jar: { x: -1.2, z: -2.1 },
     /** 榻（西间靠北墙） */ couch: { x: -3.5, z: -2.0 },
   },
+  /** 草堂两扇南窗下、台基上的花盆：西窗一盆兰，东窗一盆萱草（盆是屋舍那边的，草是草木那边的） */
+  pots: [{ x: -3.05, z: 3.05, kind: 'orchid' }, { x: 3.1, z: 3.05, kind: 'daylily' }] as Array<Pt & { kind: 'orchid' | 'daylily' }>,
   /** 菜畦（院西） */
   veg: { x0: -24, x1: -14, z0: 2, z1: 13 } as Rect,
   /** 屋后小池（椭圆）与水面的高度 */
@@ -65,11 +67,28 @@ export const SITE = {
   stones: { x: 62, z: 30.6 },
   /** 东头正在修的木桥 */
   plank: { x: 128, z: 49.5, len: 7, yaw: 0.5 },
-  /** 村子：几户人家（都不进去）。school 是村塾，前面敞着 */
+  /**
+   * 村子：几户人家（都不进去）。school 是村塾，前面敞着。
+   * 己（f）是篾匠，住村西头，屋后不远就是竹林；庚（g）是陶家，住村东头溪岸上，屋东南一座窑、屋西一间坯棚（见 crafts）。
+   */
   houses: [
     { id: 'a', x: 52, z: 6, w: 8.4, d: 5, yaw: 0.12 }, { id: 'b', x: 74, z: -8, w: 7.6, d: 4.8, yaw: -0.2 },
     { id: 'school', x: 99, z: 2, w: 10.2, d: 5.6, yaw: 0.06 }, { id: 'd', x: 120, z: -12, w: 7.6, d: 4.8, yaw: -0.35 }, { id: 'e', x: 82, z: 22, w: 7, d: 4.6, yaw: Math.PI + 0.1 },
+    { id: 'f', x: 38, z: -7, w: 6.6, d: 4.4, yaw: 0.05 }, { id: 'g', x: 142, z: 26, w: 7.2, d: 4.6, yaw: 0.12 },
   ],
+  /**
+   * 两户人家的营生（build/homes.ts）：
+   *   kiln 陶家的窑（馒头窑，窑门朝西北对着村路，烟囱在背后）；potShed 陶家的坯棚（拉坯、阴坯的敞棚，敞着的一面朝北对着村路）；
+   *   herbs 先生的药圃（院西小门外、菜畦北边的三畦药，北头一间晒药的小棚）。
+   */
+  crafts: {
+    kiln: { x: 149.2, z: 30.6, yaw: -2.25 }, potShed: { x: 135.3, z: 22.8, yaw: Math.PI + 0.18 },
+    herbs: { x0: -25.5, x1: -17.5, z0: -9.5, z1: -2.5, /** 三畦（东西的范围）与它们的南北两头；北头留给晒药棚 */ beds: [[-25.2, -23.2], [-22.55, -20.55], [-19.9, -17.8]] as Array<[number, number]>, bz0: -7.5, bz1: -2.7 },
+    /** 篾匠家东山墙外一架丝瓜（架是屋舍那边的，藤与瓜是草木那边的）：中心、宽（东西）、深（南北）、高 */
+    loofah: { x: 42.9, z: -6.5, w: 1.6, d: 2.2, h: 1.85 },
+    /** 院子东北角、灶屋背后一小畦葱韭（做饭随手掐） */
+    kitchenBed: { x0: 11.7, x1: 13.7, z0: -4.7, z1: -1.6 } as Rect,
+  },
   /** 大槐树（树下石凳，老人常坐）、井 */
   elm: { x: 90, z: 12.5 }, well: { x: 66, z: 15.5 },
   /** 桑园 */
@@ -100,10 +119,10 @@ export const SITE = {
 
 // —— 田畴 ——
 export type Crop = 'wheat' | 'rape' | 'plough' | 'veg' | 'bean' | 'fallow';
-export interface Plot extends Rect { crop: Crop; /** 垄的走向：0 东西向，1 南北向 */ rows: 0 | 1; y: number }
-const PLOT_DEF: Array<[number, number, number, number, Crop, 0 | 1]> = [
-  // 井田：九畦成一个「井」字，当中一畦（公田）正在耕
-  [-70, -43, 47, 76, 'wheat', 1], [-41, -14, 47, 76, 'rape', 0], [-12, 15, 47, 76, 'wheat', 0],
+export interface Plot extends Rect { crop: Crop; /** 垄的走向：0 东西向，1 南北向 */ rows: 0 | 1; y: number; /** 行者自己种的那几畦在这一块里：农事那一路画、那一路管（src/world/farm） */ farm?: boolean }
+const PLOT_DEF: Array<[number, number, number, number, Crop, 0 | 1, boolean?]> = [
+  // 井田：九畦成一个「井」字，当中一畦（公田）正在耕。东北那一畦（过桥就到）北头是行者的两畦，南边是邻家王伯的麦
+  [-70, -43, 47, 76, 'wheat', 1], [-41, -14, 47, 76, 'rape', 0], [-12, 15, 47, 76, 'wheat', 0, true],
   [-70, -43, 78, 107, 'rape', 1], [-41, -14, 78, 107, 'plough', 0], [-12, 15, 78, 107, 'wheat', 1],
   [-70, -43, 109, 138, 'bean', 0], [-41, -14, 109, 138, 'wheat', 0], [-12, 15, 109, 138, 'rape', 1],
   // 路东的几畦
@@ -200,8 +219,18 @@ const inRect = (r: Rect, x: number, z: number, pad = 0) => x > r.x0 - pad && x <
 export const rectDist = (r: Rect, x: number, z: number) => { const dx = Math.max(r.x0 - x, x - r.x1), dz = Math.max(r.z0 - z, z - r.z1); return dx > 0 && dz > 0 ? Math.hypot(dx, dz) : Math.max(dx, dz); };
 
 /** 田：每一畦是平的，高度取它正中的地势 */
-export const PLOTS: Plot[] = PLOT_DEF.map(([x0, x1, z0, z1, crop, rows]) => ({ x0, x1, z0, z1, crop, rows, y: base((x0 + x1) / 2, (z0 + z1) / 2) - 0.12 }));
+export const PLOTS: Plot[] = PLOT_DEF.map(([x0, x1, z0, z1, crop, rows, farm]) => ({ x0, x1, z0, z1, crop, rows, y: base((x0 + x1) / 2, (z0 + z1) / 2) - 0.12, ...(farm ? { farm: true } : {}) }));
 export function plotAt(x: number, z: number): Plot | null { for (const p of PLOTS) if (inRect(p, x, z)) return p; return null; }
+/**
+ * 农事那一路自己画的几块：标了 farm 的那一畦（留出田埂上的野花）、院西菜畦的东头与西头两小畦（当中的瓜架与两畦菜仍归草木）。
+ * 草木那边（env/flora/field.ts）在这几块里不下笔。
+ */
+export const FARM_OWN: Rect[] = [
+  ...PLOTS.filter((p) => p.farm).map((p) => ({ x0: p.x0 + 0.8, x1: p.x1 - 0.8, z0: p.z0 + 0.8, z1: p.z1 - 0.8 })),
+  { x0: SITE.veg.x1 - 2.5, x1: SITE.veg.x1 - 0.85, z0: SITE.veg.z0, z1: SITE.veg.z1 },
+  { x0: SITE.veg.x0 + 0.5, x1: SITE.veg.x0 + 2.1, z0: SITE.veg.z0, z1: SITE.veg.z1 },
+];
+export const farmOwns = (x: number, z: number) => { for (const r of FARM_OWN) if (inRect(r, x, z)) return true; return false; };
 
 /** 屋基：各家门前屋后整平的一块（半宽半深，随屋转） */
 const PADS = SITE.houses.map((h) => ({ ...h, y: base(h.x, h.z), c: Math.cos(h.yaw), s: Math.sin(h.yaw) }));

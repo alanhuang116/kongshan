@@ -2,24 +2,32 @@ import { useEffect, useRef } from 'react';
 // 字体：自己托管，按 unicode-range 分片；fonts.css 由 tools/fonts.mjs 生成
 import './styles/fonts.css';
 import './styles/base.css';
+// 水墨的几样料（宣纸纹、墨环、墨块、笔线、落墨、印边、墨点），各处的样式拿来用；ink.css 由 tools/ink.mjs 生成
+import './styles/ink.css';
 import './styles/title.css';
 import './styles/hud.css';
 import './styles/sheets.css';
 import './styles/acts.css';
 import './styles/write.css';
 import { boot, getKs } from './ks';
+import { inkTouch } from './ink';
 import { ui, useStore } from './store';
 import Title, { Intro } from './Title';
 import Hud from './Hud';
+import Notes from './Notes';
+import SkyCard from './SkyCard';
 import Sheets from './sheets/Sheets';
 import ActLayer from './acts/ActLayer';
 
+// 别的几路的册页样式（村人簿、星图）：文件有了就带上
+import.meta.glob(['./styles/folk.css', './styles/stars.css'], { eager: true });
+
 /**
- * 画在最底下（一整幅画布），界面一层层压在上面：题名页 → 走动时的四角 → 做事时的面板 → 册页。
+ * 画在最底下（一整幅画布），界面一层层压在上面：题名页 → 走动时的四角 → 做事时的面板 → 下方浮着的话 → 册页。
  * 网址带 ui=0 时什么界面都不出（只截画用）。
  */
 export default function App() {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const ref = useRef<HTMLCanvasElement>(null), root = useRef<HTMLDivElement>(null);
   const phase = useStore(ui, (s) => s.phase);
   const error = useStore(ui, (s) => s.error);
   const hideUi = typeof location !== 'undefined' && new URLSearchParams(location.search).get('ui') === '0';
@@ -28,8 +36,10 @@ export default function App() {
     if (ref.current && !getKs()) void boot(ref.current).then(() => { if (dead) getKs()?.dispose(); });
     return () => { dead = true; };
   }, []);
+  // 按下去的地方落一滴墨
+  useEffect(() => (root.current ? inkTouch(root.current) : undefined), []);
   return (
-    <div className="ks" data-phase={phase}>
+    <div className="ks" data-phase={phase} ref={root}>
       <canvas ref={ref} className="ks-canvas" tabIndex={-1} />
       {/* 村图上的线用它抖一抖：像手画的，不像尺子画的 */}
       <svg className="ks-defs" aria-hidden>
@@ -42,6 +52,8 @@ export default function App() {
       {!hideUi && <Intro />}
       {!hideUi && phase === 'roam' && <Hud />}
       {!hideUi && phase === 'roam' && <ActLayer />}
+      {!hideUi && phase === 'roam' && <Notes />}
+      {!hideUi && phase === 'roam' && <SkyCard />}
       {!hideUi && <Sheets />}
       {error && <div className="fatal"><p>这台设备没能把画铺开。</p><small>{error}</small></div>}
     </div>

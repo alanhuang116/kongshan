@@ -54,5 +54,31 @@ export const LOOKS = {
   miller: { ...WORK, robe: [0.9, 0.84, 0.7], robeDens: 1.5, sash: [0.62, 0.66, 0.72], sashDens: 1.7, hat: 'none', leg: [0.88, 0.86, 0.8], legDens: 1.1, shoes: PIG.mo, shoesDens: 2.2, scale: 1.04 },
   /** 荡秋千的小女孩：淡胭脂色的短襦 */
   kid4: { ...CHILD, robe: [0.97, 0.86, 0.84], robeDens: 1.1, sash: [0.66, 0.74, 0.78], sashDens: 1.4, accent: [0.9, 0.5, 0.46], trim: [0.86, 0.72, 0.7], trimDens: 1.3, hem: 0.22, scale: 0.62, head: 1.26 },
+
+  // —— 后添的几位 ——
+  /** 王大娘：灰蓝的短襦、土黄的裙，腰里系一条素白的围裙，花白的髻 */
+  farmwife: { body: 0.2, robe: [0.7, 0.74, 0.8], robeDens: 1.45, skirt: [0.9, 0.84, 0.7], skirtDens: 1.35, trim: [0.6, 0.62, 0.7], trimDens: 1.7, sash: [0.95, 0.94, 0.9], sashDens: 1, hat: 'bun', hair: [0.62, 0.62, 0.62], hairDens: 1.5, sleeve: 0.4, hem: 0.11, beard: 0, skin: TAN, shoes: [0.6, 0.62, 0.68], shoesDens: 2.2, scale: 0.94, folds: 0.9, shade: 1.42 },
+  /** 二郎：半大小子，土黄的短褐、头上一个小髻，光着小腿 */
+  farmson: { ...WORK, robe: [0.92, 0.85, 0.68], robeDens: 1.45, sash: [0.62, 0.66, 0.74], sashDens: 1.6, hat: 'bun', hair: PIG.jiao, hairDens: 1.6, scale: 0.92, head: 1.08 },
+  /** 赵大嫂（织布的）：素白的短襦、靛蓝的裙，窄袖 */
+  weaver: { body: 0.3, robe: [0.96, 0.94, 0.89], robeDens: 1, skirt: [0.56, 0.62, 0.74], skirtDens: 1.9, trim: [0.56, 0.62, 0.74], trimDens: 1.7, sash: [0.62, 0.66, 0.74], sashDens: 1.6, hat: 'bun', sleeve: 0.35, hem: 0.1, beard: 0, skin: [0.99, 0.9, 0.82], shoes: [0.6, 0.62, 0.68], shoesDens: 2.2, scale: 0.95, folds: 0.9, shade: 1.4 },
+  /** 孙嫂（做豆腐的）：赭灰的短襦、灰裙，一条素白的长围裙 */
+  tofu: { body: 0.25, robe: [0.86, 0.8, 0.7], robeDens: 1.25, skirt: [0.95, 0.94, 0.9], skirtDens: 1, trim: [0.66, 0.62, 0.58], trimDens: 1.7, sash: [0.66, 0.62, 0.58], sashDens: 1.7, hat: 'bun', hair: [0.5, 0.5, 0.5], hairDens: 1.6, sleeve: 0.35, hem: 0.11, beard: 0, skin: [0.98, 0.88, 0.79], shoes: [0.6, 0.6, 0.62], shoesDens: 2.2, scale: 0.97, folds: 0.9, shade: 1.42 },
+  /** 李二（篾匠）：灰青的短褐，袖子挽着 */
+  basketman: { ...WORK, robe: [0.7, 0.76, 0.75], robeDens: 1.6, sash: [0.84, 0.74, 0.6], sashDens: 1.5, hat: 'none', beard: 0.3, leg: [0.86, 0.84, 0.78], legDens: 1.2, shoes: PIG.mo, shoesDens: 2.3, scale: 1.0 },
+  /** 孟老（药农）：赭褐的短褐，头戴斗笠，花白的须 */
+  herbalist: { ...WORK, robe: [0.8, 0.72, 0.6], robeDens: 1.75, sash: [0.66, 0.7, 0.66], sashDens: 1.6, hat: 'li', hatWorn: true, hatPig: [0.86, 0.78, 0.6], hatDens: 1.5, hem: 0.36, beard: 0.8, hair: [0.85, 0.85, 0.84], hairDens: 1.3, scale: 0.97 },
+  /** 冯老汉（放羊的）：灰褐的短褐，斗笠背在身后，白须 */
+  shepherd: { ...WORK, robe: [0.78, 0.74, 0.68], robeDens: 1.8, sash: [0.6, 0.58, 0.54], sashDens: 1.8, hat: 'li', hatWorn: false, hatPig: STRAW, hatDens: 1.4, hem: 0.42, beard: 0.85, hair: [0.92, 0.92, 0.9], hairDens: 1.1, scale: 0.96 },
+  /** 老周（打更的）：深青的长衣，头上一方黑巾 */
+  watchman: { body: 0.15, robe: [0.6, 0.64, 0.72], robeDens: 2.0, trim: [0.5, 0.52, 0.58], trimDens: 2.0, sash: [0.8, 0.72, 0.6], sashDens: 1.6, hat: 'jin', hatPig: [0.5, 0.5, 0.52], hatDens: 2.4, beard: 0.45, hair: [0.66, 0.66, 0.66], hairDens: 1.5, sleeve: 0.5, hem: 0.16, skin: TAN, leg: [0.84, 0.84, 0.8], legDens: 1.2, shoes: PIG.mo, shoesDens: 2.4, scale: 1.0, shade: 1.45 },
+  /** 韩翁（说书的盲翁）：旧了的灰长衫，一方巾，白须白发 */
+  teller: { body: 0.35, robe: [0.84, 0.83, 0.79], robeDens: 1.2, trim: [0.62, 0.62, 0.6], trimDens: 1.7, sash: [0.6, 0.56, 0.52], sashDens: 1.8, hat: 'jin', hatPig: [0.54, 0.54, 0.56], hatDens: 2.0, hair: [0.94, 0.94, 0.93], hairDens: 1, beard: 1, scale: 0.95, sleeve: 0.9, skin: [0.97, 0.88, 0.8], shade: 1.4 },
+  /** 了然（行脚僧）：灰褐的僧衣，头戴斗笠（笠下是光头） */
+  monk: { body: 0.25, robe: [0.76, 0.7, 0.62], robeDens: 1.5, trim: [0.58, 0.52, 0.46], trimDens: 1.9, sash: [0.58, 0.52, 0.46], sashDens: 1.9, hat: 'li', hatWorn: true, hatPig: [0.84, 0.76, 0.58], hatDens: 1.5, hair: TAN, hairDens: 1, beard: 0, sleeve: 1, hem: 0.1, skin: TAN, shoes: STRAW, shoesDens: 1.5, scale: 1.0, shade: 1.45 },
+  /** 陶大（陶工）：沾着泥色的土赭短褐、腰里一条灰围布，头上包一方旧巾 */
+  potter: { ...WORK, robe: [0.86, 0.77, 0.66], robeDens: 1.55, sash: [0.74, 0.72, 0.68], sashDens: 1.5, hat: 'jin', hatPig: [0.78, 0.74, 0.68], hatDens: 1.6, beard: 0.5, leg: [0.86, 0.8, 0.72], legDens: 1.2, shoes: PIG.mo, shoesDens: 2.2, scale: 1.01 },
+  /** 刘二姐（王大娘的妹子）：淡赭红的短襦、青裙 */
+  aunt: { body: 0.25, robe: [0.95, 0.84, 0.78], robeDens: 1.1, skirt: [0.62, 0.66, 0.72], skirtDens: 1.65, trim: [0.78, 0.66, 0.62], trimDens: 1.5, sash: [0.66, 0.72, 0.76], sashDens: 1.5, hat: 'bun', sleeve: 0.5, hem: 0.1, beard: 0, skin: [0.99, 0.9, 0.82], shoes: [0.6, 0.62, 0.68], shoesDens: 2.2, scale: 0.95, folds: 0.9, shade: 1.4 },
 } satisfies Record<string, Partial<Look>>;
 export type LookName = keyof typeof LOOKS;

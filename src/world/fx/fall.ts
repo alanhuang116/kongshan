@@ -55,7 +55,10 @@ void main() {
     fade *= smoothstep(1.0, 8.0, dist) * (0.5 + 0.5 * fract(aOff.w * 3.1));
   #endif
   vUv = position.xy * 2.0;
-  vA = vec2(fade * (1.0 - 0.85 * inkFogK(p)), aOff.w);
+  // 屋顶剖开着往屋里看时，镜头与屋子之间那一段空中的雨雪也不画（看着像落在屋里）
+  fade *= mix(1.0, smoothstep(11.0, 17.0, dist), uRoofCut);
+  // 屋顶底下不下雨雪（进了草堂、站在亭里，外头照样下）
+  vA = vec2(fade * (1.0 - 0.85 * inkFogK(p)) * (1.0 - inkRoofFall(p)), aOff.w);
 }
 `;
 const FALL_F = /* glsl */ `

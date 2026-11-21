@@ -40,7 +40,7 @@ export default function Title() {
         <div className="title-foot">
           {ready ? (
             <>
-              <button className="enter glass" onClick={() => void enter()} data-testid="enter" aria-label="入"><span>入</span></button>
+              <button className="enter" onClick={() => void enter()} data-testid="enter" aria-label="入"><span>入</span></button>
               <p className="title-invite"><Phrases text={WORDS.entry[0]} /></p>
             </>
           ) : phase === 'boot' ? (

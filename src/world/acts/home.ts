@@ -127,6 +127,8 @@ function desk(k: Anlewo): Act | null {
         restore(); av.reach('R', null); av.reach('L', null);
         mode = 'done';
         k.log({ kind: 'poem', text: `${p.a}，${p.b}。` });
+        // 写成的两句誊一张带在身上（可以念给韩翁听、送人）
+        k.bag.add('poem', 1);
         set({ kind: 'read', title: '诗稿', lines: [p.a, p.b], source: `${p.from}　${p.source}`, choices: [{ id: 'menu', label: '搁笔' }] });
       } else if (n === 'done') k.exitAct();
     },
@@ -231,6 +233,8 @@ function tea(k: Anlewo): Act | null {
         kettle.rotation.z = -0.9 * Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (pt - 0.25) / 0.5))));
         if (pt >= 1) {
           restore(); step = 'done'; av.reach('R', null); k.events.loop?.('kettle', 0.15);
+          // 盛一碗带着（李公要热茶）
+          k.bag.add('tea', 1);
           const r = reveal(k, '既济');
           set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '吃茶' }] });
         }
@@ -245,7 +249,7 @@ function tea(k: Anlewo): Act | null {
             if (kettle) undo.push(hold(kettle, k.player.av.joints.handR, [0, 0.02, 0.05], [0, 0, 0]));
             k.sfx('pour', { vel: 0.6 });
             set({ kind: 'tea', title: '煮茶', hint: '注茶', progress: 1 });
-            if (!kettle) { step = 'done'; const r = reveal(k, '既济'); set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '吃茶' }] }); }
+            if (!kettle) { step = 'done'; k.bag.add('tea', 1); const r = reveal(k, '既济'); set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '吃茶' }] }); }
           }
         }
         return true;

@@ -21,6 +21,23 @@ function flaps(v: Voice, t: number, n: number, amp: number, gap = 0.085): number
   }
   return t;
 }
+/**
+ * 一个孩子的一串笑（t 起）：三到五声短的「哈」，一声比一声低、一声比一声轻，带着气声。返回最后一声收住的时刻。
+ * 整串只用一个嗓子（音高、开合都写成折线），几个孩子一起笑时节点不至于太多。
+ */
+export function giggle(v: Voice, t: number, p: number, a: number, dest: AudioNode = v.out): number {
+  const n = 3 + Math.floor(rand(0, 3)), f0: Array<[number, number]> = [], amp: Array<[number, number]> = [];
+  let x = 0, f = rand(560, 640) * p;
+  for (let i = 0; i < n; i++) {
+    const d = rand(0.075, 0.1), A = 1 - 0.12 * i;
+    f0.push([x, f * 0.94], [x + d * 0.3, f], [x + d, f * 0.86]);
+    amp.push([x, 0], [x + 0.018, A], [x + d * 0.5, 0.7 * A], [x + d, 0]);
+    x += d + rand(0.075, 0.11);
+    f *= rand(0.9, 0.96);
+  }
+  voiced(v, { t, f0, amp, formants: [[1000, 4, 1], [1750, 6, -0.55], [3300, 8, 0.25]], tilt: 3000, jitter: 18, breath: 0.45, gain: 0.3 * a, dest });
+  return t + x;
+}
 /** 小鸟的一声啾：音高一扬一落的一个短音 */
 function tweet(v: Voice, t: number, f0: number, f1: number, len: number, amp: number) {
   const c = v.ctx, o = c.createOscillator(), g = c.createGain();
@@ -74,18 +91,7 @@ export const EXTRA_SHOTS: Pick<Record<Shot, Fn>, 'flap' | 'chirp' | 'tumble' | '
   },
   /** 孩子的一串笑：三到五声短的「哈」，一声比一声低、一声比一声轻，带着气声 */
   laugh(v) {
-    const a = 0.5 + 0.7 * v.vel, p = v.pitch * rand(0.92, 1.12), n = 3 + Math.floor(rand(0, 3));
-    let t = v.t, f = rand(560, 640) * p;
-    for (let i = 0; i < n; i++) {
-      const d = rand(0.075, 0.1);
-      voiced(v, {
-        t, f0: [[0, f * 0.94], [d * 0.3, f], [d, f * 0.86]], amp: [[0, 0], [0.018, 1], [d * 0.5, 0.7], [d, 0]],
-        formants: [[1000, 4, 1], [1750, 6, -0.55], [3300, 8, 0.25]], tilt: 3000, jitter: 18, breath: 0.45, gain: 0.3 * a * (1 - 0.12 * i),
-      });
-      t += d + rand(0.075, 0.11);
-      f *= rand(0.9, 0.96);
-    }
-    return t - v.t + 0.2;
+    return giggle(v, v.t, v.pitch * rand(0.92, 1.12), 0.5 + 0.7 * v.vel) - v.t + 0.2;
   },
   /** 别名：世界里有的地方管母鸡的叫声叫 cluck、管鸭叫叫 quack */
   cluck: (v) => VILLAGE_SHOTS.hen(v),

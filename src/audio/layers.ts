@@ -3,7 +3,9 @@ import { Chant } from './chant';
 import type { Engine, LayerBus, LayerImpl } from './engine';
 import { Birds, Cicadas, Crickets, Frogs, Geese, Swallows } from './fauna';
 import { Kettle, Mill, Repeat, School, Village, Work } from './life';
+import { BoatWater, FrogChorus, Hive, Kite, Line, Millstone, Murmur, SnowRoll, Windlass } from './loops';
 import { BellFar, Eaves } from './nature';
+import { Wild } from './wild';
 import { Qin } from './qin';
 import type { SlotId } from './types';
 import { Brook, Pond, River, Waterfall } from './waters';
@@ -27,6 +29,7 @@ export function createLayer(l: SlotId, e: Engine, bus: LayerBus, t: number): Lay
     case 'frogs': return new Frogs(e, bus, t);
     case 'crickets': return new Crickets(e, bus, t);
     case 'geese': return new Geese(e, bus, t);
+    case 'wild': return new Wild(e, bus, t);
     case 'rain': return new Rain(e, bus, t);
     case 'drips': return new Drips(e, bus, t);
     case 'snow': return new Snow(e, bus, t);
@@ -37,6 +40,15 @@ export function createLayer(l: SlotId, e: Engine, bus: LayerBus, t: number): Lay
     case 'mill': return new Mill(e, bus, t);
     case 'kettle': return new Kettle(e, bus, t);
     case 'inkstone': case 'saw': case 'plough': return new Repeat(e, bus, t, l);
+    case 'millstone': return new Millstone(e, bus, t);
+    case 'windlass': return new Windlass(e, bus, t);
+    case 'frog': return new FrogChorus(e, bus, t);
+    case 'bee': return new Hive(e, bus, t);
+    case 'kite': return new Kite(e, bus, t);
+    case 'murmur': return new Murmur(e, bus, t);
+    case 'line': return new Line(e, bus, t);
+    case 'boatWater': return new BoatWater(e, bus, t);
+    case 'snowRoll': return new SnowRoll(e, bus, t);
     // 旧的四层
     case 'chant': return new Chant(e, bus, t);
     case 'qin': return new Qin(e, bus, t);

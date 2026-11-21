@@ -1,39 +1,82 @@
 /*
- * 安乐窝的界面：画是主角，界面是画边上的题签、款识与一方印。
- * 只有三样颜色：纸、墨、一点朱砂。昼是纸白的磨砂上写墨字；夜（画里过了一半是夜）换成深墨的磨砂上写月白的字。
+ * 安乐窝的界面：画是主角，界面是压在画上的一层薄薄的器物——题签、款识、一方印，几枚可以按的键。
+ * 昼：黑白山水、磨砂玻璃，纸是中性的灰白（不带黄），墨是灰阶，唯一的颜色是一点朱砂（像画上的印）。
+ * 夜（画里过了一半是夜）：曜石黑（中性略冷的石墨黑）的磨砂上写月白的字，记号与主键是一点香槟金；大面积的底都是中性的。
  * 颜色都从下面这组量取。ks.ts 每秒看一眼画里的天，换 :root 上的 data-tone（并把夜占几成写进 --night）。
+ *
+ * 纸、墨、印——界面只用这三样（料都在 ink.css：宣纸纹 --tex、墨环 --m-ring、墨块 --m-ink、笔线 --m-line、印边 --m-seal、墨点 --m-dot）：
+ *   纸（.board：面板、册页、右上那一条）——一张托在画上的宣纸：有纤维，四周是墨晕开的淡影，不起塑料的高光、不加硬框。
+ *   签（.key / .opt：可以点的）——一枚纸签，一道淡墨的边；悬停（只给有鼠标的设备）纸上晕开一层淡墨、字更深；按下去略沉。
+ *   墨键（.key.is-main：一屏只有一枚的主操作；选中的签 .is-on 也是）——一笔横刷的浓墨，带几道飞白，字留白（夜里是香槟金）。
+ *   几选一（.seg）——平平一排字，选中的那一个底下一笔墨线；此刻所在（不是选的）在字下点一个小点。
+ *   圆键（入、册、毕、收、疾、摇杆）——一圈笔画不匀的墨环（圆相），当中一个字；悬停时环转一点、墨更浓。
+ *   印（.seal、该按的那一枚、记号）——朱砂，边是不齐的。
+ *   落墨（ink.ts）——按下去的地方晕开一滴墨，手指知道按到了。
  */
 /* 登记成「颜色」，昼夜交替时才会缓缓地变过去（不认这个写法的浏览器是一下子换） */
-@property --paper { syntax: '<color>'; inherits: true; initial-value: #f2eee4; }
-@property --ink { syntax: '<color>'; inherits: true; initial-value: #1e1c1a; }
-@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: rgba(30, 28, 26, 0.76); }
-@property --ink-3 { syntax: '<color>'; inherits: true; initial-value: rgba(30, 28, 26, 0.58); }
-@property --rule { syntax: '<color>'; inherits: true; initial-value: rgba(30, 28, 26, 0.22); }
-@property --rule-2 { syntax: '<color>'; inherits: true; initial-value: rgba(30, 28, 26, 0.11); }
-@property --glass { syntax: '<color>'; inherits: true; initial-value: rgba(248, 246, 240, 0.6); }
-@property --glass-2 { syntax: '<color>'; inherits: true; initial-value: rgba(248, 246, 240, 0.84); }
-@property --wash { syntax: '<color>'; inherits: true; initial-value: rgba(245, 242, 235, 0.9); }
-@property --zhu { syntax: '<color>'; inherits: true; initial-value: #b1392b; }
+@property --paper { syntax: '<color>'; inherits: true; initial-value: #efefed; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #1b1c1e; }
+@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.76); }
+@property --ink-3 { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.62); }
+@property --ink-max { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --title { syntax: '<color>'; inherits: true; initial-value: #1b1c1e; }
+@property --rule { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.2); }
+@property --rule-2 { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.1); }
+@property --glass { syntax: '<color>'; inherits: true; initial-value: rgba(246, 246, 245, 0.62); }
+@property --glass-2 { syntax: '<color>'; inherits: true; initial-value: rgba(247, 247, 246, 0.86); }
+@property --wash { syntax: '<color>'; inherits: true; initial-value: rgba(244, 244, 243, 0.9); }
+@property --zhu { syntax: '<color>'; inherits: true; initial-value: #b0392b; }
+@property --mark { syntax: '<color>'; inherits: true; initial-value: #b0392b; }
+@property --hi { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.85); }
+@property --edge { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.13); }
+@property --side { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.17); }
+@property --shade-1 { syntax: '<color>'; inherits: true; initial-value: rgba(20, 21, 24, 0.09); }
+@property --shade-2 { syntax: '<color>'; inherits: true; initial-value: rgba(20, 21, 24, 0.14); }
+@property --key-top { syntax: '<color>'; inherits: true; initial-value: #fbfbfa; }
+@property --key-bot { syntax: '<color>'; inherits: true; initial-value: #ebebe9; }
+@property --sunk { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.07); }
+@property --sunk-lo { syntax: '<color>'; inherits: true; initial-value: rgba(27, 28, 30, 0.16); }
+@property --main-top { syntax: '<color>'; inherits: true; initial-value: #2c2d30; }
+@property --main-bot { syntax: '<color>'; inherits: true; initial-value: #17181a; }
+@property --main-ink { syntax: '<color>'; inherits: true; initial-value: #f5f5f3; }
 
 :root {
-  /* 纸：与画里的纸一个颜色（带一点暖的旧纸）；雾比纸白 */
-  --paper: #f2eee4;
-  /* 墨：正文、次要的字、注脚 */
-  --ink: #1e1c1a;
-  --ink-2: rgba(30, 28, 26, 0.76);
-  --ink-3: rgba(30, 28, 26, 0.58);
+  /* 纸：中性的灰白；雾比纸白 */
+  --paper: #efefed;
+  /* 墨：正文、次要的字（七成五）、注脚（六成以上）；悬停时更深的那一层 */
+  --ink: #1b1c1e;
+  --ink-2: rgba(27, 28, 30, 0.76);
+  --ink-3: rgba(27, 28, 30, 0.62);
+  --ink-max: #000;
+  /* 毛笔写的题名（夜里是淡金） */
+  --title: #1b1c1e;
   /* 细线（代替框） */
-  --rule: rgba(30, 28, 26, 0.22);
-  --rule-2: rgba(30, 28, 26, 0.11);
-  /* 磨砂：压在画上的小件用薄的，要读字的册页用厚的 */
-  --glass: rgba(248, 246, 240, 0.6);
-  --glass-2: rgba(248, 246, 240, 0.84);
+  --rule: rgba(27, 28, 30, 0.2);
+  --rule-2: rgba(27, 28, 30, 0.1);
+  /* 磨砂：压在画上的小件用薄的，要读字的板用厚的 */
+  --glass: rgba(246, 246, 245, 0.62);
+  --glass-2: rgba(247, 247, 246, 0.86);
   /* 直接写在画上的字，身后垫的一层纸色（画上深的地方也读得出） */
-  --wash: rgba(245, 242, 235, 0.9);
-  /* 朱砂：只用在印与「此处」上 */
-  --zhu: #b1392b;
-  --zhu-ink: #fbf4ec;
-  --lift: rgba(60, 48, 34, 0.1);
+  --wash: rgba(244, 244, 243, 0.9);
+  /* 朱砂：印；记号（此处、选中、该做的）昼是朱砂，夜是香槟金 */
+  --zhu: #b0392b;
+  --zhu-ink: #fbf6f2;
+  --mark: #b0392b;
+  /* 器物的厚度：上沿高光、发丝边、下沿的侧面、近影远影 */
+  --hi: rgba(255, 255, 255, 0.85);
+  --edge: rgba(27, 28, 30, 0.13);
+  --side: rgba(27, 28, 30, 0.17);
+  --shade-1: rgba(20, 21, 24, 0.09);
+  --shade-2: rgba(20, 21, 24, 0.14);
+  /* 凸键的面（上亮下暗）、凹槽与底座、主键 */
+  --key-top: #fbfbfa;
+  --key-bot: #ebebe9;
+  --sunk: rgba(27, 28, 30, 0.085);
+  --sunk-lo: rgba(27, 28, 30, 0.16);
+  --main-top: #2c2d30;
+  --main-bot: #17181a;
+  --main-ink: #f5f5f3;
+  --lift: var(--shade-2);
   --night: 0;
   --serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
   --kai: 'LXGW WenKai', 'Kaiti SC', 'STKaiti', 'KaiTi', serif;
@@ -43,30 +86,59 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
-  transition: --paper 1.8s, --ink 1.8s, --ink-2 1.8s, --ink-3 1.8s, --rule 1.8s, --rule-2 1.8s, --glass 1.8s, --glass-2 1.8s, --wash 1.8s, --zhu 1.8s;
+  /* 板与键的样子（各处照这几样拼） */
+  --board-shadow: 0 0 0 0.5px var(--rule-2), 0 2px 6px -1px var(--shade-1), 0 18px 42px -12px var(--shade-2), 0 34px 70px -30px var(--shade-2);
+  --key-shadow: 0 1px 2px -1px var(--shade-1);
+  --key-shadow-up: 0 4px 12px -4px var(--shade-2);
+  --key-shadow-down: 0 0 0 transparent;
+  /* 悬停时纸上晕开的那层淡墨 */
+  --wash-ink: rgba(27, 28, 30, 0.06);
+  /* 纸纹一块多大（铺开不显出接缝） */
+  --tex-size: 320px 320px;
+  --sunk-shadow: inset 0 1px 2.5px var(--sunk-lo), inset 0 -1px 0 var(--hi);
+  transition: --paper 1.8s, --ink 1.8s, --ink-2 1.8s, --ink-3 1.8s, --ink-max 1.8s, --title 1.8s, --rule 1.8s, --rule-2 1.8s, --glass 1.8s, --glass-2 1.8s, --wash 1.8s, --zhu 1.8s, --mark 1.8s,
+    --hi 1.8s, --edge 1.8s, --side 1.8s, --shade-1 1.8s, --shade-2 1.8s, --key-top 1.8s, --key-bot 1.8s, --sunk 1.8s, --sunk-lo 1.8s, --main-top 1.8s, --main-bot 1.8s, --main-ink 1.8s;
 }
 :root[data-tone='night'] {
-  --paper: #262d3a;
-  --ink: #e9ebee;
-  --ink-2: rgba(233, 235, 238, 0.8);
-  --ink-3: rgba(233, 235, 238, 0.6);
-  --rule: rgba(233, 235, 238, 0.26);
-  --rule-2: rgba(233, 235, 238, 0.13);
-  --glass: rgba(20, 25, 34, 0.56);
-  --glass-2: rgba(20, 25, 34, 0.82);
-  --wash: rgba(24, 30, 40, 0.88);
-  --zhu: #d1604a;
-  --zhu-ink: #fff5ee;
-  --lift: rgba(0, 0, 0, 0.26);
+  --wash-ink: rgba(233, 233, 231, 0.075);
+  /* 曜石黑：中性略冷的石墨黑；字是月白；记号与主键是香槟金，题名是淡金 */
+  --paper: #141518;
+  --ink: #e9e9e7;
+  --ink-2: rgba(233, 233, 231, 0.8);
+  --ink-3: rgba(233, 233, 231, 0.64);
+  --ink-max: #fff;
+  --title: #e6d7b2;
+  --rule: rgba(233, 233, 231, 0.24);
+  --rule-2: rgba(233, 233, 231, 0.12);
+  --glass: rgba(19, 20, 23, 0.6);
+  --glass-2: rgba(19, 20, 23, 0.84);
+  --wash: rgba(17, 18, 21, 0.86);
+  --zhu: #c4553f;
+  --zhu-ink: #fff4ee;
+  --mark: #d8c494;
+  --hi: rgba(255, 255, 255, 0.075);
+  --edge: rgba(255, 255, 255, 0.1);
+  --side: rgba(0, 0, 0, 0.62);
+  --shade-1: rgba(0, 0, 0, 0.32);
+  --shade-2: rgba(0, 0, 0, 0.42);
+  --key-top: #2b2c30;
+  --key-bot: #1d1e21;
+  --sunk: rgba(0, 0, 0, 0.34);
+  --sunk-lo: rgba(0, 0, 0, 0.55);
+  --main-top: #e2cf9f;
+  --main-bot: #c6af7d;
+  --main-ink: #16171a;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--paper); overflow: hidden; overscroll-behavior: none; touch-action: none; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-button:focus-visible, [tabindex]:focus-visible { outline: 1px solid var(--zhu); outline-offset: 3px; }
-h1, h2, h3, h4, p, ul, figure { margin: 0; padding: 0; font-weight: 400; }
-ul { list-style: none; }
+button:disabled { cursor: default; }
+button:focus-visible, [tabindex]:focus-visible { outline: 1px solid var(--mark); outline-offset: 3px; }
+h1, h2, h3, h4, p, ul, ol, figure { margin: 0; padding: 0; font-weight: 400; }
+ul, ol { list-style: none; }
 i, em { font-style: normal; }
+kbd { font: 500 11px/1 system-ui, sans-serif; white-space: nowrap; }
 
 .ks { position: fixed; inset: 0; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--serif); font-weight: 400; -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
 .ks-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
@@ -77,15 +149,50 @@ i, em { font-style: normal; }
 .fatal small { color: var(--ink-3); font-size: 12px; max-width: 46ch; word-break: break-all; user-select: text; -webkit-user-select: text; }
 
 /* —— 几样到处用的小件 —— */
-/* 磨砂：一片压在画上的薄纸 */
-.glass { background: var(--glass); backdrop-filter: blur(16px) saturate(1.06); -webkit-backdrop-filter: blur(16px) saturate(1.06); border: 1px solid var(--rule-2); }
-/* 印：朱砂底，白文 */
-.seal { display: inline-block; writing-mode: vertical-rl; font: 400 11.5px/1.12 var(--serif); letter-spacing: 0.1em; color: var(--zhu-ink); background: var(--zhu); padding: 5px 3.5px 4px; border-radius: 3px 2px 3px 2px; }
-/* 签：可以点的选项。没选的是一枚空签，选中的蘸满了墨 */
-.opt { min-height: 36px; padding: 0 14px; border-radius: 2px; font-family: var(--kai); font-size: 14.5px; letter-spacing: 0.2em; text-indent: 0.2em; white-space: nowrap; color: var(--ink-2); border: 1px solid var(--rule); background: transparent; transition: transform 0.3s var(--out), color 0.3s, border-color 0.3s, background-color 0.3s; }
-@media (hover: hover) { .opt:hover { transform: translateY(-1px); color: var(--ink); border-color: var(--ink-3); } }
-.opt:active { transform: translateY(1px); }
-.opt.is-on { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+/* 薄纸：一片压在画上的薄宣纸（不起影的那种：走法的提示之类） */
+.glass { background: var(--tex) 0 0 / var(--tex-size), var(--glass); backdrop-filter: blur(16px) saturate(1.04); -webkit-backdrop-filter: blur(16px) saturate(1.04); border: 1px solid var(--rule-2); }
+/* 纸：托在画上的一张宣纸（面板、册页、右上那一条、做事时下面的提示） */
+.board { background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(20px) saturate(1.04); -webkit-backdrop-filter: blur(20px) saturate(1.04); border: 1px solid var(--rule-2); border-radius: 2px; box-shadow: var(--board-shadow); }
+/* 印：朱砂底，白文；边是不齐的（盖上去的，不是画的框） */
+.seal { display: inline-block; writing-mode: vertical-rl; font: 400 11.5px/1.12 var(--serif); letter-spacing: 0.1em; color: var(--zhu-ink); background: var(--zhu); padding: 5px 3.5px 4px; border-radius: 2px; -webkit-mask: var(--m-seal) 0 0 / 100% 100% no-repeat; mask: var(--m-seal) 0 0 / 100% 100% no-repeat; }
+
+/* 签：一枚纸签（宣纸纹，一道淡墨的边）。.opt 是旧名字，与 .key 一样 */
+.key, .opt { position: relative; isolation: isolate; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 40px; padding: 0 16px; border-radius: 2px; font-family: var(--kai); font-size: 15px; line-height: 1.3; letter-spacing: 0.16em; text-indent: 0.16em; white-space: nowrap; color: var(--ink); background: var(--tex) 0 0 / var(--tex-size), linear-gradient(var(--key-top), var(--key-bot)); border: 1px solid var(--rule); box-shadow: var(--key-shadow); transition: transform 0.3s var(--out), box-shadow 0.3s var(--out), color 0.25s, border-color 0.25s, background-color 0.25s; }
+.key small, .opt small { font-family: var(--serif); font-size: 12px; letter-spacing: 0.04em; text-indent: 0; color: var(--ink-2); white-space: normal; line-height: 1.35; }
+/* 悬停：纸上晕开一层淡墨，边更实，字更深 */
+@media (hover: hover) { .key:hover:not(:disabled), .opt:hover:not(:disabled) { transform: translateY(-1px); color: var(--ink-max); border-color: var(--ink-3); background: var(--tex) 0 0 / var(--tex-size), linear-gradient(var(--wash-ink), var(--wash-ink)), linear-gradient(var(--key-top), var(--key-bot)); box-shadow: var(--key-shadow-up); } }
+.key:active:not(:disabled), .opt:active:not(:disabled) { transform: translateY(1px) scale(0.985); box-shadow: var(--key-shadow-down); transition-duration: 0.08s; }
+.key:disabled, .opt:disabled { color: var(--ink-3); background: transparent; box-shadow: none; border-style: dashed; border-color: var(--rule); }
+/* 墨键：一笔横刷的浓墨（夜里是金），字留白。主操作（一屏一枚）与选中的签都是它；墨比键本身宽出一点，像笔锋出了格 */
+.opt.is-on, .key.is-on, .key.is-main { color: var(--main-ink); background: none; border-color: transparent; box-shadow: none; }
+.opt.is-on::before, .key.is-on::before, .key.is-main::before { content: ''; position: absolute; inset: -3px -7px -2px -6px; z-index: -1; background: linear-gradient(var(--main-top), var(--main-bot)); -webkit-mask: var(--m-ink) 0 0 / 100% 100% no-repeat; mask: var(--m-ink) 0 0 / 100% 100% no-repeat; transition: transform 0.4s var(--out), opacity 0.25s; pointer-events: none; }
+/* 底座：主操作落在里面——不再是下凹的塑料槽，只留出一点余地给墨锋 */
+.well { display: inline-flex; padding: 4px 8px; }
+.key.is-main { min-height: 42px; padding: 0 24px; }
+.key.is-main small { color: inherit; opacity: 0.74; }
+/* 悬停：墨再刷开一点（笔锋往右走）；按下：墨收一收 */
+@media (hover: hover) { .key.is-main:hover:not(:disabled), .key.is-on:hover:not(:disabled), .opt.is-on:hover:not(:disabled) { color: var(--main-ink); background: none; border-color: transparent; box-shadow: none; } .key.is-main:hover:not(:disabled)::before { transform: scaleX(1.05) translateX(1.5%); } }
+.key.is-main:active:not(:disabled)::before { transform: scale(0.97); }
+/* 几选一：平平一排字；选中的那一个底下一笔墨线，此刻所在（不是选的）在字下点一个小点 */
+.seg { display: flex; padding: 0; gap: 2px; border-radius: 0; border-bottom: 1px solid var(--rule-2); }
+.seg > button { position: relative; flex: 1 1 0; min-width: 0; min-height: 38px; padding: 0 6px; border-radius: 2px; font-family: var(--kai); font-size: 15px; letter-spacing: 0.12em; text-indent: 0.12em; white-space: nowrap; color: var(--ink-2); border: 1px solid transparent; transition: color 0.25s, background-color 0.25s, transform 0.25s var(--out); }
+.seg > button::before { content: ''; position: absolute; left: 16%; right: 16%; bottom: 1px; height: 5px; background: var(--ink); -webkit-mask: var(--m-line) 0 0 / 100% 100% no-repeat; mask: var(--m-line) 0 0 / 100% 100% no-repeat; transform: scaleX(0); transform-origin: left center; transition: transform 0.45s var(--out); pointer-events: none; }
+.seg > button.is-on { color: var(--ink); }
+.seg > button.is-on::before { transform: none; }
+.seg > button.is-cur:not(.is-on)::after { content: ''; position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 1px; background: var(--mark); }
+@media (hover: hover) { .seg > button:hover:not(.is-on) { color: var(--ink-max); background: var(--wash-ink); } }
+.seg > button:active { transform: translateY(1px); }
+/* 一行字的链接（「起身」「存为图片」之类）：底下一笔墨线，起笔重、往右渐轻；悬停时墨线更实、往右走一点 */
+.link { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; min-width: 44px; padding: 0 2px; font-family: var(--kai); font-size: 14px; letter-spacing: 0.16em; color: var(--ink-2); transition: color 0.25s; }
+.link::after { content: ''; position: absolute; left: 1px; right: 1px; bottom: 5px; height: 4px; background: var(--ink-3); opacity: 0.55; -webkit-mask: var(--m-line) 0 0 / 100% 100% no-repeat; mask: var(--m-line) 0 0 / 100% 100% no-repeat; transform-origin: left center; transition: transform 0.4s var(--out), opacity 0.25s; pointer-events: none; }
+@media (hover: hover) { .link:hover { color: var(--ink-max); } .link:hover::after { opacity: 1; transform: scaleX(1.08); } }
+.link:active { opacity: 0.7; }
+@media (pointer: coarse) {
+  .key, .opt { min-height: 44px; min-width: 44px; }
+  .key.is-main { min-height: 44px; }
+  .seg > button { min-height: 44px; }
+  .link { min-height: 44px; }
+}
 /* 卦画 */
 .gua { display: block; width: 22px; height: auto; overflow: visible; }
 .gua path { fill: currentColor; }

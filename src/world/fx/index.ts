@@ -185,9 +185,9 @@ export function createFx(o: FxOpts): Fx {
       const gust = Math.max(0, Math.min(1, (f.wind - 0.105) / 0.07));
       drift.update(dt, f, amount * (1 + 0.4 * f.rain) * (1 - 0.6 * f.snow), gust);
 
-      const open = 1 - f.indoor;
-      rain.update(dt, f.rain * open, f.wind, f.windDir);
-      snow.update(dt, f.snow * open, f.wind, f.windDir);
+      // 屋里不下雨雪：一笔一笔各自看自己在不在屋顶底下（画法里的 inkShelter），外头照样下——进了草堂，往外看檐外还在下
+      rain.update(dt, f.rain, f.wind, f.windDir);
+      snow.update(dt, f.snow, f.wind, f.windDir);
       glow.update(f.lamp);
 
       if (f.rain > 0.05) {

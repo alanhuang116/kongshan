@@ -13,6 +13,10 @@
  *   牧童 —— 午后横坐在水牛背上，在溪南的草地上来回，不时吹一阵短笛。
  *   酒家掌柜 —— 抹桌、筛酒；傍晚有个酒客。货郎 —— 午后挑着担摇着鼓自东头来，在茶亭歇脚。客 —— 午后来访，坐在院里石桌旁。
  *
+ * 后来添的几位在 villagers.ts；各家都做的小事（喂鸡、扫地、挑水、坐矮凳干活、说话、听书）在 chores.ts；夏天的麦收在 harvest.ts。
+ * 一天怎么过照着名册（src/data/folk.ts 的 plan）：此刻名册里这一步的 act 就是要做的事（没有 act 就是在家）；
+ * 只有几处临时的变化写在这里（货郎来了孩子们跑去看、饭还没送到农夫就多坐一会儿……）。
+ *
  * 写法：每件事是一段脚本（见 person.ts）。手里的东西挂在掌心的挂点上，手伸到哪里由脚本每帧告诉小人
  * （avatar 的 reach）——所以是「人去够东西」，不是东西飞到手里。
  * 走路：脚本只说去哪（p.go），路是自己认的（route.ts）；只有最后几步（进屋、上桥面、绕到桌后）才写明经过哪里。
@@ -22,16 +26,46 @@ import type { Quality } from '../core/World';
 import { mulberry32 } from '../core/rng';
 import type { Season } from '../env/atmos';
 import { PATHS, SITE, ground, streamAt, waterAt } from '../site';
-import { LOOKS } from './looks';
+import { FOLK_BY_ID, planNow } from '../../data/folk';
+import { LOOKS, type LookName } from './looks';
 import type { OxTeam } from './ox';
 import { Person, type Act, type Ctx, type Script } from './person';
 import * as P from './props';
 import { span } from './rig';
 import {
-  ANTS, BRIDGE_END, BUND, CARRY_TO, CHESS, DESKS, DRY_MAT, ELDER, FEED, FERRY, FIELD, GUEST, GUEST_WAY, HERD, HERD_HAY, HUT, KITE, LUNCH_END, LUNCH_SET, LUNCH_WAIT, MILL, MULBERRIES, NAIL, NET,
+  ANTS, BRIDGE_END, BUND, CARRY_TO, CHESS, DESKS, DRY_MAT, ELDER, FEED, FERRY, FIELD, GUEST, GUEST_WAY, HERD, HERD_HAY, KITE, LUNCH_END, LUNCH_SET, LUNCH_WAIT, MILL, MULBERRIES, NAIL, NET,
   ON_BRIDGE, ORCHARD_REST, OX_REST, OX_SHED, OX_SHED_FRONT, PLAY, ROW, SAWHORSE, SCHOOL_FRONT, SCHOOL_Y, SPIN, STACK, SWEEP, SWING, TEA, TEACHER, TEACHER_IN, TEACHER_PORCH, TEACHER_PORCH_IN, THRESH, VISIT, WASH, WINE,
   WRIGHT_REST, door, footY, inField, woodcutterSpot, type Spot,
+  A_FRONT, B_LOOM, D_FRONT, E_FRONT, OVERSEE, REAP, STORY, WELL,
 } from './spots';
+import { listenAct, ropeWork, sewWork, sitStool, stoolWork, sweepAct, waterAct } from './chores';
+import { makeHarvest, type Harvest } from './harvest';
+import { addVillagers } from './villagers';
+
+/** 后添的几路共用的一套家当：造人、摆东西、每帧要照看的、几样大家都看着的事 */
+export interface Kit {
+  q: Quality; group: THREE.Group; ox: OxTeam; buf: OxTeam; folk: Folk;
+  R(): number; rnd(a: number, b: number): number;
+  /** 造一个人：日程照名册；extra 可以按眼前的事改一改名册给的那件事 */
+  add(id: string, look: LookName, acts: Record<string, Act>, home: Array<[number, number]>, extra?: (c: Ctx, act: string | null) => string | null): Person;
+  onGround<T extends THREE.Object3D>(o: T, s: Spot, y?: number): T;
+  tends: Array<(c: Ctx) => void>;
+  /** 按 id 找人（还没造出来就是 undefined） */
+  who(id: string): Person | undefined;
+  /** 槐树下说书：说书人在说着没有、抖了第几个包袱（听的人跟着笑）、他的头在哪 */
+  story: { on: boolean; beat: number; head: THREE.Vector3 };
+  /** 晌午送饭：饭摆在埂上了没有、送饭的人还在路上没有 */
+  lunch: { served: boolean; coming: boolean };
+  harvest: Harvest;
+  /** 下田（先去牛棚牵牛，收工送牛回棚） */
+  toField(p: Person, c: Ctx, s: { x: number; z: number; yaw?: number }, speed?: number): Script;
+  /** 几样可以给别人也用的事：锄地（碎土）、晌午坐在埂上等饭（0 农夫、1 二郎）、晒场上耙谷（第几个人）、采桑（第几个人） */
+  hoe(): Act; noon(i: number): Act; sun(i: number): Act; pick(i: number): Act;
+  /** 村路东头、桃林路西边远处（村外来的人从这里来去） */
+  EAST: [number, number]; WEST: [number, number];
+  /** 杏儿坐在娘的织机旁（villagers.ts 里给） */
+  byAct: Act | null;
+}
 
 /** 日出、日落（与 env/atmos.ts 的那张表一致） */
 const SUN: Record<Season, [number, number]> = { spring: [6.0, 18.2], summer: [5.1, 19.1], autumn: [6.3, 17.5], winter: [7.0, 17.0] };
@@ -60,8 +94,18 @@ export interface Folk {
 export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam): Folk {
   const R = mulberry32(20261114), rnd = (a: number, b: number) => a + (b - a) * R();
   const folk: Folk = { people: [], feedAt: null, tend: () => undefined };
-  const add = (id: string, name: string, look: keyof typeof LOOKS, plan: (c: Ctx) => string | null, acts: Record<string, Act>, home: Array<[number, number]>): Person => {
-    const p = new Person(id, name, q, LOOKS[look], plan, acts, home);
+  Person.all = [];
+  /**
+   * 造一个人：名字取名册里的；日程照名册（此刻那一步的 act，没有就是在家）；extra 按眼前的事改一改。
+   * 名册里写了而这里没有的事，开发时报一声（当在家）——两处要一起改。
+   */
+  const add = (id: string, look: LookName, acts: Record<string, Act>, home: Array<[number, number]>, extra?: (c: Ctx, act: string | null) => string | null): Person => {
+    const def = FOLK_BY_ID[id];
+    if (!def) console.warn(`名册里没有 ${id}`);
+    for (const s of def?.plan ?? []) if (s.act && !acts[s.act]) { console.warn(`名册里 ${id} 的「${s.act}」没有脚本`); break; }
+    const plan = (c: Ctx) => { const a = planNow(id, c.hour, c.season, !c.fair)?.act ?? null, b = extra ? extra(c, a) : a; return b && acts[b] ? b : null; };
+    const p = new Person(id, def?.name ?? id, q, LOOKS[look], plan, acts, home);
+    p.household = def?.home ?? '';
     group.add(p.root); folk.people.push(p);
     return p;
   };
@@ -72,30 +116,109 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   const day = (c: Ctx, a: number, b: number) => c.hour >= a && c.hour < b;
 
   // ———————————————————————— 农夫、牛、送饭的 ————————————————————————
-  const hoe = P.hoe(), flail = P.flail(), whip = P.switchRod(), cup = P.bowl(0.055), floor = onGround(P.threshFloor(), THRESH);
-  hoe.visible = flail.obj.visible = whip.visible = cup.visible = false;
+  const hoe = P.hoe(), hoe2 = P.hoe(), flail = P.flail(), whip = P.switchRod(), cup = P.bowl(0.055), cup2 = P.bowl(0.055), floor = onGround(P.threshFloor(), THRESH);
+  hoe.visible = hoe2.visible = flail.obj.visible = whip.visible = cup.visible = cup2.visible = false;
   const lanes: number[] = []; for (let v = 0.1; v <= 0.905; v += 0.0895) lanes.push(v);
   const rowYaw = Math.atan2(ROW[0], ROW[1]);
-  const F = { lane: 2, dir: 1, step: 1, u: 0.35, hoeLane: 4, hoeU: 0.3, hoeDir: 1, /** 人到了田里没有（没到之前牛是跟着人走的） */ at: false };
-  const LUNCH = { served: false };
+  const F = { lane: 2, dir: 1, step: 1, u: 0.35, /** 碎土的人锄到哪了 */ hoe: { lane: 4, u: 0.3, dir: 1 }, /** 人到了田里没有（没到之前牛是跟着人走的） */ at: false };
+  /** 晌午送饭：饭摆上埂了没有、送饭的还在路上没有、吃完了没有 */
+  const LUNCH = { served: false, coming: false, eaten: false };
   /** 牛此刻是不是由农夫牵着：清早到牛棚牵出来，傍晚送回棚才放手 */
   const LED = { on: false };
-  /** 下田：先到牛棚把牛牵上再走（已经牵着了、没人看着、冬天不用牛，就直接去）；并说好收工时先送牛回棚 */
+  /** 下田：农夫先到牛棚把牛牵上再走（已经牵着了、没人看着、冬天不用牛，就直接去）；并说好收工时先送牛回棚。别人下田就直接去 */
   function* toField(p: Person, c: Ctx, s: { x: number; z: number; yaw?: number }, speed = 1.0): Script {
-    if (c.season !== 'winter') {
+    if (c.season !== 'winter' && p.id === 'farmer') {
       if (!LED.on && !p.snap) { yield* p.go(OX_SHED_FRONT, 1.0); LED.on = true; yield* p.wait(1.2); }
       LED.on = true;
       p.leave = function* (): Script { F.at = false; if (LED.on) { yield* p.go(OX_SHED_FRONT, 1.05); LED.on = false; yield* p.wait(2.5); } yield* p.goHome(); };
     }
     yield* p.go(s, speed);
-    F.at = true;
+    if (p.id === 'farmer') F.at = true;
   }
-  const farmer = add('farmer', '农夫', 'farmer', (c) => {
-    const [, ss] = SUN[c.season], winter = c.season === 'winter';
-    if (!c.fair || c.hour < (winter ? 9 : 6.6) || c.hour >= (winter ? 16 : ss + 0.1)) return null;
-    if (c.hour >= 11.5 && c.hour < 13 && !winter) return 'noon';
-    return c.season === 'spring' ? 'plough' : c.season === 'summer' ? 'hoe' : c.season === 'autumn' ? 'thresh' : 'mend';
-  }, {
+  /** 锄地（碎土）：两手握锄，举起、落下、往回一带；三锄一挪步。st 是这个人自己锄到哪了 */
+  const hoeAct = (st: { lane: number; u: number; dir: number }, tool: THREE.Object3D): Act => function* (p, c) {
+    const f = p.fig, at = () => { const a = inField(st.u, lanes[st.lane]); return { x: a.x, z: a.z, yaw: st.dir > 0 ? rowYaw : rowYaw + Math.PI }; };
+    yield* toField(p, c, at());
+    p.pose('stand'); p.hold(tool, 'R');
+    // 锄的姿势：k = 0 锄头落在身前地上，1 举到头前
+    const swing = (k: number) => {
+      const r = p.loc(-0.13, 0.9 + 0.12 * k, 0.2, v1), d = v2.set(0.16, lerp(-0.74, 0.36, k), lerp(0.655, 0.92, k)).normalize();
+      const wd = p.dir(d.x, d.y, d.z, v3);
+      f.reach('R', r, { dir: wd, palm: UPV, rate: 18 });
+      f.reach('L', v4.copy(r).addScaledVector(wd, 0.5 * p.scale), { dir: wd, palm: UPV, rate: 18 });
+      f.bow = lerp(0.42, 0.14, k);
+    };
+    p.rest = () => { swing(0); f.bow = 0.1; };
+    for (let n = 0; ; n++) {
+      for (let i = 0; i < 3; i++) {
+        yield* p.tween(0.95, (k) => swing(k));
+        yield* p.tween(0.28, (k) => swing(1 - k * k));
+        c.sfx('hoe', p.pos.x, p.pos.z, 0.5 + 0.3 * R());
+        yield* p.tween(0.6, (k) => { swing(0); f.bow = 0.42 - 0.08 * Math.sin(k * Math.PI); });
+      }
+      if (n % 4 === 3) {
+        // 直起腰，抬手擦一把汗
+        yield* p.tween(1.0, (k) => { swing(0); f.bow = lerp(0.42, 0.03, k); });
+        f.reach('L', null);
+        yield* p.tween(2.2, (k) => { f.reach('L', p.loc(0.07, 1.47, 0.13, v1), { dir: p.dir(-0.7, 0.5, 0.2, v2), rate: 7 }); f.bow = 0.03 + 0.02 * k; });
+        f.reach('L', null);
+        yield* p.wait(1.2);
+      }
+      st.u += st.dir * 0.019;
+      if (st.u > 0.86 || st.u < 0.14) { st.dir = -st.dir; st.lane = (st.lane + 1) % lanes.length; }
+      yield* during(p.go(at(), 0.7, undefined, true), () => swing(0.15));
+    }
+  };
+  /** 晌午：坐在田埂上喝口水；饭送到了就端起碗吃（i：0 农夫；1 二郎，挨着爹坐）。夏天在麦地的地头 */
+  const noonAct = (i: number, bowl: THREE.Object3D): Act => function* (p, c) {
+    const f = p.fig, summer = c.season === 'summer', s = summer ? (i ? REAP.bund2 : REAP.bund) : { x: BUND.x, z: BUND.z + 1.1 * i, yaw: BUND.yaw };
+    if (i === 0) yield* toField(p, c, s); else yield* p.go(s, 1.0);
+    yield* p.sit(); p.hold(bowl, 'R');
+    p.rest = () => { f.reach('R', null); f.reach('L', null); };
+    const mouth = () => f.joints.head.getWorldPosition(v1).add(p.dir(0, -0.075, 0.1, v2));
+    for (;;) {
+      if (LUNCH.served) {
+        // 左手端碗，右手一筷一筷地送到嘴边；吃上四五十秒算吃完
+        p.hold(bowl, 'L');
+        for (let t = 0; LUNCH.served; t += p.dt) {
+          const k = Math.max(0, Math.sin(t * 2.4));
+          f.reach('L', p.loc(0.08, 0.44, 0.3, v3), { dir: p.dir(-0.6, 0.2, 0.75, v4), palm: UPV, rate: 8 });
+          f.reach('R', v5.lerpVectors(p.loc(0.02, 0.5, 0.3, v4), mouth(), k), { dir: p.dir(0.5, 0.6, 0.2, v2), rate: 12 });
+          f.bow = 0.2;
+          if (t > 45 && i === 0) LUNCH.eaten = true;
+          yield;
+        }
+        f.reach('L', null); f.reach('R', null); f.bow = 0; p.hold(bowl, 'R');
+      }
+      for (let t = 0, T = rnd(7, 13); t < T && !LUNCH.served; t += p.dt) yield;
+      if (LUNCH.served) continue;
+      yield* p.tween(1.0, () => f.reach('R', mouth(), { dir: p.dir(0.6, 0.6, 0, v3), palm: UPV, rate: 6 }));
+      yield* p.wait(1.4);
+      f.reach('R', null);
+    }
+  };
+
+  // —— 后添的几路共用的这一套（villagers.ts、harvest.ts、chores.ts 用） ——
+  const kit: Kit = {
+    q, group, ox, buf, folk, R, rnd, add, onGround, tends,
+    who: (id) => folk.people.find((p) => p.id === id),
+    story: { on: false, beat: 0, head: new THREE.Vector3() },
+    lunch: LUNCH, harvest: null as unknown as Harvest, toField,
+    hoe: () => hoeAct(F.hoe, hoe2), noon: (i) => noonAct(i, i ? cup2 : cup), sun: (i) => sunAct(i), pick: (i) => pickAct(i),
+    EAST, WEST, byAct: null,
+  };
+  const harvest = (kit.harvest = makeHarvest(kit));
+  tends.push((c) => harvest.tend(c));
+  const stoolOf = () => { const s = P.stool(); s.visible = false; return s; };
+  const fanOf = () => { const f = P.fan(); f.visible = false; return f; };
+  /** 听书（槐树下各人的位置在 spots.ts 的 STORY.slots） */
+  /** 夏夜摇蒲扇的：老人、妇人、几个当家的（不是人人一把，免得一片扇子） */
+  const FAN = new Set(['elder', 'elder2', 'farmwife', 'neighbor', 'tofu', 'weaver', 'farmer', 'basketman']);
+  const listen = (id: string, kid = false): Act => listenAct(kit, STORY.slots[id], { stool: stoolOf(), fan: FAN.has(id) ? fanOf() : undefined, kid });
+  const ropeHeap = P.ropeHeap(), ropeStool = stoolOf(), mendStool = stoolOf();
+  ropeHeap.visible = false;
+
+  const farmer = add('farmer', 'farmer', {
     /** 春耕：右手扶犁梢，左手一根竹枝，弓着背跟在牛后头 */
     *plough(p, c) {
       const f = p.fig, a = inField(F.u, lanes[F.lane]), yaw0 = F.dir > 0 ? rowYaw : rowYaw + Math.PI;
@@ -128,40 +251,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         if (n % 3 === 2) c.sfx('ox', ox.x, ox.z, 0.4);
       }
     },
-    /** 夏锄：两手握锄，举起、落下、往回一带；三锄一挪步 */
-    *hoe(p, c) {
-      const f = p.fig, at = () => { const a = inField(F.hoeU, lanes[F.hoeLane]); return { x: a.x, z: a.z, yaw: F.hoeDir > 0 ? rowYaw : rowYaw + Math.PI }; };
-      yield* toField(p, c, at());
-      p.pose('stand'); p.hold(hoe, 'R');
-      // 锄的姿势：k = 0 锄头落在身前地上，1 举到头前
-      const swing = (k: number) => {
-        const r = p.loc(-0.13, 0.9 + 0.12 * k, 0.2, v1), d = v2.set(0.16, lerp(-0.74, 0.36, k), lerp(0.655, 0.92, k)).normalize();
-        const wd = p.dir(d.x, d.y, d.z, v3);
-        f.reach('R', r, { dir: wd, palm: UPV, rate: 18 });
-        f.reach('L', v4.copy(r).addScaledVector(wd, 0.5 * p.scale), { dir: wd, palm: UPV, rate: 18 });
-        f.bow = lerp(0.42, 0.14, k);
-      };
-      p.rest = () => { swing(0); f.bow = 0.1; };
-      for (let n = 0; ; n++) {
-        for (let i = 0; i < 3; i++) {
-          yield* p.tween(0.95, (k) => swing(k));
-          yield* p.tween(0.28, (k) => swing(1 - k * k));
-          c.sfx('hoe', p.pos.x, p.pos.z, 0.5 + 0.3 * R());
-          yield* p.tween(0.6, (k) => { swing(0); f.bow = 0.42 - 0.08 * Math.sin(k * Math.PI); });
-        }
-        if (n % 4 === 3) {
-          // 直起腰，抬手擦一把汗
-          yield* p.tween(1.0, (k) => { swing(0); f.bow = lerp(0.42, 0.03, k); });
-          f.reach('L', null);
-          yield* p.tween(2.2, (k) => { f.reach('L', p.loc(0.07, 1.47, 0.13, v1), { dir: p.dir(-0.7, 0.5, 0.2, v2), rate: 7 }); f.bow = 0.03 + 0.02 * k; });
-          f.reach('L', null);
-          yield* p.wait(1.2);
-        }
-        F.hoeU += F.hoeDir * 0.019;
-        if (F.hoeU > 0.86 || F.hoeU < 0.14) { F.hoeDir = -F.hoeDir; F.hoeLane = (F.hoeLane + 1) % lanes.length; }
-        yield* during(p.go(at(), 0.7, undefined, true), () => swing(0.15));
-      }
-    },
+    hoe: hoeAct(F.hoe, hoe),
     /** 秋：连枷打谷。举过头顶，甩下去，枷拍在席上 */
     *thresh(p, c) {
       const f = p.fig, st = { x: THRESH.x - 0.25, z: THRESH.z + 1.5, yaw: Math.PI };
@@ -181,60 +271,38 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         yield* p.tween(1.15, (k) => swing(k, lerp(0.5, -2.1, k)));
         yield* p.wait(0.12);
         yield* p.tween(0.34, (k) => swing(1 - k * k, lerp(-2.1, 0.35, k * k * k)));
-        c.sfx('pound', p.pos.x, p.pos.z, 0.6 + 0.3 * R());
+        c.sfx('flail', p.pos.x, p.pos.z, 0.6 + 0.3 * R());
         yield* p.tween(0.35, (k) => swing(0, 0.35 + 0.2 * Math.sin(k * Math.PI)));
         yield* p.wait(rnd(0.5, 1.1));
       }
     },
-    /** 冬：坐在窝棚口，锄横在膝上，一下一下地磨 */
+    /** 冬：坐在自家门前的矮凳上，锄横在膝上，一下一下地磨 */
     *mend(p) {
       const f = p.fig;
-      yield* p.go(HUT, 1.0);
-      yield* p.sit();
-      p.hold(hoe, 'root'); hoe.position.set(0.55, 0.3, 0.3); hoe.rotation.set(0, 0, Math.PI / 2 + 0.06);
+      yield* sitStool(p, A_FRONT.mend, mendStool, 1.0);
+      p.hold(hoe, 'root'); hoe.position.set(0.55, 0.46, 0.34); hoe.rotation.set(0, 0, Math.PI / 2 + 0.06);
       p.rest = () => { f.reach('R', null); f.reach('L', null); };
       for (;;) {
-        f.reach('L', p.loc(0.3, 0.33, 0.3, v1), { dir: p.dir(1, 0, 0, v2), palm: DOWN });
-        for (let t = 0, T = rnd(3.5, 5.5); t < T; t += p.dt) { f.reach('R', p.loc(-0.5 + 0.07 * Math.sin(t * 7.5), 0.34, 0.3, v1), { dir: p.dir(-1, 0, 0.2, v2), palm: DOWN, rate: 16 }); f.lookAt(p.loc(-0.5, 0.3, 0.35, v3)); f.bow = 0.5; yield; }
-        f.lookAt(null); f.bow = 0.2;
+        f.reach('L', p.loc(0.3, 0.49, 0.34, v1), { dir: p.dir(1, 0, 0, v2), palm: DOWN });
+        for (let t = 0, T = rnd(3.5, 5.5); t < T; t += p.dt) { f.reach('R', p.loc(-0.5 + 0.07 * Math.sin(t * 7.5), 0.5, 0.34, v1), { dir: p.dir(-1, 0, 0.2, v2), palm: DOWN, rate: 16 }); f.lookAt(p.loc(-0.5, 0.46, 0.38, v3)); f.bow = 0.42; yield; }
+        f.lookAt(null); f.bow = 0.15;
         yield* p.wait(rnd(1.5, 3));
       }
     },
-    /** 午间：坐在田埂上喝口水；饭送到了就端起碗吃 */
-    *noon(p, c) {
-      const f = p.fig;
-      yield* toField(p, c, BUND);
-      yield* p.sit(); p.hold(cup, 'R');
-      p.rest = () => { f.reach('R', null); f.reach('L', null); };
-      const mouth = () => f.joints.head.getWorldPosition(v1).add(p.dir(0, -0.075, 0.1, v2));
-      for (;;) {
-        if (LUNCH.served) {
-          // 左手端碗，右手一筷一筷地送到嘴边
-          p.hold(cup, 'L');
-          for (let t = 0; LUNCH.served; t += p.dt) {
-            const k = Math.max(0, Math.sin(t * 2.4));
-            f.reach('L', p.loc(0.08, 0.44, 0.3, v3), { dir: p.dir(-0.6, 0.2, 0.75, v4), palm: UPV, rate: 8 });
-            f.reach('R', v5.lerpVectors(p.loc(0.02, 0.5, 0.3, v4), mouth(), k), { dir: p.dir(0.5, 0.6, 0.2, v2), rate: 12 });
-            f.bow = 0.2;
-            yield;
-          }
-          f.reach('L', null); f.reach('R', null); f.bow = 0; p.hold(cup, 'R');
-        }
-        for (let t = 0, T = rnd(7, 13); t < T && !LUNCH.served; t += p.dt) yield;
-        if (LUNCH.served) continue;
-        yield* p.tween(1.0, () => f.reach('R', mouth(), { dir: p.dir(0.6, 0.6, 0, v3), palm: UPV, rate: 6 }));
-        yield* p.wait(1.4);
-        f.reach('R', null);
-      }
-    },
-  }, [pt(door('a'))]);
+    noon: noonAct(0, cup),
+    /** 夏：割麦（harvest.ts） */
+    reap: harvest.reap,
+    /** 雨天：坐在自家檐下搓草绳 */
+    rope: stoolWork(kit, A_FRONT.rope[0], ropeStool, { props: (p) => { p.hold(ropeHeap, 'world'); const s = A_FRONT.rope[0].stool; ropeHeap.position.set(s.x - Math.cos(s.yaw) * 0.5, footY(s.x, s.z), s.z + Math.sin(s.yaw) * 0.5); ropeHeap.rotation.set(0, s.yaw, 0); }, work: ropeWork, look: [0, 0.42, 0.4] }),
+    listen: listen('farmer'),
+  }, [pt(door('a'))], (c, a) => (a !== 'noon' && farmer.act === 'noon' && LUNCH.coming && c.season !== 'winter' ? 'noon' : a));
 
   /**
    * 牛：春天套着犁（农夫歇晌时就站在垄里等）；夏秋的白天在田角吃草；
    * 清早农夫到牛棚把它牵出来，跟在他身后两三步走到田里；收工跟着他走回村里，送进棚。夜里、冬天在牛棚里。
    * 没人看着时就直接在该在的地方。
    */
-  let oxMode = '';
+  let oxMode = '', lunchP: Person | null = null;
   tends.push((c) => {
     const winter = c.season === 'winter', here = farmer.present;
     if (!here) { LED.on = false; F.at = false; }
@@ -252,9 +320,9 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       if (d > 30 && !seen) ox.put(tx, tz, farmer.yaw); else if (d > 0.5) ox.toward(tx, tz, Math.min(1.25, 0.3 + d * 0.5), c.dt); else ox.halt();
     } else if (want === 'rest') {
       ox.hitched = false;
-      const d = Math.hypot(OX_REST.x - ox.x, OX_REST.z - ox.z);
-      if (d > 1 && (oxMode !== 'rest' || d < 60) && seen && d < 60) { ox.lie = 0; ox.graze = 0; ox.toward(OX_REST.x, OX_REST.z, 0.6, c.dt); }
-      else { if (d > 1) ox.put(OX_REST.x, OX_REST.z, OX_REST.yaw); ox.halt(); ox.lie = c.hour > 11.5 && c.hour < 13.5 ? 1 : 0; ox.graze = ox.lie ? 0 : Math.sin(c.t * 0.05) > -0.2 ? 1 : 0; }
+      const OR = c.season === 'summer' ? REAP.ox : OX_REST, d = Math.hypot(OR.x - ox.x, OR.z - ox.z);
+      if (d > 1 && (oxMode !== 'rest' || d < 60) && seen && d < 60) { ox.lie = 0; ox.graze = 0; ox.toward(OR.x, OR.z, 0.6, c.dt); }
+      else { if (d > 1) ox.put(OR.x, OR.z, OR.yaw); ox.halt(); ox.lie = c.hour > 11.5 && c.hour < 13.5 ? 1 : 0; ox.graze = ox.lie ? 0 : Math.sin(c.t * 0.05) > -0.2 ? 1 : 0; }
     } else {
       ox.hitched = false;
       const d = Math.hypot(OX_SHED.x - ox.x, OX_SHED.z - ox.z);
@@ -263,82 +331,86 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
     }
     oxMode = want;
     if (farmer.act !== 'noon') LUNCH.served = false;
+    LUNCH.coming = !!lunchP && lunchP.here && lunchP.act === 'bring' && !LUNCH.eaten;
   });
 
-  const lunchBasket = P.foodBasket(), lunchJug = P.jug();
-  lunchBasket.visible = lunchJug.visible = false;
-  add('lunch', '送饭的女儿', 'lunch', (c) => (c.fair && c.season !== 'winter' && day(c, 11.5, 12.8) ? 'bring' : null), {
-    /** 提着饭篮、水罐走到田头，放在埂上；等他吃完，空着手回去 */
-    *bring(p) {
-      const f = p.fig, end = LUNCH_END;
-      LUNCH.served = false;
+  const lunchBasket = P.foodBasket(), lunchJug = P.jug(), lunchBroom = P.broom(), lunchSole = P.shoeSole(), lunchStool = stoolOf();
+  lunchBasket.visible = lunchJug.visible = lunchBroom.visible = lunchSole.visible = false;
+  lunchP = add('lunch', 'lunch', {
+    /** 提着饭篮、水罐走到田头（夏天是麦地的地头），放在埂上；等爹吃完，空着手回去 */
+    *bring(p, c) {
+      const f = p.fig, summer = c.season === 'summer';
+      const end = summer ? { x: REAP.set.x - 0.55, z: REAP.set.z - 0.05, yaw: Math.PI / 2 } : { x: LUNCH_END[0] - 0.25, z: LUNCH_END[1] + 0.1, yaw: -Math.PI / 2 };
+      const set = summer ? REAP.set : LUNCH_SET, wait = summer ? REAP.wait : LUNCH_WAIT;
+      LUNCH.served = false; LUNCH.eaten = false;
       p.pose('stand'); p.hold(lunchBasket, 'L'); p.hold(lunchJug, 'R');
       const carry = () => {
         f.reach('L', p.loc(0.2, 0.92, 0.2, v5), { dir: DOWN, palm: p.dir(-1, 0, 0.2, v4), rate: 16 });
         f.reach('R', p.loc(-0.23, 0.8, 0.1, v3), { dir: DOWN, palm: p.dir(1, 0, 0, v2), rate: 16 });
       };
       p.rest = carry;
-      yield* during(p.go({ x: end[0] - 0.25, z: end[1] + 0.1, yaw: -Math.PI / 2 }, 1.05), carry);
+      yield* during(p.go(end, 1.05), carry);
       yield* p.tween(1.2, (k) => { f.bow = 0.7 * k; carry(); });
       // 放下：篮与罐留在埂上
-      p.hold(lunchBasket, 'world'); lunchBasket.position.set(LUNCH_SET.x, footY(LUNCH_SET.x, LUNCH_SET.z) + 0.41, LUNCH_SET.z); lunchBasket.rotation.set(Math.PI, 0.4, 0);
-      p.hold(lunchJug, 'world'); lunchJug.position.set(LUNCH_SET.x + 0.1, footY(LUNCH_SET.x, LUNCH_SET.z) + 0.37, LUNCH_SET.z + 0.34); lunchJug.rotation.set(Math.PI, 0, 0);
+      p.hold(lunchBasket, 'world'); lunchBasket.position.set(set.x, footY(set.x, set.z) + 0.41, set.z); lunchBasket.rotation.set(Math.PI, 0.4, 0);
+      p.hold(lunchJug, 'world'); lunchJug.position.set(set.x + 0.1, footY(set.x, set.z) + 0.37, set.z + 0.34); lunchJug.rotation.set(Math.PI, 0, 0);
       f.reach('L', null); f.reach('R', null); p.rest = null;
       LUNCH.served = true;
       yield* p.tween(1.0, (k) => { f.bow = 0.7 * (1 - k); });
-      yield* p.go(LUNCH_WAIT, 0.8);
+      yield* p.go(wait, 0.8);
       p.pose('stand', 'sleeve');
-      for (let t = 0; t < 40; t += p.dt) { f.lookAt(t % 14 < 6 ? v1.copy(farmer.pos).setY(farmer.pos.y + 0.6) : null); yield; }
+      for (let t = 0; t < 75 && !LUNCH.eaten; t += p.dt) { f.lookAt(t % 14 < 6 ? v1.copy(farmer.pos).setY(farmer.pos.y + 0.6) : null); yield; }
+      LUNCH.eaten = true;
       f.lookAt(null); p.pose('stand', 'free');
       yield* p.go(door('a'), 1.1);
       yield* p.away(1e5);
     },
+    sweep: sweepAct(kit, A_FRONT.sweep, lunchBroom),
+    sew: stoolWork(kit, A_FRONT.sew2, lunchStool, { props: (p) => p.hold(lunchSole, 'L'), work: sewWork, look: [0.05, 0.62, 0.4] }),
+    glean: harvest.glean,
+    listen: listen('lunch'),
   }, [pt(door('a'))]);
+  lunchP.chatty = 0.45;
 
-  // ———————————————————————— 采桑女 ————————————————————————
-  const basket = P.basket(), rake = P.rake(), wheel = P.spinningWheel();
+  // ———————————————————————— 采桑女（桂姐）；采桑、翻晒也给后添的几位用 ————————————————————————
+  const basket = P.basket(), wheel = P.spinningWheel();
   onGround(wheel.obj, { x: SPIN.x + Math.sin(SPIN.yaw) * 0.55 - Math.cos(SPIN.yaw) * 0.1, z: SPIN.z + Math.cos(SPIN.yaw) * 0.55 + Math.sin(SPIN.yaw) * 0.1, yaw: SPIN.yaw + Math.PI / 2 });
-  basket.visible = rake.visible = false;
-  const K = { i: 0 };
-  add('picker', '采桑女', 'picker', (c) => {
-    const [, ss] = SUN[c.season];
-    if (!c.fair) return null;
-    if (c.season === 'spring' || c.season === 'summer') return c.hour < 7 || c.hour >= ss - 0.7 ? null : c.hour >= 11.6 && c.hour < 13 ? 'shade' : 'pick';
-    return c.hour < 9 || c.hour >= 16 ? null : c.season === 'autumn' ? 'sun' : 'spin';
-  }, {
-    /** 采桑：左臂挎篮，右手探到枝上，采一把放进篮里；一株采三四把，换下一株 */
-    *pick(p) {
+  basket.visible = false;
+  /** 各采桑人采到第几株了（几个人错开着采，不挤在一株下） */
+  const K = [{ i: 0 }, { i: 2 }, { i: 4 }];
+  /** 采桑：左臂挎篮，右手探到枝上，采一把放进篮里；一株采三四把，换下一株（i：第几个采桑的人） */
+  const pickAct = (i: number): Act => {
+    const bk = i ? P.basket() : basket, k = K[i % K.length];
+    bk.visible = false;
+    return function* (p) {
       const f = p.fig;
-      p.pose('stand'); p.hold(basket, 'L');
+      p.pose('stand'); p.hold(bk, 'L');
       const carry = () => f.reach('L', p.loc(0.2, 0.94, 0.2, v5), { dir: DOWN, palm: p.dir(-1, 0, 0.2, v4), rate: 16 });
       p.rest = () => { carry(); f.reach('R', null); };
       for (;;) {
-        const tr = MULBERRIES[K.i % MULBERRIES.length], a = K.i * 2.4 + 0.6, sx = tr.x + Math.cos(a) * 0.95, sz = tr.z + Math.sin(a) * 0.95;
+        const tr = MULBERRIES[k.i % MULBERRIES.length], a = k.i * 2.4 + 0.6 + i * 2.1, sx = tr.x + Math.cos(a) * 0.95, sz = tr.z + Math.sin(a) * 0.95;
         yield* during(p.go({ x: sx, z: sz, yaw: Math.atan2(tr.x - sx, tr.z - sz) }, 0.85), carry);
-        for (let n = 0, N = 3 + (K.i % 2); n < N; n++) {
+        for (let n = 0, N = 3 + (k.i % 2); n < N; n++) {
           const tx = rnd(-0.22, 0.08), ty = rnd(1.58, 1.74), tz = rnd(0.34, 0.46);
-          yield* p.tween(1.25, (k) => { carry(); f.reach('R', p.loc(lerp(-0.2, tx, k), lerp(0.95, ty, k), lerp(0.2, tz, k), v1), { dir: UPV, rate: 12 }); f.lookAt(p.loc(tx, ty + 0.1, tz + 0.2, v2)); });
+          yield* p.tween(1.25, (u) => { carry(); f.reach('R', p.loc(lerp(-0.2, tx, u), lerp(0.95, ty, u), lerp(0.2, tz, u), v1), { dir: UPV, rate: 12 }); f.lookAt(p.loc(tx, ty + 0.1, tz + 0.2, v2)); });
           // 掐几下
           for (let t = 0; t < 1.3; t += p.dt) { carry(); f.reach('R', p.loc(tx + 0.03 * Math.sin(t * 9), ty - 0.035 * Math.max(0, Math.sin(t * 9)), tz, v1), { dir: UPV, rate: 20 }); yield; }
-          yield* p.tween(0.95, (k) => { carry(); f.reach('R', p.loc(lerp(tx, 0.16, k), lerp(ty, 0.84, k), lerp(tz, 0.24, k), v1), { dir: DOWN, rate: 12 }); f.lookAt(k > 0.4 ? p.loc(0.2, 0.7, 0.4, v2) : null); });
+          yield* p.tween(0.95, (u) => { carry(); f.reach('R', p.loc(lerp(tx, 0.16, u), lerp(ty, 0.84, u), lerp(tz, 0.24, u), v1), { dir: DOWN, rate: 12 }); f.lookAt(u > 0.4 ? p.loc(0.2, 0.7, 0.4, v2) : null); });
           yield* during(p.wait(0.35), carry);
         }
         f.reach('R', null); f.lookAt(null);
-        K.i++;
+        k.i++;
       }
-    },
-    /** 午间：坐在桑树下，篮子放在身边 */
-    *shade(p) {
-      yield* p.go(ORCHARD_REST, 0.9);
-      yield* p.sit(0, 'lap');
-      p.hold(basket, 'root'); basket.position.set(0.42, 0.42, 0.12); basket.rotation.set(Math.PI, 0, 0);
-      yield* p.forever(() => undefined);
-    },
-    /** 秋：在晒场上摊谷，拿木耙沿着晒席一下一下地推 */
-    *sun(p) {
-      const f = p.fig, M = DRY_MAT, c0 = Math.cos(M.yaw), s0 = Math.sin(M.yaw);
-      const side = (k: number) => ({ x: M.x + k * c0 + (M.d / 2 + 0.8) * s0, z: M.z - k * s0 + (M.d / 2 + 0.8) * c0, yaw: M.yaw + Math.PI });
-      let k = -0.9;
+    };
+  };
+  /** 秋：在晒场上摊谷，拿木耙沿着晒席一下一下地推（i：第几个人——0、2 在席南边，1 在席北边） */
+  const sunAct = (i: number): Act => {
+    const rake = P.rake();
+    rake.visible = false;
+    return function* (p) {
+      const f = p.fig, M = DRY_MAT, c0 = Math.cos(M.yaw), s0 = Math.sin(M.yaw), sg = i === 1 ? -1 : 1;
+      const side = (k: number) => ({ x: M.x + k * c0 + sg * (M.d / 2 + 0.8) * s0, z: M.z - k * s0 + sg * (M.d / 2 + 0.8) * c0, yaw: M.yaw + (sg > 0 ? Math.PI : 0) });
+      let k = i === 2 ? 0.3 : -0.9;
       yield* p.go(side(k), 0.9);
       p.pose('stand'); p.hold(rake, 'R');
       const push = (u: number) => {
@@ -348,11 +420,22 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       };
       p.rest = () => push(0);
       for (;;) {
-        for (let i = 0; i < 4; i++) { yield* p.tween(1.2, (u) => push(u)); yield* p.tween(1.0, (u) => push(1 - u)); }
+        for (let n = 0; n < 4; n++) { yield* p.tween(1.2, (u) => push(u)); yield* p.tween(1.0, (u) => push(1 - u)); }
         k = k > 0.8 ? -0.9 : k + 0.6;
         yield* during(p.go(side(k), 0.6), () => push(0));
       }
+    };
+  };
+  const picker = add('picker', 'picker', {
+    pick: pickAct(0),
+    /** 午间：坐在桑树下，篮子放在身边 */
+    *shade(p) {
+      yield* p.go(ORCHARD_REST, 0.9);
+      yield* p.sit(0, 'lap');
+      p.hold(basket, 'root'); basket.position.set(0.42, 0.42, 0.12); basket.rotation.set(Math.PI, 0, 0);
+      yield* p.forever(() => undefined);
     },
+    sun: sunAct(0),
     /** 冬：门前纺线。右手摇轮，左手往后抽纱 */
     *spin(p) {
       const f = p.fig;
@@ -371,7 +454,9 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         f.lookAt(p.loc(0.2, 0.3, 0.6, v3));
       });
     },
+    listen: listen('picker'),
   }, [pt(door('a'))]);
+  picker.chatty = 0.35;
 
   // ———————————————————————— 村塾：童子与先生；秋千上的小女孩 ————————————————————————
   const kite = P.kite(), string = P.lineMesh(0.004), books = P.book(), rule = P.ruler();
@@ -382,13 +467,12 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   const PED = { call: false };
   const GO = { turn: 0, on: [false, false] };
   let recite = 0;
-  const kidPlan = (i: number) => (c: Ctx): string | null => {
-    const [, ss] = SUN[c.season], dusk = Math.min(17, ss - 0.4);
-    if (day(c, 7, 11)) return c.rain > 0.85 || c.snow > 0.85 ? null : 'school';
-    if (day(c, 13, dusk) && c.rain < 0.5) return PED.call ? 'gather' : i === 2 && c.hour >= 14 && GO.on[0] ? 'watch' : 'play';
-    // 黄昏到入夜后一个多时辰：一个孩子在石桥上（等着先生来教他认北斗）
-    if (i === 0 && c.hour >= dusk && c.hour < ss + 2.3 && c.rain < 0.5 && c.snow < 0.5) return 'bridge';
-    return null;
+  /** 孩子们的日程照名册；午后货郎来了都跑去茶亭看，石头看棋只在两位老人真坐下来下的时候（不然还是去玩） */
+  const kidExtra = (c: Ctx, a: string | null): string | null => {
+    if (a === 'play' || a === 'watch') { if (PED.call) return 'gather'; if (a === 'watch' && !GO.on[0]) return 'play'; }
+    // 大雨大雪天不上学（小雨照上：下雨天书声最齐）
+    if (a === 'school' && (c.rain > 0.85 || c.snow > 0.85)) return null;
+    return a;
   };
   const kidActs = (i: number): Record<string, Act> => ({
     /** 念书：坐在矮桌旁的席上，身子左右摇，头跟着晃；领头的那个每念一句出一声 */
@@ -501,11 +585,15 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
     },
   });
   ([['kid1', pt(door('a'))], ['kid2', pt(door('b'))], ['kid3', pt(door('d'))]] as Array<[string, [number, number]]>).forEach(([id, home], i) => {
-    kids.push(add(id, '童子', id as keyof typeof LOOKS, kidPlan(i), kidActs(i), [home]));
+    const acts = kidActs(i);
+    if (i > 0) acts.listen = listen(id, true);
+    const kid = add(id, id as LookName, acts, [home], kidExtra);
+    kid.chatty = 0.08;
+    kids.push(kid);
   });
 
   /** 秋千上的小女孩（npcs.swinger）：放了学、午后，坐在秋千板上，两手攥着绳。板是别人搭的——荡不荡由外面带着她动 */
-  const swinger = add('swinger', '小女孩', 'kid4', (c) => (c.fair && (day(c, 11, 12.6) || day(c, 15, Math.min(17.2, SUN[c.season][1] - 0.3))) ? 'swing' : null), {
+  const swinger = add('swinger', 'kid4', {
     *swing(p) {
       const f = p.fig, s = p.scale, fwd = 0.3 * s;
       yield* p.go({ x: SWING.x + Math.sin(SWING.yaw) * fwd, z: SWING.z + Math.cos(SWING.yaw) * fwd, yaw: SWING.yaw }, 1.3, [SWING.front]);
@@ -518,9 +606,15 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         f.lookAt(Math.sin(t * 0.3) > 0.6 ? p.loc(Math.sin(t * 0.7), 0.6, 2, v4) : null);
       });
     },
+    /** 挨着娘坐在织机旁（villagers.ts 里写的，那边才有织机） */
+    by: (p, c) => kit.byAct!(p, c),
+    listen: listen('swinger', true),
   }, [pt(door('d'))]);
+  swinger.chatty = 0.05;
 
-  add('teacher', '塾师', 'teacher', (c) => (day(c, 6.8, 11.2) ? (c.rain > 0.85 || c.snow > 0.85 ? null : 'teach') : day(c, 14, 16.8) && c.fair && c.season !== 'winter' ? 'read' : null), {
+  const tLamp = P.oilLamp();
+  tLamp.visible = false;
+  const teacher = add('teacher', 'teacher', {
     /** 教书：坐在高桌后的坐墩上，左手一卷书，右手戒尺打着拍子，点着头听 */
     *teach(p) {
       const f = p.fig;
@@ -545,12 +639,27 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         f.reach('R', null);
       }
     },
-  }, [pt(door('d'))]);
+    /** 夜里（雨天的午后也是）：坐回高桌后，桌角一盏灯，捧着书看，看一阵翻一页；前檐敞着，路上望得见那一点灯 */
+    *night(p) {
+      const f = p.fig;
+      yield* p.bench(TEACHER, 1.0, [pt(SCHOOL_FRONT), pt(TEACHER_IN)]);
+      p.hold(books, 'L');
+      const lp = p.loc(0.3, 0, 0.45, v5); p.hold(tLamp, 'world'); tLamp.position.set(lp.x, SCHOOL_Y + 0.73, lp.z);
+      p.rest = () => f.reach('R', null);
+      for (;;) {
+        for (let t = 0, T = rnd(10, 16); t < T; t += p.dt) { f.reach('L', p.loc(0.08, 0.86, 0.36, v1), { dir: p.dir(0, 0.9, 0.4, v2), palm: p.dir(-0.3, 0.2, -1, v3), rate: 8 }); f.lookAt(p.loc(0.08, 0.84, 0.48, v4)); f.bow = 0.14; yield; }
+        yield* p.tween(1.1, (k) => f.reach('R', p.loc(lerp(-0.1, 0.14, Math.sin(k * Math.PI)), 0.88, 0.38, v1), { rate: 10 }));
+        f.reach('R', null);
+      }
+    },
+  }, [pt(door('d'))], (c, a) => (a === 'teach' && (c.rain > 0.85 || c.snow > 0.85) ? null : a));
+  teacher.chatty = 0.35;
 
   // ———————————————————————— 槐树下：老人、弈棋的另一位、邻家妇人 ————————————————————————
   const staff = P.staff(1.12), tea = P.bowl(0.052), tea2 = P.bowl(0.06), broom = P.broom(), trayM = P.tray();
   staff.visible = tea.visible = tea2.visible = broom.visible = trayM.visible = false;
-  const V = { visit: 0, last: -1e3 };
+  /** 端茶：送来了没有、碗递到哪了（老人伸手去接）、她说着话没有 */
+  const V = { visit: 0, last: -1e3, offer: null as THREE.Vector3 | null, talk: false };
   /** 对弈：轮到谁（0 北头的老人，1 南头的那位），各自的棋罐在桌上哪 */
   const boardY = () => footY(CHESS.x, CHESS.z) + CHESS.top;
   const onBoard = (lx: number, lz: number, out: THREE.Vector3) => { const c = Math.cos(CHESS.yaw), s = Math.sin(CHESS.yaw); return out.set(CHESS.x + lx * c + lz * s, boardY() + 0.02, CHESS.z - lx * s + lz * c); };
@@ -574,11 +683,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       GO.turn = 1 - me;
     }
   }
-  const elder = add('elder', '老人', 'elder', (c) => {
-    const [a, b] = c.season === 'winter' ? [10, 15] : [8, 17];
-    if (!(c.fair && c.snow < 0.2 && c.rain < 0.3 && c.hour >= a && c.hour < b)) return null;
-    return c.hour >= 14 ? 'go' : 'sit';
-  }, {
+  const elder = add('elder', 'elder', {
     /** 坐在石凳上：右手拄着杖，左手一碗茶；头一点一点地打盹，醒了喝一口；有人送茶来就抬头 */
     *sit(p, c) {
       const f = p.fig;
@@ -594,7 +699,13 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         yield* p.tween(0.5, (k) => { lean(); f.bow = lerp(f.bow, 0.03, k); });
         if (V.visit) {
           // 邻家送茶来了：抬头看她，点点头
-          for (let t = 0; V.visit; t += p.dt) { lean(); f.lookAt(v3.copy(neighbor.pos).setY(neighbor.pos.y + 1.4)); f.bow = 0.03 + 0.05 * Math.max(0, Math.sin(t * 2.2)); yield; }
+          // 邻家送茶来了：抬头看她；她把碗递过来就伸手去接；她说着话就一下一下地点头，接过来的茶抿一口
+          for (let t = 0; V.visit; t += p.dt) {
+            lean(); f.lookAt(v3.copy(neighbor.pos).setY(neighbor.pos.y + 1.4));
+            if (V.offer) f.reach('L', V.offer, { dir: p.dir(-0.4, 0.2, 1, v4), palm: UPV, rate: 6 }); else f.reach('L', null);
+            f.bow = 0.03 + (V.talk ? 0.06 : 0.04) * Math.max(0, Math.sin(t * 2.2));
+            yield;
+          }
           f.lookAt(null);
         }
         // 喝一口
@@ -606,13 +717,32 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       }
     },
     go: (p, c) => game(p, c, 0, CHESS.north),
+    listen: listen('elder'),
   }, [pt(door('b'))]);
-  add('elder2', '弈者', 'elder2', (c) => (c.fair && c.snow < 0.2 && c.rain < 0.3 && day(c, 14, c.season === 'winter' ? 15 : 17) ? 'go' : null), { go: (p, c) => game(p, c, 1, CHESS.south) }, [pt(door('d'))]);
+  elder.chatty = 0.5;
+  const staff2 = P.staff(1.08);
+  staff2.visible = false;
+  const elder2 = add('elder2', 'elder2', {
+    go: (p, c) => game(p, c, 1, CHESS.south),
+    /** 上午：坐在修桥处的岸上，杖靠在身边，看儿子刨板钉板；隔一阵抬手指一指，说两句 */
+    *oversee(p) {
+      const f = p.fig, son = () => kit.who('carpenter1');
+      yield* p.go(OVERSEE, 0.6);
+      yield* p.sit(0, 'lap');
+      p.hold(staff2, 'root'); staff2.position.set(-0.32, 0, 0.32); staff2.rotation.set(-0.45, 0, 0.12);
+      p.rest = () => f.reach('R', null);
+      yield* p.forever((t) => {
+        const s = son(), point = Math.max(0, Math.sin(t * 0.19)) ** 10;
+        f.lookAt(s?.here ? v1.set(s.pos.x, s.pos.y + 0.9, s.pos.z) : null);
+        if (point > 0.05 && s?.here) f.reach('R', v2.lerpVectors(p.loc(-0.2, 0.55, 0.3, v2), v3.set(s.pos.x, s.pos.y + 0.7, s.pos.z), 0.22 * point), { rate: 6 }); else f.reach('R', null);
+        f.bow = 0.08 + 0.04 * point;
+      });
+    },
+    listen: listen('elder2'),
+  }, [pt(door('d'))]);
+  elder2.chatty = 0.5;
 
-  const neighbor: Person = add('neighbor', '邻家妇人', 'neighbor', (c) => {
-    if (!c.fair || c.hour < 6.4 || c.hour >= 17.4 || (c.hour >= 11.4 && c.hour < 13.4)) return null;
-    return c.hour < 8 ? 'feed' : 'sweep';
-  }, {
+  const neighbor: Person = add('neighbor', 'neighbor', {
     /** 喂鸡：左臂托着簸箕，右手抓一把撒出去 */
     *feed(p) {
       const f = p.fig;
@@ -658,23 +788,67 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
           p.hold(tea2, 'R');
           const hold = () => { f.reach('R', p.loc(-0.06, 1.02, 0.3, v1), { dir: p.dir(0.7, 0, 0.7, v2), palm: UPV, rate: 14 }); f.reach('L', p.loc(0.07, 1.0, 0.3, v3), { dir: p.dir(-0.7, 0, 0.7, v4), palm: UPV, rate: 14 }); };
           yield* during(p.go(VISIT, 0.95), hold);
-          V.visit = 1;
+          V.visit = 1; V.offer = null; V.talk = false;
           yield* p.tween(1.2, (k) => { f.reach('R', p.loc(-0.06, lerp(1.02, 0.86, k), lerp(0.3, 0.5, k), v1), { dir: p.dir(0.7, 0, 0.7, v2), palm: UPV, rate: 10 }); f.reach('L', p.loc(0.07, lerp(1.0, 0.85, k), lerp(0.3, 0.48, k), v3), { dir: p.dir(-0.7, 0, 0.7, v4), palm: UPV, rate: 10 }); f.bow = 0.3 * k; f.lookAt(v5.copy(elder.pos).setY(elder.pos.y + 1.0)); });
+          // 递过去：碗停在两人之间，老人伸手接（他手里原有一只，接过来就算换了一碗热的）
+          V.offer = tea2.getWorldPosition(new THREE.Vector3());
           yield* p.wait(1.6);
-          tea2.visible = false; f.reach('L', null); f.reach('R', null);
-          for (let t = 0, T = rnd(6, 10); t < T; t += p.dt) { f.bow = 0.08 + 0.04 * Math.sin(t * 1.6); f.lookAt(v5.copy(elder.pos).setY(elder.pos.y + 1.0)); yield; }
+          tea2.visible = false; f.reach('L', null); f.reach('R', null); V.offer = null; V.talk = true;
+          // 站着说几句：抬手比划，看着他
+          for (let t = 0, T = rnd(8, 13); t < T; t += p.dt) {
+            const g = Math.max(0, Math.sin(t * 1.1)) * (0.6 + 0.4 * Math.sin(t * 3.1));
+            f.reach('R', p.loc(-0.2, 1.0 + 0.1 * g, 0.3 + 0.06 * g, v1), { dir: p.dir(0.2, 0.5, 0.85, v2), palm: p.dir(0, 0.8, 0.2, v3), rate: 6 });
+            f.bow = 0.08 + 0.04 * Math.sin(t * 1.6); f.lookAt(v5.copy(elder.pos).setY(elder.pos.y + 1.0));
+            if (t > 4 && t - p.dt <= 4 && R() < 0.5) c.sfx('laugh', p.pos.x, p.pos.z, 0.2);
+            yield;
+          }
+          f.reach('R', null); V.talk = false;
           f.lookAt(null); f.bow = 0; V.visit = 0;
           yield* p.go(s, 0.95);
         }
       }
     },
+    /** 午后：坐到东头披屋下的织机前织布（织机是屋舍那边摆的）：右手把梭从经面上推过去、左手接住，两手扳过筘来一打；再投回来 */
+    *weave(p, c) {
+      const f = p.fig, L = B_LOOM, co = Math.cos(L.yaw), sn = Math.sin(L.yaw);
+      /** 织机自己坐标里的一点（z 朝织的人，y 从屋基起） */
+      const W = (lx: number, ly: number, lz: number, out: THREE.Vector3) => out.set(L.loom.x + lx * co + lz * sn, L.y + ly, L.loom.z - lx * sn + lz * co);
+      yield* p.bench(L.seat, 0.9);
+      p.curious = false;
+      p.rest = () => { f.reach('R', null); f.reach('L', null); };
+      for (let n = 0; ; n++) {
+        for (const side of [1, -1]) {
+          yield* p.tween(0.75, (u) => {
+            const x = lerp(0.26 * side, -0.26 * side, u), hand = side > 0 ? (u < 0.5 ? 'R' : 'L') : (u < 0.5 ? 'L' : 'R');
+            f.reach(hand, W(x, 0.8, 0.12, v1), { dir: p.dir(0, -0.3, 1, v2), palm: DOWN, rate: 16 });
+            f.reach(hand === 'R' ? 'L' : 'R', W(hand === 'R' ? -0.3 * side : 0.3 * side, 0.8, 0.16, v3), { dir: p.dir(0, -0.3, 1, v2), palm: DOWN, rate: 10 });
+            f.bow = 0.16;
+          });
+          yield* p.tween(0.4, (u) => {
+            const z = -0.18 + 0.14 * Math.sin(u * Math.PI);
+            f.reach('R', W(-0.16, 0.95, z, v1), { dir: p.dir(0, 0.2, 1, v2), palm: DOWN, rate: 20 }); f.reach('L', W(0.16, 0.95, z, v3), { dir: p.dir(0, 0.2, 1, v2), palm: DOWN, rate: 20 });
+            f.bow = 0.12 + 0.08 * Math.sin(u * Math.PI);
+          });
+          if (side > 0) c.sfx('loom', p.pos.x, p.pos.z, 0.32);
+        }
+        if (n % 10 === 9) {
+          f.reach('R', null); f.reach('L', null);
+          yield* p.tween(1.2, (u) => { f.bow = lerp(0.12, -0.02, u); });
+          f.lookAt(elder.here ? v4.set(elder.pos.x, elder.pos.y + 1.2, elder.pos.z) : null);
+          yield* p.wait(rnd(2.5, 4.5));
+          f.lookAt(null);
+        }
+      }
+    },
+    listen: listen('neighbor'),
   }, [pt(door('b'))]);
-  tends.push(() => { if (!neighbor.here || neighbor.act !== 'feed') folk.feedAt = null; if (!neighbor.here) V.visit = 0; if (!elder.here || elder.act !== 'go') GO.on[0] = false; const e2 = folk.people.find((q) => q.id === 'elder2')!; if (!e2.here) GO.on[1] = false; });
+  neighbor.chatty = 0.75;
+  tends.push(() => { const w = kit.who('farmwife'); if (!(neighbor.here && neighbor.act === 'feed') && !(w?.here && w.act === 'feed')) folk.feedAt = null; if (!neighbor.here) { V.visit = 0; V.offer = null; V.talk = false; } if (!kit.who('carpenter2')?.here) HAND.waiting = false; if (!elder.here || elder.act !== 'go') GO.on[0] = false; const e2 = folk.people.find((q) => q.id === 'elder2')!; if (!e2.here) GO.on[1] = false; });
 
   /** 浣衣女：清早跪在溪边的石板上，一下一下地捣，再探身到水里漂 */
   const bat = P.washBat(), cloth = P.washCloth();
   bat.visible = cloth.visible = false; group.add(cloth);
-  add('washer', '浣衣女', 'washer', (c) => (c.fair && day(c, c.season === 'winter' ? 8.4 : 7, 10) ? 'wash' : null), {
+  const washer = add('washer', 'washer', {
     *wash(p, c) {
       const f = p.fig;
       yield* p.go(WASH, 0.9, WASH.way);
@@ -709,15 +883,23 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         yield* p.wait(rnd(1, 2.5));
       }
     },
+    pick: pickAct(1), sun: sunAct(2),
+    listen: listen('washer'),
   }, [pt(door('b'))]);
+  washer.chatty = 0.6;
 
   // ———————————————————————— 木匠 ————————————————————————
   const hammer = P.hammer(), plane = P.planeTool(), carried = P.plank(2.0);
+  /** 递板：徒弟扛着板到了桥上、师傅正跪在那里钉，就等师傅起身来接（waiting）；接过去了 taken */
+  const HAND = { waiting: false, taken: false };
   hammer.visible = plane.visible = carried.visible = false;
   group.add(plane);
-  const wright = (c: Ctx): string | null => (!c.fair || c.hour < 7.5 || c.hour >= 17.4 ? null : c.hour >= 11.7 && c.hour < 13 ? 'lunch' : 'work');
   const SH = SAWHORSE.at;
-  add('carpenter1', '木匠', 'carpenter1', wright, {
+  const plane2 = P.planeTool(), board = P.plank(1.6);
+  plane2.visible = board.visible = false;
+  /** 雨天：木工凳上架一块料（顺着凳），师傅站在凳南头往北推刨，徒弟在北头侧着身扶着 */
+  const benchBoard = (p: Person) => { const B = D_FRONT.bench; p.hold(board, 'world'); board.position.set(B.x, D_FRONT.benchTop + 0.02, B.z); board.rotation.set(0, B.yaw, 0); };
+  const carpenter1 = add('carpenter1', 'carpenter1', {
     /** 刨板：站在木马上那块板的一头，两手按着刨往前推；刨一阵，上桥去跪着钉几锤 */
     *work(p, c) {
       const f = p.fig;
@@ -755,6 +937,18 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
             yield* p.wait(0.1);
           }
           yield* during(p.wait(rnd(0.8, 1.8)), up);
+          // 徒弟扛着板等在跟前：站起来转过身，两手托住板接过来，弯腰放在桥面上
+          const ap = kit.who('carpenter2');
+          if (HAND.waiting && ap?.here) {
+            f.reach('L', null); hammer.visible = false; p.pose('stand'); p.seated = false;
+            yield* p.face(Math.atan2(ap.pos.x - p.pos.x, ap.pos.z - p.pos.z));
+            yield* p.tween(1.1, () => { carried.getWorldPosition(v4); const ax = Math.sin(ap.yaw) * 0.5, az = Math.cos(ap.yaw) * 0.5; f.reach('R', v1.set(v4.x - ax, v4.y - 0.02, v4.z - az), { dir: p.dir(-0.3, 0.3, 0.9, v2), palm: UPV, rate: 8 }); f.reach('L', v3.set(v4.x + ax * 0.2, v4.y - 0.02, v4.z + az * 0.2), { dir: p.dir(0.3, 0.3, 0.9, v2), palm: UPV, rate: 8 }); });
+            HAND.taken = true; HAND.waiting = false; carried.visible = false;
+            yield* p.tween(1.1, (u) => { f.bow = 0.6 * Math.sin(u * Math.PI); });
+            f.reach('L', null); f.reach('R', null);
+            yield* p.face(NAIL.yaw);
+            p.pose('crouch'); p.seated = true; p.hold(hammer, 'R');
+          }
         }
         f.reach('L', null); f.reach('R', null); hammer.visible = false; p.rest = null;
         p.pose('stand'); p.seated = false;
@@ -762,8 +956,29 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       }
     },
     *lunch(p) { yield* p.go(WRIGHT_REST[0], 1.0); yield* p.sit(0, 'lap'); yield* p.forever(() => undefined); },
+    *shed(p, c) {
+      const f = p.fig, gy = D_FRONT.benchTop + 0.05;
+      yield* p.go(D_FRONT.plane, 0.9);
+      benchBoard(p); p.pose('stand'); p.hold(plane2, 'world');
+      const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+      const push = (u: number) => {
+        const d = 0.45 + 0.75 * u, x = p.pos.x + fx * d, z = p.pos.z + fz * d;
+        plane2.position.set(x, gy, z); plane2.rotation.set(0, p.yaw, 0);
+        f.reach('R', v1.set(x - fz * 0.075, gy + 0.075, z + fx * 0.075), { dir: p.dir(0.2, -0.2, 1, v2), palm: DOWN, rate: 18 });
+        f.reach('L', v3.set(x + fz * 0.075 + fx * 0.06, gy + 0.075, z - fx * 0.075 + fz * 0.06), { dir: p.dir(-0.2, -0.2, 1, v4), palm: DOWN, rate: 18 });
+        f.bow = 0.3 + 0.32 * u;
+      };
+      p.rest = () => push(0);
+      for (;;) {
+        for (let n = 0, M = 6 + Math.floor(R() * 4); n < M; n++) { c.sfx('plane', p.pos.x, p.pos.z, 0.45); yield* p.tween(0.9, (u) => push(u)); yield* p.tween(0.6, (u) => push(1 - u)); }
+        f.reach('L', null); f.reach('R', null); f.bow = 0;
+        yield* p.wait(rnd(2, 4));
+      }
+    },
+    listen: listen('carpenter1'),
   }, [pt(door('d'))]);
-  add('carpenter2', '木匠', 'carpenter2', wright, {
+  carpenter1.chatty = 0.3;
+  const carpenter2 = add('carpenter2', 'carpenter2', {
     /** 扛板：到板垛弯腰扛起一块，送到桥上放下 */
     *work(p) {
       const f = p.fig;
@@ -776,9 +991,19 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         p.rest = steady;
         yield* p.tween(1.3, (k) => { f.bow = 0.8 * (1 - k); steady(); });
         yield* during(p.go(CARRY_TO, 0.92, [pt(BRIDGE_END)]), steady);
-        yield* p.tween(1.1, (k) => { f.bow = 0.75 * k; steady(); });
-        carried.visible = false; f.reach('R', null); p.rest = null;
-        yield* p.tween(1.1, (k) => { f.bow = 0.75 * (1 - k); });
+        // 师傅正跪在跟前钉板：站着等他起身来接（等不来就自己放下）
+        const mst = kit.who('carpenter1');
+        HAND.taken = false;
+        if (mst?.here && mst.act === 'work' && mst.seated && Math.hypot(mst.pos.x - p.pos.x, mst.pos.z - p.pos.z) < 3.5) {
+          HAND.waiting = true;
+          for (let t = 0; t < 14 && HAND.waiting; t += p.dt) { steady(); f.lookAt(v4.set(mst.pos.x, mst.pos.y + 0.7, mst.pos.z)); yield; }
+          HAND.waiting = false; f.lookAt(null);
+        }
+        if (!HAND.taken) {
+          yield* p.tween(1.1, (k) => { f.bow = 0.75 * k; steady(); });
+          carried.visible = false; f.reach('R', null); p.rest = null;
+          yield* p.tween(1.1, (k) => { f.bow = 0.75 * (1 - k); });
+        } else { f.reach('R', null); p.rest = null; yield* p.wait(0.8); }
         // 直直腰，捶两下背
         yield* p.tween(1.6, (k) => f.reach('R', p.loc(-0.12, 0.98 + 0.03 * Math.sin(k * 12), -0.12, v1), { dir: DOWN, rate: 10 }));
         f.reach('R', null);
@@ -786,13 +1011,32 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       }
     },
     *lunch(p) { yield* p.go(WRIGHT_REST[1], 1.0); yield* p.sit(); yield* p.forever(() => undefined); },
+    *shed(p) {
+      const f = p.fig, B = D_FRONT.bench, gy = D_FRONT.benchTop + 0.04;
+      yield* p.go(D_FRONT.hold, 0.9);
+      p.pose('stand');
+      p.rest = () => { f.reach('R', null); f.reach('L', null); };
+      const m = kit.who('carpenter1');
+      yield* p.forever((t) => {
+        const ex = B.x - Math.sin(B.yaw) * 0.72, ez = B.z - Math.cos(B.yaw) * 0.72;
+        f.reach('L', v1.set(ex + Math.cos(B.yaw) * 0.08, gy, ez - Math.sin(B.yaw) * 0.08), { dir: DOWN, palm: DOWN, rate: 10 });
+        f.reach('R', v3.set(ex - Math.cos(B.yaw) * 0.08, gy, ez + Math.sin(B.yaw) * 0.08), { dir: DOWN, palm: DOWN, rate: 10 });
+        f.bow = 0.3; f.lookAt(m?.here && Math.sin(t * 0.3) > 0.5 ? v4.set(m.pos.x, m.pos.y + 1.3, m.pos.z) : v4.set(ex, gy, ez));
+      });
+    },
+    listen: listen('carpenter2'),
   }, [pt(door('d'))]);
+  carpenter2.chatty = 0.2;
 
   /** 舂米人：扛着谷袋往来于晒场与水碓之间；到了碓屋里蹲着照看一阵 */
   const sackM = P.sack();
   sackM.visible = false;
   const yardAt = { x: SITE.more.dryYard.x + 2.9, z: SITE.more.dryYard.z + 3.2, yaw: -2.3 };
-  add('miller', '舂米人', 'miller', (c) => (c.fair && (day(c, 8.2, 11.4) || day(c, 13.4, 16.8)) ? 'mill' : null), {
+  const millerLoad = P.waterLoad();
+  millerLoad.visible = false;
+  const miller = add('miller', 'miller', {
+    water: waterAct(kit, WELL, millerLoad, E_FRONT.vat, true),
+    listen: listen('miller'),
     *mill(p) {
       const f = p.fig;
       const shoulder = () => { p.hold(sackM, 'chest'); sackM.position.set(-0.16, 0.24, 0.02); sackM.rotation.set(0.12, 0, 0); };
@@ -828,6 +1072,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       yield* p.wait(rnd(8, 16));
     },
   }, [pt(door('e'))]);
+  miller.chatty = 0.5;
 
   // ———————————————————————— 渡口：渔父与樵夫 ————————————————————————
   const rod = P.fishingRod(), line = P.lineMesh(0.003), bob = P.floatBob(), wood = P.firewood();
@@ -835,7 +1080,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   group.add(line, bob);
   const Q = { chat: 0 };
   const WOODCUTTER = woodcutterSpot(), woodAt = { x: WOODCUTTER.x - Math.cos(WOODCUTTER.yaw) * 0.95, z: WOODCUTTER.z + Math.sin(WOODCUTTER.yaw) * 0.95 };
-  const fisher = add('fisher', '渔父', 'fisher', (c) => { const [sr, ss] = SUN[c.season]; return c.hour >= sr - 0.2 && c.hour < ss + 0.45 ? (day(c, 11.5, 13) && c.fair ? 'net' : 'fish') : null; }, {
+  const fisher = add('fisher', 'fisher', {
     /** 垂钓：坐在船尾的横板上，竿搁在膝上伸出去；浮子一沉就提竿，再甩回去 */
     *fish(p, c) {
       const f = p.fig, S = FERRY.seat;
@@ -877,7 +1122,13 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       });
     },
   }, [pt(FERRY.cabin)]);
-  const woodcutter: Person = add('woodcutter', '樵夫', 'woodcutter', (c) => (c.fair && day(c, 14, Math.min(17, SUN[c.season][1] - 0.3)) ? 'rest' : null), {
+  fisher.chatty = 0.4;
+  /** 渔火：天黑了渔父钻进篷里，船头挑起一盏灯（到二更天吹灭） */
+  const fishLamp = P.lantern();
+  fishLamp.visible = false; group.add(fishLamp);
+  fishLamp.position.set(FERRY.cabin.x + Math.sin(FERRY.boat.yaw) * 0.95, FERRY.floorY + 1.18, FERRY.cabin.z + Math.cos(FERRY.boat.yaw) * 0.95); fishLamp.rotation.set(Math.PI, 0, 0);
+  tends.push((c) => { const ss = SUN[c.season][1]; fishLamp.visible = !fisher.present && c.hour >= ss + 0.3 && c.hour < 22; if (fishLamp.visible) fishLamp.rotation.z = 0.05 * Math.sin(c.t * 0.8); });
+  const woodcutter: Person = add('woodcutter', 'woodcutter', {
     /** 挑着柴来，放下担子，在船边的岸上坐下，隔着水与渔父说话 */
     *rest(p) {
       const f = p.fig;
@@ -912,7 +1163,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   // ———————————————————————— 牧童与水牛 ————————————————————————
   const fluteM = P.flute();
   fluteM.visible = false;
-  const herdboy = add('herdboy', '牧童', 'herdboy', (c) => (c.fair && c.season !== 'winter' && day(c, 13.5, SUN[c.season][1] - 0.2) ? 'herd' : null), {
+  const herdboy = add('herdboy', 'herdboy', {
     /** 横坐在牛背上，由着牛在草地上来回走、停下吃草、踩进浅水里；隔一阵把短笛凑到嘴边吹一段 */
     *herd(p, c) {
       const f = p.fig, s = p.scale, a = HERD[0], b = HERD[1];
@@ -972,7 +1223,14 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   pot.visible = ragM.visible = wineBowl.visible = false;
   const tableY = () => footY(WINE.table.x, WINE.table.z) + WINE.top;
   const onTable = (lx: number, lz: number, out: THREE.Vector3) => { const c = Math.cos(WINE.table.yaw), s = Math.sin(WINE.table.yaw); return out.set(WINE.table.x + lx * c + lz * s, tableY() + 0.03, WINE.table.z - lx * s + lz * c); };
-  const keeper = add('keeper', '酒家掌柜', 'keeper', (c) => (c.fair && day(c, 9.5, SUN[c.season][1] + 1.3) ? 'serve' : null), {
+  const idleStool = P.stool();
+  idleStool.visible = false;
+  const keeper = add('keeper', 'keeper', {
+    /** 雨天没有客：袖着手坐在门边檐下看雨 */
+    *idle(p) {
+      yield* sitStool(p, E_FRONT.idle, idleStool, 0.9, 'sleeve');
+      yield* p.forever((t) => { p.fig.lookAt(p.loc(1.6 * Math.sin(t * 0.17), 1.3, 3, v1)); p.fig.bow = 0.04 + 0.02 * Math.sin(t * 0.5); });
+    },
     /** 抹桌；有客就提壶筛酒；闲了袖着手站在桌边 */
     *serve(p, c) {
       const f = p.fig;
@@ -1000,7 +1258,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       }
     },
   }, [pt(WINE.door)]);
-  const drinker: Person = add('drinker', '酒客', 'drinker', (c) => (c.fair && day(c, 16.4, SUN[c.season][1] + 1.1) ? 'drink' : null), {
+  const drinker: Person = add('drinker', 'drinker', {
     /** 坐在凳上，端起碗抿一口，放下，看着路 */
     *drink(p, c) {
       const f = p.fig;
@@ -1028,7 +1286,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   const load = P.peddlerLoad(), drum = P.rattle();
   load.visible = drum.visible = false;
   let rounds = 0;
-  const peddler = add('peddler', '货郎', 'peddler', (c) => (c.fair && day(c, 14.4, 16.6) ? 'round' : null), {
+  const peddler = add('peddler', 'peddler', {
     /** 挑着担、摇着拨浪鼓自东头沿村路走来，在茶亭的凳上歇脚（孩子们围过来），歇够了挑起担子往西去；过一阵再来 */
     *round(p, c) {
       const f = p.fig;
@@ -1094,7 +1352,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   // ———————————————————————— 客 ————————————————————————
   const guestCup = P.bowl(0.045);
   guestCup.visible = false;
-  add('guest', '客', 'guest', (c) => (c.fair && c.snow < 0.1 && c.rain < 0.2 && day(c, 15, 17) ? 'visit' : null), {
+  add('guest', 'guest', {
     /** 一位读书的朋友来访：坐在院里石桌东北角的石凳上，手边一盏茶，说着话 */
     *visit(p, c) {
       const f = p.fig, T = SITE.table, ty = footY(T.x, T.z) + 0.72;
@@ -1121,6 +1379,9 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       }
     },
   }, [WEST]);
+
+  // ———————————————————————— 后添的几位（villagers.ts） ————————————————————————
+  addVillagers(kit);
 
   folk.tend = (c) => { for (const t of tends) t(c); };
   return folk;

@@ -1,10 +1,12 @@
-/* 走动时的界面，都贴着画的四角：左上是处名（浮出来又退下去），右上是时辰的卦与一卷简册；
-   画面里是近处那几件事的小签；触屏左下是摇杆、右下是做事的印。画的当中什么也不放。 */
+/* 走动时的界面，都贴着画的四角：左上是处名（浮出来又退下去），右上是日子、时辰的卦与简册；
+   画面里是近处那几件事的小签；触屏左下是摇杆与「疾」、右下是做事的印。画的当中什么也不放。 */
 .hud { position: absolute; inset: 0; pointer-events: none; animation: fade 1.6s var(--out) backwards; }
 .hud > * { pointer-events: auto; }
-.hud.is-act .place, .hud.is-act .corner, .hud.is-act .dock, .hud.is-act .stick, .hud.is-act .act-key { opacity: 0; pointer-events: none; }
-.hud.is-act.is-free .stick { opacity: 1; pointer-events: auto; }
-.hud.is-busy .stick, .hud.has-sheet .stick, .hud.is-busy .act-key, .hud.has-sheet .act-key, .hud.is-busy .dock, .hud.has-sheet .dock { opacity: 0; pointer-events: none; }
+.hud.is-act .place, .hud.is-act .corner, .hud.is-act .dock, .hud.is-act .stick, .hud.is-act .run-key, .hud.is-act .act-key { opacity: 0; pointer-events: none; }
+.hud.is-act.is-free .stick, .hud.is-act.is-free .run-key { opacity: 1; pointer-events: auto; }
+.hud.is-busy .stick, .hud.has-sheet .stick, .hud.is-busy .run-key, .hud.has-sheet .run-key, .hud.is-busy .act-key, .hud.has-sheet .act-key, .hud.is-busy .dock, .hud.has-sheet .dock { opacity: 0; pointer-events: none; }
+/* 册页开着：右上那一条也收起（电脑上册页正压在它上面；手机上册页有自己的「收」） */
+.hud.has-sheet .corner { opacity: 0; pointer-events: none; }
 .hud.is-act .markers, .hud.has-sheet .markers, .hud.is-busy .markers, .hud.is-act .prompt, .hud.has-sheet .prompt, .hud.is-busy .prompt { opacity: 0; visibility: hidden; }
 
 /* —— 处名：竖写在左上角，像画上的一行题字 —— */
@@ -12,87 +14,173 @@
 .place.is-on { opacity: 1; transform: none; }
 /* 字是直接写在画上的：身后垫一团没有边的纸色（像画上的一片云气），画上深的地方也读得出 */
 .place, .act-head { isolation: isolate; }
-.place::before, .act-head::before { content: ''; position: absolute; inset: -16px -20px -22px; background: var(--wash); filter: blur(12px); border-radius: 44%; opacity: 0.88; z-index: -1; }
-.place h2 { position: relative; writing-mode: vertical-rl; font-family: var(--brush); font-size: clamp(24px, 3.3vh, 31px); line-height: 1.1; letter-spacing: 0.2em; padding-top: 15px; }
+.place::before, .act-head::before { content: ''; position: absolute; inset: -16px -20px -22px; background: var(--wash); filter: blur(12px); border-radius: 44%; opacity: 0.9; z-index: -1; }
+.place h2 { position: relative; writing-mode: vertical-rl; font-family: var(--brush); font-size: clamp(24px, 3.3vh, 31px); line-height: 1.1; letter-spacing: 0.2em; padding-top: 15px; color: var(--title); }
 .place h2.is-kai { font-family: var(--kai); font-size: clamp(21px, 2.9vh, 27px); }
-/* 名字上头一点朱砂 */
-.place h2::before { content: ''; position: absolute; left: 50%; top: 0; width: 5px; height: 5px; margin-left: -2.5px; background: var(--zhu); border-radius: 1px; }
+/* 名字上头一点朱砂（夜里是金） */
+.place h2::before { content: ''; position: absolute; left: 50%; top: 0; width: 5px; height: 5px; margin-left: -2.5px; background: var(--mark); border-radius: 1px; }
 .place p { writing-mode: vertical-rl; font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.34em; color: var(--ink); padding-top: 17px; max-height: 46vh; }
 
-/* —— 右上：此刻的时辰与它的卦；一卷简册 —— */
-.corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px)); display: grid; justify-items: end; gap: 8px; transition: opacity 0.7s; }
-.corner-bar { display: flex; height: 42px; border-radius: 2px; }
-.when { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 15px; transition: color 0.3s; color: var(--ink); }
-.when span { font-family: var(--kai); font-size: 14.5px; letter-spacing: 0.16em; white-space: nowrap; }
-.when span i { margin: 0 0.22em; color: var(--ink-3); }
+/* —— 右上：第几日、此刻的时辰与它的卦；简册 —— */
+.corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px)); display: grid; justify-items: end; gap: 10px; transition: opacity 0.7s; }
+.corner-bar { display: flex; height: 46px; border-radius: 2px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); }
+.when { display: flex; align-items: center; gap: 10px; padding: 0 13px 0 14px; color: var(--ink); border-radius: 3px 0 0 3px; transition: color 0.25s, background-color 0.25s; }
+.when-day { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.12em; color: var(--ink-2); white-space: nowrap; padding-right: 10px; border-right: 1px solid var(--rule-2); line-height: 18px; }
+.when span { font-family: var(--kai); font-size: 15px; letter-spacing: 0.16em; white-space: nowrap; }
+.when span i { margin: 0 0.22em; color: var(--ink-2); }
 .when .gua { width: 19px; }
-.menu-key { width: 44px; border-left: 1px solid var(--rule-2); font-family: var(--kai); font-size: 16px; color: var(--ink); transition: background-color 0.3s, color 0.3s; }
-.menu-key.is-on { background: var(--ink); color: var(--paper); }
+.menu-key { position: relative; isolation: isolate; width: 46px; border-left: 1px solid var(--rule-2); font-family: var(--brush); font-size: 19px; color: var(--ink); border-radius: 0 2px 2px 0; transition: background-color 0.25s, color 0.25s; }
+/* 「册」字底下一圈淡淡的墨环：这是翻册子的地方 */
+.menu-key::before { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; z-index: -1; background: var(--ink-3); opacity: 0.55; -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: transform 0.5s var(--out), opacity 0.3s, background-color 0.3s; pointer-events: none; }
+/* 展开着：墨环浓了、转过一点 */
+.menu-key.is-on { background: var(--wash-ink); }
+.menu-key.is-on::before { opacity: 1; background: var(--ink); transform: rotate(-25deg); }
 @media (hover: hover) {
-  .when:hover, .menu-key:hover { background: var(--glass-2); }
-  .menu-key.is-on:hover { background: var(--ink); }
+  .when:hover, .menu-key:hover { color: var(--ink-max); background: var(--wash-ink); }
+  .menu-key:hover::before { opacity: 0.9; transform: rotate(-14deg) scale(1.04); }
 }
-.when:active, .menu-key:active { opacity: 0.7; }
+.when:active, .menu-key:active { background: var(--wash-ink); }
 
-/* 简册：六枚竹简并排，自右而左；两道细线是编绳 */
+/* 简册：竹简并排，自右而左；两道细线是编绳。两卷：屏窄放不下时第二卷落到下一行 */
 .menu-back { position: fixed; inset: 0; }
-.menu { position: relative; display: flex; flex-direction: row-reverse; border-radius: 2px; background: var(--glass-2); animation: rise 0.5s var(--out) backwards; }
-.menu::before, .menu::after { content: ''; position: absolute; left: 0; right: 0; height: 1px; background: var(--rule-2); pointer-events: none; }
-.menu::before { top: 13px; }
-.menu::after { bottom: 13px; }
-.slip { position: relative; width: 46px; padding: 26px 0 26px; display: grid; justify-items: center; align-content: start; min-height: 132px; color: var(--ink-2); transition: color 0.3s, background-color 0.3s, transform 0.3s var(--out); }
+.menu { position: relative; display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 8px; justify-content: flex-start; max-width: calc(100vw - var(--sal) - var(--sar) - 28px); animation: rise 0.45s var(--out) backwards; }
+.roll { position: relative; display: flex; flex-direction: row-reverse; border-radius: 2px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); }
+/* 编绳：两道墨线（比竹简的缝深一些） */
+.roll::before, .roll::after { content: ''; position: absolute; left: -3px; right: -3px; height: 1.5px; background: var(--ink-3); opacity: 0.55; border-radius: 1px; pointer-events: none; }
+.roll::before { top: 13px; }
+.roll::after { bottom: 13px; }
+/* 一枚竹简：两边略暗（竹片是圆的） */
+.slip { position: relative; width: 46px; padding: 26px 0 26px; display: grid; justify-items: center; align-content: start; min-height: 136px; color: var(--ink-2); background: linear-gradient(90deg, var(--wash-ink), transparent 22%, transparent 78%, var(--wash-ink)); transition: color 0.25s, background-color 0.25s, transform 0.3s var(--out), box-shadow 0.3s var(--out); }
 .slip + .slip { border-right: 1px solid var(--rule-2); }
-.slip span { writing-mode: vertical-rl; font-family: var(--kai); font-size: 15.5px; letter-spacing: 0.3em; }
-@media (hover: hover) { .slip:hover { color: var(--ink); background: var(--rule-2); } }
-.slip:active { transform: translateY(1px); }
+.slip span { writing-mode: vertical-rl; font-family: var(--kai); font-size: 16px; letter-spacing: 0.3em; }
+/* 悬停：这一枚竹简往上抽出一点，字更深 */
+@media (hover: hover) { .slip:hover { color: var(--ink-max); transform: translateY(-4px); background: var(--tex) 0 0 / var(--tex-size), linear-gradient(90deg, var(--wash-ink), transparent 25%, transparent 75%, var(--wash-ink)), var(--glass-2); box-shadow: 0 8px 16px -6px var(--shade-2); } }
+.slip:active { transform: translateY(1px); background: var(--wash-ink); box-shadow: none; }
 
 /* —— 画面里的小签（不做磨砂：每一片磨砂都要把画读回来一遍，手机上费；底色已经够实） —— */
 .markers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; transition: opacity 0.5s; }
 .mk { position: absolute; left: 0; top: 0; display: grid; justify-items: center; opacity: 0; pointer-events: none; transition: opacity 0.5s; will-change: transform, opacity; padding: 6px 8px 0; }
-.mk-tag { display: flex; align-items: center; gap: 0; height: 24px; padding: 0 8px; border-radius: 2px; background: var(--glass-2); font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.22em; text-indent: 0.22em; white-space: nowrap; color: var(--ink); transition: height 0.3s var(--out), padding 0.3s var(--out); }
-.mk-tag i { width: 0; height: 5px; background: var(--zhu); border-radius: 1px; transition: width 0.3s var(--out), margin 0.3s var(--out); }
-.mk-tag em { display: none; font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.08em; text-indent: 0; color: var(--ink); margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--rule); line-height: 13px; }
-.mk-stem { display: block; width: 1px; height: 12px; background: var(--ink-3); }
-.mk.is-near .mk-tag, .prompt .mk-tag { height: 30px; padding: 0 11px; font-size: 14px; }
-.mk.is-near .mk-tag i, .prompt .mk-tag i { width: 5px; margin-right: 8px; }
-.mk.is-near .mk-tag em, .prompt .mk-tag em { display: inline; }
-.mk.is-near .mk-stem { background: var(--zhu); }
-@media (hover: hover) { .mk:hover .mk-tag { background: var(--ink); color: var(--paper); } .mk:hover .mk-tag em { color: inherit; border-color: currentColor; } }
+/* 手指点的地方比看得见的签大一圈 */
+.mk::after { content: ''; position: absolute; inset: -6px -4px -2px; }
+.mk-tag { display: flex; align-items: center; gap: 0; height: 26px; padding: 0 12px; border-radius: 50%; background: radial-gradient(closest-side, var(--wash) 30%, color-mix(in srgb, var(--wash) 72%, transparent) 62%, transparent); font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.22em; text-indent: 0.22em; white-space: nowrap; color: var(--ink); text-shadow: 0 0 3px var(--wash), 0 0 8px var(--wash); transition: height 0.3s var(--out), padding 0.3s var(--out), transform 0.3s var(--out), color 0.25s, font-size 0.3s var(--out); }
+.mk-tag i { display: none; }
+/* 怎么做（按 E / 轻点）：一方小朱印，只在走近了的那一件上出 */
+.mk-tag em { display: none; margin-left: 9px; padding: 3px 4px 2px; font-family: var(--serif); font-size: 11px; line-height: 1.15; letter-spacing: 0.06em; text-indent: 0; text-shadow: none; color: var(--zhu-ink); background: var(--zhu); -webkit-mask: var(--m-seal) 0 0 / 100% 100% no-repeat; mask: var(--m-seal) 0 0 / 100% 100% no-repeat; }
+/* 签下一笔墨线（上淡下浓），尽头一点墨：那样东西就在这一点上 */
+.mk-stem { position: relative; display: block; width: 1.5px; height: 13px; border-radius: 1px; background: linear-gradient(transparent, var(--ink-3)); }
+.mk-stem::after { content: ''; position: absolute; left: 50%; bottom: -3px; width: 7px; height: 7px; margin-left: -3.5px; background: var(--ink-2); -webkit-mask: var(--m-dot) center / contain no-repeat; mask: var(--m-dot) center / contain no-repeat; }
+.mk.is-near .mk-tag, .prompt .mk-tag { height: 34px; padding: 0 16px; font-size: 15.5px; color: var(--ink-max); }
+.mk.is-near .mk-tag em, .prompt .mk-tag em { display: inline-block; }
+.mk.is-near .mk-stem { height: 15px; background: linear-gradient(transparent, var(--mark)); }
+.mk.is-near .mk-stem::after { background: var(--mark); }
+/* 走近了的那一点上一圈墨环（朱砂；夜里是金），慢慢转、慢慢呼吸：就是这一件 */
+.mk.is-near .mk-stem::before { content: ''; position: absolute; left: 50%; bottom: -12.5px; width: 26px; height: 26px; margin-left: -13px; background: var(--mark); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; animation: ink-breathe 2.8s ease-in-out infinite, ink-ring-in 0.6s var(--out) backwards; pointer-events: none; }
+/* 悬停：纸色那一团更实、字更深，签往上浮一点 */
+@media (hover: hover) { .mk:hover .mk-tag { transform: translateY(-2px); color: var(--ink-max); background: radial-gradient(closest-side, var(--wash) 45%, color-mix(in srgb, var(--wash) 80%, transparent) 70%, transparent); } }
+.mk:active .mk-tag { transform: translateY(1px) scale(0.97); }
 /* 走近了的那件事不在画面里时，下面另出一枚 */
 .prompt { position: absolute; left: 50%; bottom: calc(var(--sab) + clamp(22px, 5vh, 52px)); transform: translate(-50%, 6px); opacity: 0; pointer-events: none; transition: opacity 0.5s, transform 0.5s var(--out); }
 .prompt.is-on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .hud.is-touch .prompt { display: none; }
 
-/* —— 下面：头一回的走法 —— */
+/* —— 下面：头一回的走法、「Shift 跑」 —— */
 .dock { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(64px, 12vh, 112px)); display: grid; justify-items: center; padding: 0 16px; transition: opacity 0.6s; pointer-events: none; }
-.walk-hint { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px; max-width: min(620px, 100%); padding: 10px 18px; border-radius: 2px; background: var(--glass-2); font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.14em; color: var(--ink-2); transition: opacity 1.4s; animation: rise 1.8s 1.6s var(--out) backwards; }
+.walk-hint { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px; max-width: min(620px, 100%); padding: 13px 30px; border: 0; border-radius: 50%; background: radial-gradient(closest-side, var(--wash) 55%, color-mix(in srgb, var(--wash) 70%, transparent) 78%, transparent); backdrop-filter: none; -webkit-backdrop-filter: none; font-family: var(--kai); font-size: 14px; letter-spacing: 0.14em; color: var(--ink-2); box-shadow: none; transition: opacity 1.4s; animation: rise 1.8s 1.6s var(--out) backwards; }
 .walk-hint.is-gone { opacity: 0; }
 .walk-hint span { white-space: nowrap; display: inline-flex; align-items: center; }
 .walk-hint b { font-weight: 400; color: var(--ink); margin-right: 0.5em; }
-.walk-hint kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-right: 3px; font: 500 11px/1 system-ui, sans-serif; letter-spacing: 0; color: var(--ink); border: 1px solid var(--rule); border-radius: 3px; }
+/* 键帽：一枚小小的凸键 */
+.walk-hint kbd, .act-keys kbd, .hold-kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; margin-right: 4px; font-family: var(--serif); letter-spacing: 0; color: var(--ink); background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); border: 1px solid var(--ink-3); border-radius: 2px; box-shadow: none; }
 .walk-hint kbd:last-of-type { margin-right: 0.7em; }
+.walk-hint kbd.is-wide { min-width: 44px; }
+.run-hint { animation-delay: 0s; }
 
-/* —— 触屏：摇杆与做事的印 —— */
-.stick { position: absolute; left: calc(var(--sal) + clamp(18px, 5vw, 44px)); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px)); width: clamp(104px, 27vw, 128px); aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--ink-3); background: var(--glass); opacity: 0.66; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity 0.5s; }
-.stick b { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); background: var(--ink); opacity: 0.5; pointer-events: none; transition: opacity 0.3s; }
-.stick.is-on { opacity: 0.95; }
-.stick.is-on b { opacity: 0.82; }
-/* 一方朱文印：印文是那件事的名字 */
-.act-key { position: absolute; right: calc(var(--sar) + clamp(20px, 5.4vw, 46px)); bottom: calc(var(--sab) + clamp(34px, 8vh, 70px)); min-width: 62px; min-height: 62px; padding: 9px 9px; display: grid; place-items: center; border: 1.5px solid var(--zhu); border-radius: 4px 3px 4px 3px; background: var(--glass-2); color: var(--zhu); animation: rise 0.5s var(--out) backwards; transition: transform 0.25s var(--out), opacity 0.5s; }
+/* —— 触屏：摇杆、「疾」与做事的印 —— */
+/* 摇杆：一圈下凹的底座，里面一枚凸起的钮 */
+.stick { position: absolute; left: calc(var(--sal) + clamp(18px, 5vw, 44px)); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px)); width: clamp(108px, 28vw, 132px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, var(--wash) 52%, color-mix(in srgb, var(--wash) 55%, transparent) 80%, transparent); border: 0; box-shadow: none; opacity: 0.85; touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity 0.5s; }
+/* 一圈笔画不匀的墨环（底座） */
+.stick::before { content: ''; position: absolute; inset: 4px; background: var(--ink-3); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: background-color 0.3s, transform 0.6s var(--out); pointer-events: none; }
+/* 钮：一滴墨，周围晕一圈淡墨 */
+.stick b { position: absolute; left: 50%; top: 50%; width: 40%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(closest-side, var(--ink-2) 52%, color-mix(in srgb, var(--ink) 22%, transparent) 72%, transparent); border: 0; box-shadow: none; pointer-events: none; transition: background-color 0.25s; }
+.stick.is-on { opacity: 1; }
+.stick.is-on::before { background: var(--ink-2); transform: rotate(-20deg); }
+.stick.is-on b { background: radial-gradient(closest-side, var(--ink) 55%, color-mix(in srgb, var(--ink) 28%, transparent) 75%, transparent); }
+/* 「疾」：摇杆右上方一枚小圆键；跑着时是墨（夜里是金） */
+.run-key { position: absolute; isolation: isolate; left: calc(var(--sal) + clamp(18px, 5vw, 44px) + clamp(108px, 28vw, 132px) + 12px); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px) + clamp(108px, 28vw, 132px) * 0.62); width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-family: var(--brush); font-size: 21px; color: var(--ink); background: radial-gradient(closest-side, var(--wash) 62%, transparent); border: 0; box-shadow: none; opacity: 0.92; transition: opacity 0.5s, transform 0.25s var(--out), color 0.25s; }
+.run-key::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--ink-2); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: transform 0.5s var(--out), background-color 0.25s; pointer-events: none; }
+/* 在跑：墨团填满（夜里是金），字留白 */
+.run-key::after { content: ''; position: absolute; inset: 5px; z-index: -1; border-radius: 50%; background: linear-gradient(var(--main-top), var(--main-bot)); -webkit-mask: var(--m-dot) center / 100% 100% no-repeat; mask: var(--m-dot) center / 100% 100% no-repeat; transform: scale(0.2); opacity: 0; transition: transform 0.4s var(--out), opacity 0.3s; pointer-events: none; }
+.run-key.is-on { color: var(--main-ink); opacity: 1; }
+.run-key.is-on::before { transform: rotate(-30deg); background: var(--ink); }
+.run-key.is-on::after { transform: none; opacity: 1; }
+.run-key:active { transform: scale(0.95); }
+/* 一方印：印文是那件事的名字（昼是朱砂，夜是金） */
+/* 一方朱印（夜里是金）：印文是那件事的名字；盖下来的那一下（落印）。印本身不动（好按），身后一圈印泥色的晕一息一息地散开，招人去按 */
+.act-key { position: absolute; isolation: isolate; right: calc(var(--sar) + clamp(20px, 5.4vw, 46px)); bottom: calc(var(--sab) + clamp(34px, 8vh, 70px)); min-width: 64px; min-height: 64px; padding: 12px 11px; display: grid; place-items: center; border: 0; border-radius: 2px; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; color: var(--zhu-ink); box-shadow: none; animation: seal-down 0.55s var(--out) backwards; transition: transform 0.2s var(--out), opacity 0.5s, filter 0.2s; }
+.act-key::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--mark); -webkit-mask: var(--m-seal) 0 0 / 100% 100% no-repeat; mask: var(--m-seal) 0 0 / 100% 100% no-repeat; pointer-events: none; }
+.act-key::after { content: ''; position: absolute; inset: -10px; z-index: -2; border-radius: 30%; background: radial-gradient(closest-side, color-mix(in srgb, var(--mark) 34%, transparent), transparent); opacity: 0; animation: seal-halo 3.2s 0.8s ease-out infinite; pointer-events: none; }
+:root[data-tone='night'] .act-key { color: #17181a; }
 .act-key span { writing-mode: vertical-rl; font-family: var(--kai); font-size: 17px; line-height: 1.16; letter-spacing: 0.12em; max-height: 4.9em; }
-.act-key:active { transform: translateY(2px) scale(0.96); }
+.act-key:active { transform: scale(0.94); filter: brightness(0.92); }
+@keyframes seal-down { from { transform: scale(1.35) rotate(-6deg); opacity: 0; } 70% { transform: scale(0.97); opacity: 1; } }
+@keyframes seal-halo { 0% { transform: scale(0.85); opacity: 0; } 25% { opacity: 1; } 100% { transform: scale(1.3); opacity: 0; } }
+
+/* —— 星笺：夜里点了天上一处，浮出的一小页宣纸（上下两道极淡的裱边、墨晕开的淡影）。电脑上在下面当中，手机上在上头 —— */
+.sky-card { position: absolute; left: 50%; bottom: calc(var(--sab) + clamp(18px, 4.2vh, 44px)); transform: translateX(-50%); z-index: 3; width: min(410px, calc(100vw - 32px)); max-height: min(46dvh, 400px); overflow: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; display: grid; gap: 7px; padding: 13px 18px 16px; border-radius: 2px; background: linear-gradient(var(--rule-2), var(--rule-2)) 0 0 / 100% 3px no-repeat, linear-gradient(var(--rule-2), var(--rule-2)) 0 100% / 100% 3px no-repeat, var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); animation: rise-x 0.6s var(--out) backwards; }
+.sky-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sky-head h3 { font-family: var(--brush); font-size: 27px; line-height: 1.2; letter-spacing: 0.14em; color: var(--title); }
+.sky-head h3.is-kai { font-family: var(--kai); font-size: 23px; }
+/* 「收」：一圈墨环 */
+.sky-close { position: relative; isolation: isolate; flex: none; width: 40px; height: 40px; margin: -4px -6px -4px 0; border-radius: 50%; display: grid; place-items: center; font-family: var(--kai); font-size: 15px; color: var(--ink-2); transition: color 0.25s, transform 0.3s var(--out); }
+.sky-close::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--ink-3); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: transform 0.5s var(--out), background-color 0.25s; pointer-events: none; }
+@media (hover: hover) { .sky-close:hover { color: var(--ink-max); } .sky-close:hover::before { background: var(--ink); transform: rotate(-18deg) scale(1.05); } }
+.sky-close:active { transform: scale(0.94); }
+@media (pointer: coarse) { .sky-close { width: 44px; height: 44px; } }
+.sky-hint { font-family: var(--kai); font-size: 13.5px; line-height: 1.65; letter-spacing: 0.06em; color: var(--ink-2); overflow-wrap: anywhere; }
+.sky-text { font-family: var(--kai); font-size: 16.5px; line-height: 1.85; letter-spacing: 0.07em; color: var(--ink); text-wrap: pretty; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.sky-lines { display: grid; gap: 2px; font-family: var(--kai); font-size: 17px; line-height: 1.75; letter-spacing: 0.14em; color: var(--ink); }
+.sky-lines span { display: block; }
+.sky-source { font-family: var(--kai); font-size: 13.5px; line-height: 1.6; letter-spacing: 0.06em; color: var(--ink-2); text-align: right; margin-top: -3px; }
+.sky-gloss { display: grid; gap: 4px; padding-top: 9px; border-top: 1px solid var(--rule-2); }
+.sky-gloss p { font-size: 13px; line-height: 1.85; letter-spacing: 0.04em; color: var(--ink-2); text-align: justify; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+/* 触屏：笺落在下面（上面的天留着点别的星）；摇杆、「疾」、印先收起来，收了笺再出来（点地面照样走过去，走开几步笺就收） */
+@media (pointer: coarse) { .sky-card { bottom: calc(var(--sab) + 12px); max-height: min(46dvh, 380px); } }
+.hud.is-touch.has-sky .stick, .hud.is-touch.has-sky .run-key, .hud.is-touch.has-sky .act-key { opacity: 0; pointer-events: none; }
+/* 笺开着时，头一回的走法提示先让开（笺落在同一处） */
+.hud.has-sky .dock { opacity: 0; }
+@media (max-height: 460px) { .sky-card { bottom: calc(var(--sab) + 8px); max-height: min(62dvh, 300px); } }
+
+/* —— 画面下方浮着的话：写在画上，身后一团纸色；不挡手 —— */
+.notes { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(26px, 6vh, 60px)); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 20px; pointer-events: none; transition: opacity 0.4s, bottom 0.5s var(--out); z-index: 2; }
+.notes.is-hidden { opacity: 0; }
+.note { position: relative; isolation: isolate; max-width: min(30em, 100%); padding: 5px 16px; font-family: var(--kai); font-size: clamp(14.5px, 2vh, 16.5px); line-height: 1.6; letter-spacing: 0.16em; text-indent: 0.16em; text-align: center; text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; color: var(--ink); animation: note var(--note-ms, 4200ms) var(--out) both; }
+.note::before { content: ''; position: absolute; inset: -2px -10px; background: var(--wash); filter: blur(9px); border-radius: 50%; opacity: 0.94; z-index: -1; }
+/* 收得、人情：句前一点记号 */
+.note[data-kind] span::before { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 0.6em 0.2em 0; vertical-align: middle; border-radius: 1px; background: var(--mark); }
+@keyframes note {
+  0% { opacity: 0; transform: translateY(10px); margin-top: -1.9em; }
+  10% { opacity: 1; transform: none; margin-top: 0; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
 
 @media (max-width: 560px) {
-  .when span { font-size: 14px; }
-  .walk-hint { font-size: 13px; gap: 3px 16px; padding: 9px 14px; }
+  .when { gap: 8px; padding: 0 11px 0 12px; }
+  .when span { font-size: 14.5px; }
+  .when-day { padding-right: 8px; font-size: 12px; }
+  .walk-hint { font-size: 13.5px; gap: 3px 16px; padding: 10px 14px; }
 }
 @media (max-height: 460px) {
   .place p { display: none; }
   .dock { bottom: calc(var(--sab) + 14px); }
-  .stick { width: 96px; bottom: calc(var(--sab) + 14px); }
+  .stick { width: 100px; bottom: calc(var(--sab) + 14px); }
+  .run-key { left: calc(var(--sal) + clamp(18px, 5vw, 44px) + 112px); bottom: calc(var(--sab) + 14px + 58px); }
   .act-key { bottom: calc(var(--sab) + 22px); }
-  .slip { min-height: 112px; padding: 22px 0; }
+  .slip { min-height: 112px; padding: 21px 0; }
+  .roll::before { top: 11px; }
+  .roll::after { bottom: 11px; }
 }
 /* 触屏时提示别压着摇杆与印 */
-.hud.is-touch .dock { bottom: calc(var(--sab) + clamp(150px, 26vh, 210px)); }
-@media (max-height: 460px) { .hud.is-touch .dock { bottom: auto; top: calc(var(--sat) + 64px); } }
+/* 触屏时提示落在「疾」那一枚上面（「疾」在摇杆右上：摇杆离底的距离 + 摇杆高的六成 + 自己的高） */
+.hud.is-touch .dock { bottom: calc(var(--sab) + clamp(22px, 6vh, 56px) + clamp(108px, 28vw, 132px) * 0.62 + 60px); }
+@media (max-height: 460px) { .hud.is-touch .dock { bottom: auto; top: calc(var(--sat) + 70px); } }

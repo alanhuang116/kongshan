@@ -1,7 +1,9 @@
 /**
  * 台子上的屋舍与器物（/ink.html?m=<名字>&ground=0）：
  *   hall 草堂 · hallInside 草堂（屋顶、南墙隐去，从南边俯看屋里）· gate 柴门与门联 · fence 竹篱与院里的东西 · bridge 小石桥 ·
- *   pavilion 观物亭 · house 邻家一户 · school 村塾 · well 井与槐下 · props 田间、渡口、修桥处的零碎 · buildAll 全部（各在总图上的位置）。
+ *   pavilion 观物亭 · house 邻家一户 · school 村塾 · well 井与槐下 · props 田间、渡口、修桥处的零碎 · buildAll 全部（各在总图上的位置）·
+ *   bambooHome 篾匠家 · potter 陶家（屋、坯棚、窑）· herbGarden 先生的药圃 · hallSeasons 草堂里随季节换的（&season= 看各季）·
+ *   dryRack 院里的晒架（随季节晒的东西）· traces 各家门前屋后的零碎 · scene 只搭这几样新添的（数三角用）。
  * 都摆在总图上的真位置，脚下是真的地（env/land.ts）；不要地加 &land=0。别的参数：
  *   &lamp=0…1 灯火（不给就跟天时走）  &hide=roof,front 隐去草堂的屋顶 / 南墙  &dump=1 把挂点、可拿的东西、脚印打到控制台（warn）
  */
@@ -19,7 +21,7 @@ async function show(ctx: LabCtx, pieces: Piece[] | undefined, view: View, o: { h
   const g = new THREE.Group();
   if (qs.get('land') !== '0') g.add(createLand(ctx.q, ctx.season).group);
   const t0 = performance.now();
-  const B: Buildings = await assemble({ q: ctx.q }, pieces, o.sub);
+  const B: Buildings = await assemble({ q: ctx.q, season: ctx.season }, pieces, o.sub);
   const ms = performance.now() - t0;
   g.add(B.group);
   const hide = (qs.get('hide') ?? '').split(',').concat(o.hide ?? []);
@@ -60,4 +62,11 @@ export const MODELS: Record<string, LabMake> = {
   props: (c) => show(c, ['fields', 'waterside'], { az: 40, el: 12, d: 16, tx: SITE.plank.x, ty: streamAt(SITE.plank.x, SITE.plank.z).y + 1, tz: SITE.plank.z }),
   more: (c) => show(c, ['more', 'village', 'waterside'], { az: 20, el: 14, d: 14, tx: SITE.more.teaShed.x, ty: ground(SITE.more.teaShed.x, SITE.more.teaShed.z) + 1.2, tz: SITE.more.teaShed.z }),
   buildAll: (c) => show(c, undefined, { az: 20, el: 26, d: 70, tx: 4, ty: YARD_Y, tz: 8 }),
+  bambooHome: (c) => { const h = house('f'); return show(c, ['homes'], { az: 200, el: 12, d: 14, tx: h.x + 1, ty: houseY('f') + 1.3, tz: h.z + 2 }, { sub: ['f'] }); },
+  potter: (c) => { const h = house('g'); return show(c, ['homes'], { az: 225, el: 16, d: 22, tx: h.x + 1, ty: houseY('g') + 1, tz: h.z + 1 }, { sub: ['g'] }); },
+  herbGarden: (c) => { const G = SITE.crafts.herbs; return show(c, ['homes'], { az: 210, el: 22, d: 13, tx: (G.x0 + G.x1) / 2, ty: ground(-21.5, -6) + 0.6, tz: (G.z0 + G.z1) / 2 }, { sub: ['herbs'] }); },
+  hallSeasons: (c) => show(c, ['hall', 'seasons'], { az: 0, el: 40, d: 12.5, tx: H.x, ty: YARD_Y + 0.9, tz: H.z - 0.3 }, { hide: ['roof', 'front'], sub: ['hall'] }),
+  dryRack: (c) => show(c, ['hall', 'seasons'], { az: 180, el: 20, d: 6, tx: 6.5, ty: YARD_Y + 0.8, tz: 1.2 }, { sub: ['rack'] }),
+  traces: (c) => { const h = house('a'); return show(c, ['village', 'traces'], { az: 160, el: 14, d: 20, tx: h.x, ty: houseY('a') + 1, tz: h.z }); },
+  scene: (c) => show(c, ['homes', 'traces', 'seasons'], { az: 20, el: 30, d: 90, tx: 60, ty: YARD_Y, tz: 10 }),
 };

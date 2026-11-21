@@ -13,6 +13,7 @@
  *   蟋蟀（crickets）三只：「三四下一组、一组一组地来」，周期各不相同所以不同步，秋凉了叫得慢；另有一只金铃子连成一线的轻颤。
  *   雁（geese）     隔很久一行雁过：远远的两三声。
  */
+import { chorusOf } from './animals';
 import { Base } from './base';
 import type { Engine, LayerBus } from './engine';
 import { birdDensity, frogAmount, gooseAmount, swallowAmount } from './scene';
@@ -270,6 +271,8 @@ interface Frog { rate: number; f1: number; f2: number; pan: number; far: number;
 export class Frogs extends Base {
   private frogs: Frog[] = [];
   private out: GainNode;
+  /** 远处成片的蛙（夏夜池边、田里）：一段算好的循环，蛙多、离水近时才接上 */
+  private chorus: GainNode | null = null;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
     this.out = this.slow(1);
@@ -280,6 +283,16 @@ export class Frogs extends Base {
       const f1 = rand(650, 980);
       this.frogs.push({ rate: rand(34, 52), f1, f2: f1 * rand(2.2, 2.9), pan: rand(-0.8, 0.8), far: i === 0 ? rand(0.1, 0.3) : rand(0.25, 0.9), next: t + (i === 0 ? rand(0.3, 1.5) : rand(1, 9)) });
     }
+    this.scene(t);
+  }
+  scene(t: number) {
+    const s = this.e.scene, n = s.near, k = clamp((frogAmount(s) - 0.3) / 0.7) * Math.max(n.pond, 0.7 * n.stream, 0.8 * n.fields, 0.5 * n.river);
+    if (!this.chorus && k > 0.03) {
+      const src = this.src(this.e.loopSrc(chorusOf(this.e), t, rand(0.92, 0.98))), lp = this.filter('lowpass', 1500, 0.5);
+      this.chorus = this.slow(0);
+      src.connect(lp); lp.connect(this.chorus); this.chorus.connect(this.out);
+    }
+    this.chorus?.gain.setTargetAtTime(0.6 * k, t, 2);
   }
   /** 一声「呱」：每秒四十来下的脉冲（一个很慢的锯齿波）去激喉囊的两个共鸣 */
   private croak(f: Frog, t: number, len: number, amp: number) {
@@ -346,12 +359,17 @@ export class Crickets extends Base {
     for (let k = 0; k < pulses; k++) for (let i = 0; i < w && k * gap + i < n; i++) d[k * gap + i] = Math.sin(k2 * i) * Math.pow(Math.sin((Math.PI * i) / w), 2) * (0.7 + 0.3 * (k / pulses));
     return b;
   }
+  /** 观星时虫声「细」下来：三只蟋蟀退一半多，金铃子那一线细的颤反倒显出来 */
+  private fine(b: { long: boolean }) { return this.e.scene.focus !== 'stars' ? 1 : b.long ? 1.4 : 0.4; }
+  scene(t: number) {
+    for (const b of this.bouts) if (b.on) b.g.gain.setTargetAtTime(b.level * this.fine(b), t, 1);
+  }
   schedule(from: number, to: number) {
     for (const b of this.bouts) {
       while (b.next < to) {
         const t = Math.max(from, b.next);
         b.on = !b.on;
-        b.g.gain.setTargetAtTime(b.on ? b.level : 0, t, b.on ? 0.3 : 0.6);
+        b.g.gain.setTargetAtTime(b.on ? b.level * this.fine(b) : 0, t, b.on ? 0.3 : 0.6);
         b.next = t + (b.on ? (b.long ? rand(5, 16) : rand(8, 25)) : b.long ? rand(6, 20) : rand(3, 10));
       }
     }
@@ -368,15 +386,8 @@ export class Geese extends Base {
   schedule(from: number, to: number) {
     while (this.next < to) {
       const t = Math.max(from, this.next), amt = gooseAmount(this.e.scene);
-      if (amt > 0.05) {
-        // 一行雁过：远远的一两阵叫声，从一边慢慢移到另一边
-        const p0 = rand(-0.8, 0.8), dir = p0 > 0 ? -1 : 1, dist = rand(0.6, 0.9);
-        let at = t;
-        for (let i = 0, n = 1 + Math.floor(rand(0, 2.5)); i < n; i++) {
-          this.say('goose', at, { variant: 'wild', vel: rand(0.4, 0.7), dist: clamp(dist + rand(-0.05, 0.05)), pan: clamp(p0 + dir * i * rand(0.15, 0.3), -0.9, 0.9), rate: rand(0.92, 1.1) });
-          at += rand(2.5, 5);
-        }
-      }
+      // 一行雁过：三五只一路叫着，从天的一边慢慢移到另一边（geese 自己会移）；世界里刚放过雁阵就不再排
+      if (amt > 0.05 && this.e.since('geese') > 60) this.say('geese', t, { vel: rand(0.4, 0.7), dist: rand(0.6, 0.9), rate: rand(0.92, 1.1) });
       this.next = t + rand(50, 160) / (0.3 + 0.7 * amt);
     }
   }

@@ -98,8 +98,14 @@ const AMB = 1.6;
 /** 贴身的层不过「室内低通」；其中玩家手上那件事自己的声音也不被 duck 压低 */
 const INNER = new Set<SlotId>(['chant', 'qin', 'kettle', 'inkstone']);
 const OWN = new Set<SlotId>(['kettle', 'inkstone']);
-/** 同时在响的一击最多多少：层里自己排的（檐滴、鸡叫）先让，玩家与世界触发的后让 */
-const SOFT_CAP = 22, HARD_CAP = 40;
+/**
+ * 同时在响的一击最多多少：层里自己排的（檐滴、鸡叫）先让，玩家与世界触发的后让；
+ * 而且远的先省——远到快听不见的（dist 1），在同时响着的到这个数的五成五时就不出了，跟前的要到满数才拦。
+ */
+const SOFT_CAP = 22, HARD_CAP = 40, FAR_CUT = 0.45;
+/** 一直响着的声音摆在世界里某处（setLoop 给了 at）时，多远就听不见了（米） */
+const LOOP_RANGE: Record<Loop, number> = { kettle: 30, inkstone: 30, saw: 90, plough: 80, millstone: 50, windlass: 60, frog: 140, bee: 12, kite: 50, murmur: 70, line: 20, boatWater: 40, snowRoll: 25 };
+const perLoop = <T>(v: T): Record<Loop, T> => Object.fromEntries(LOOP_NAMES.map((l) => [l, v])) as Record<Loop, T>;
 /** 整层的方位最多偏到几成（溪在左边，就偏左，不全到左边去） */
 const PAN_WIDTH = 0.6;
 /** 场景给一层的量低于它就不建这一层 */
@@ -117,6 +123,15 @@ function farRule(shot: Shot, variant: string | undefined): readonly [number, num
     case 'goose': return variant === 'wild' ? [0.8, 0.6] : undefined;
     case 'cuckoo': return [0.75, 0.5];
     case 'flute': return [0.6, 0.35];
+    // 后来添的：天上的雁阵、远山的鹿总隔着一大段；更梆、更锣、远处的人声、寒鸦没说远近就是远处传来的
+    case 'geese': return [0.85, 0.6];
+    case 'deer': return [0.75, 0.45];
+    case 'clapper': return [0.72, 0];
+    case 'gong': return [0.75, 0];
+    case 'murmur': return [0.5, 0];
+    case 'crow': return variant === 'flock' ? [0.6, 0.3] : [0.55, 0];
+    // 伊水上的鹤是远景：没说远近按 0.75，走得再近也隔着一段
+    case 'crane': return [0.75, 0.5];
     default: return undefined;
   }
 }
@@ -142,7 +157,7 @@ export class Engine {
   /** 用户音量：几组、四个旧的层 */
   group: Record<Group, number> = { ...DEFAULT_GROUPS };
   user: Record<Extra, number> = { chant: 0, qin: 0, bellfar: 0, eaves: 0 };
-  loops: Record<Loop, number> = { kettle: 0, inkstone: 0, saw: 0, plough: 0 };
+  loops: Record<Loop, number> = perLoop(0);
   /** 旧：诵经层的设置 */
   chant: Required<ChantOpts> = { bpm: 72, phrases: XINJING_PHRASES, fish: true, bowl: true };
   onSyllable: ((i: number, time: number) => void) | null = null;
@@ -173,8 +188,8 @@ export class Engine {
   private buffers = new Map<string, AudioBuffer>();
   private waves = new Map<string, PeriodicWave>();
   private forced = new Map<Bed, number>();
-  private loopGain: Record<Loop, number> = { kettle: 1, inkstone: 1, saw: 1, plough: 1 };
-  private loopPan: Record<Loop, number> = { kettle: 0, inkstone: 0, saw: 0, plough: 0 };
+  private loopGain: Record<Loop, number> = perLoop(1);
+  private loopPan: Record<Loop, number> = perLoop(0);
   private live: number[] = [];
   private heard = new Map<Shot, number>();
   private tasks: Array<[number, () => void]> = [];
@@ -188,6 +203,10 @@ export class Engine {
   private wetAt = 0;
   private wetApplied = 0;
   private wetHeld = false;
+  /** 地上的积雪（世界没给 cover 时引擎自己估：下着雪就涨，停了慢慢化，快慢与 Atmos 一样） */
+  private cover = 0;
+  private coverApplied = 0;
+  private sceneSeen = false;
 
   constructor(ctx: BaseAudioContext, opts: { offline?: boolean } = {}) {
     this.ctx = ctx;
@@ -245,7 +264,7 @@ export class Engine {
     this.ambOpen = c.createGain(); this.ambOpen.connect(this.openIn);
     this.ambRoom = c.createGain(); this.ambRoom.connect(this.roomIn);
     // 先有一份算好的场景（各层要读）；指纹留空，头一次 setScene 一定会把各层建起来
-    this.scene = resolveScene(this.raw, 0);
+    this.scene = resolveScene(this.raw, 0, 0);
     this.mix = mixScene(this.scene);
     this.applyBuses(0);
   }
@@ -371,7 +390,7 @@ export class Engine {
     else if (o.space === 'room') mix = { dry: 0.9, hall: 0, room: 0.3, open: 0 };
     else if (o.space === 'hall') mix = { dry: 0.88, hall: 0.4, open: 0 };
     else if (o.space === 'open') mix = { dry: 0.92, hall: 0, open: 0.2 + 0.2 * d };
-    else mix = { dry: 0.92, hall: 0, room: 0.3 * ind * (1 - d), open: (0.15 + 0.2 * d) * (1 - ind * (1 - d)) };
+    else mix = { dry: 0.92, hall: 0, room: 0.3 * ind * (1 - d), open: (0.15 + 0.2 * d) * (1 - ind * (1 - d)) * (1 - 0.45 * this.scene.cover) };
     return this.voice(shot, o, t, { dry: this.shotBus, hall: mix.hall > 0 ? this.hallIn : undefined, open: this.openIn, room: this.roomIn }, mix);
   }
   /**
@@ -380,12 +399,15 @@ export class Engine {
    */
   voice(shot: Shot, opts: PlayOpts, t: number, route: Route, mix: Mix, soft = false): number {
     const c = this.ctx, now = c.currentTime;
+    const fn = SHOTS[shot];
+    if (!fn) return 0;
+    const dist = clamp(opts.dist ?? 0), vel = clamp(opts.vel ?? 0.7, 0.02, 1);
     if (this.live.length > 8) this.live = this.live.filter((x) => x > now);
-    if (this.live.length >= (soft ? SOFT_CAP : HARD_CAP)) return 0;
+    // 同时响着的太多了：远的先省
+    if (this.live.length >= (soft ? SOFT_CAP : HARD_CAP) * (1 - FAR_CUT * dist)) return 0;
     const out = c.createGain();
     const made: AudioNode[] = [out];
     let head: AudioNode = out;
-    const dist = clamp(opts.dist ?? 0), vel = clamp(opts.vel ?? 0.7, 0.02, 1);
     // 力度在 0.25 以上只管「轻重与明暗」（最轻也有一半的量）；再往下就整个淡出去。
     //（外头来的一击到不了这里：play 已经把 0.25 以下的力度换成了远近。这是给层里自己排的声音留的）
     out.gain.value = Math.min(1, vel / NEAR_VEL);
@@ -409,7 +431,7 @@ export class Engine {
     };
     send(route.dry, mix.dry); send(route.hall, mix.hall); send(route.open, mix.open); send(route.room, mix.room);
     const v: Voice = { e: this, ctx: c, t, out, vel, pitch: (opts.rate ?? 1) * Math.pow(2, clamp(opts.pitch ?? 0, -36, 36) / 12), dur: opts.dur, dist, raw: opts };
-    const tail = SHOTS[shot](v);
+    const tail = fn(v);
     this.live.push(t + tail);
     // 响完就拆线（里头的声源自己到时会停，断开之后浏览器就能把这一串节点收走）
     this.after(t + tail + 0.4, () => { for (const n of made) { try { n.disconnect(); } catch { /* 已断 */ } } });
@@ -448,11 +470,12 @@ export class Engine {
     this.user[l] = clamp(v);
     this.applyLayer(l, fade);
   }
-  /** 一直响着的声音（煮水、研墨、拉锯、犁地）：level 为 0 即停 */
+  /** 一直响着的声音（煮水、研墨、拉锯、犁地、推磨、辘轳、蛙、蜂、纸鸢、人声）：level 为 0 即停。不认得的名字什么都不做 */
   setLoop(l: Loop, level: number, o: LoopOpts = {}) {
-    this.loops[l] = clamp(level);
+    if (!isLoop(l)) return;
+    this.loops[l] = Number.isFinite(level) ? clamp(level) : 0;
     let pan = o.pan, dist = o.dist;
-    if (o.at) { const loc = this.locate(o.at[0], o.at[1], l === 'saw' ? 90 : l === 'plough' ? 80 : 30); pan ??= loc.pan; dist ??= loc.dist; }
+    if (o.at) { const loc = this.locate(o.at[0], o.at[1], LOOP_RANGE[l]); pan ??= loc.pan; dist ??= loc.dist; }
     if (dist != null) this.loopGain[l] = distGain(dist);
     if (pan != null) this.loopPan[l] = clamp(pan, -1, 1);
     this.applyLayer(l, o.fade ?? FADE[l]);
@@ -526,14 +549,22 @@ export class Engine {
       if (until > s.cursor) { s.impl.schedule(s.cursor, until); s.cursor = until; }
     }
   }
-  /** 雨后还湿着几成：下着雨就涨，停了慢慢干（檐滴、叶上的水、脚下的泥跟着它） */
+  /**
+   * 雨后还湿着几成：下着雨就涨，停了慢慢干（檐滴、叶上的水、脚下的泥跟着它）。
+   * 积雪也在这里记：世界没给 cover 时，下着雪就涨（约半分钟积满八成五）、停了慢慢化（一分多钟），与 Atmos.snowCover 的快慢一样。
+   */
   private stepWet(now: number) {
     const dt = now - this.wetAt;
     this.wetAt = now;
-    if (dt <= 0 || this.wetHeld) return;
-    const r = this.scene.rain;
-    this.wet = clamp(this.wet + (r > 0.25 ? (dt * r) / 22 : -dt / 110));
-    if (Math.abs(this.wet - this.wetApplied) > 0.02 || (this.wet === 0) !== (this.wetApplied === 0)) this.refresh(undefined);
+    if (dt <= 0) return;
+    if (this.raw.cover == null) this.cover = clamp(this.cover + (this.scene.snow > 0.5 ? dt * 0.03 : -dt * 0.012));
+    let changed = Math.abs(this.cover - this.coverApplied) > 0.04 || (this.cover === 0) !== (this.coverApplied === 0);
+    if (!this.wetHeld) {
+      const r = this.scene.rain;
+      this.wet = clamp(this.wet + (r > 0.25 ? (dt * r) / 22 : -dt / 110));
+      changed ||= Math.abs(this.wet - this.wetApplied) > 0.02 || (this.wet === 0) !== (this.wetApplied === 0);
+    }
+    if (changed) this.refresh(undefined);
   }
   /** 检查脚本、试听台用：把「湿」直接定在某个值（null 则交还给时间） */
   setWet(v: number | null) {
@@ -561,7 +592,13 @@ export class Engine {
   /** fade 为 0 是立刻到位；不给则各层按自己的快慢渐变 */
   setScene(p: Partial<Scene>, fade?: number) {
     mergeScene(this.raw, p);
-    const st = resolveScene(this.raw, this.wet), sig = sceneSig(st);
+    // 头一回交进来的就是大雪天（世界从雪天开场，Atmos 也是一下子铺满的）：地上先当它已经白了
+    if (!this.sceneSeen) {
+      this.sceneSeen = true;
+      const sn = this.raw.snow ?? (this.raw.weather === 'snow' ? 1 : 0);
+      if (sn >= 0.8 && this.raw.cover == null) this.cover = 0.85;
+    }
+    const st = resolveScene(this.raw, this.wet, this.cover), sig = sceneSig(st);
     // 每帧都可能被叫：量化之后没变就不动
     if (sig === this.sceneSig) return;
     this.sceneSig = sig;
@@ -573,7 +610,8 @@ export class Engine {
   /** 场景没变、但「湿」变了或被强行定住时重算一遍 */
   private refresh(fade: number | undefined) {
     this.wetApplied = this.wet;
-    this.scene = resolveScene(this.raw, this.wet);
+    this.coverApplied = this.cover;
+    this.scene = resolveScene(this.raw, this.wet, this.cover);
     this.sceneSig = sceneSig(this.scene);
     this.applyScene(fade);
   }
@@ -590,14 +628,17 @@ export class Engine {
   }
   private applyBuses(fade: number) {
     const s = this.scene, t = this.now, k = 1 - this.ducked;
-    // 屋里：外头的声音变闷、变轻（草堂是土墙茅顶、开着门窗，不像大殿隔得那么死）；雪天整个天地也闷一些
-    const fc = Math.min(18000 * Math.pow(2200 / 18000, Math.pow(s.indoor, 0.8)), 18000 - 11500 * s.snow);
-    const og = (1 - 0.5 * s.indoor) * (1 - 0.15 * s.snow);
+    // 屋里：外头的声音变闷、变轻（草堂是土墙茅顶、开着门窗，不像大殿隔得那么死）；雪天整个天地也闷一些，
+    // 雪停了、地上还白着时也还闷一点（积雪吃声音：「雪后万籁俱寂」）
+    // 积雪吃声音：高处少一些，四下里散回来的也少（雪后的野外更「干」）
+    const hush = Math.max(s.snow, 0.75 * s.cover);
+    const fc = Math.min(18000 * Math.pow(2200 / 18000, Math.pow(s.indoor, 0.8)), 18000 - 11500 * hush, 18000 - 14000 * Math.min(1, s.cover));
+    const og = (1 - 0.5 * s.indoor) * (1 - 0.15 * hush);
     const set = (p: AudioParam, v: number) => { if (fade <= 0 || (this.offline && t <= 0)) p.setValueAtTime(v, t); else p.setTargetAtTime(v, t, fade / 3); };
     set(this.outLP.frequency, fc);
     set(this.outGain.gain, og);
     set(this.amb.gain, k * AMB);
-    set(this.ambOpen.gain, k * AMB * (1 - 0.6 * s.indoor));
+    set(this.ambOpen.gain, k * AMB * (1 - 0.6 * s.indoor) * (1 - 0.45 * s.cover));
     set(this.ambRoom.gain, k * AMB);
     if (this.ambHallNode) set(this.ambHallNode.gain, k * AMB);
   }

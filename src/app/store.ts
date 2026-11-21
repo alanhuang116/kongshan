@@ -1,7 +1,8 @@
 /**
  * 两个小仓库：
- *   saved —— 存在本机（localStorage）：天时与声音的偏好、起居注、观象册里已经观过的象。不上传，也没有账号。
- *   ui    —— 只在内存：人此刻在哪一处、走近了哪件事、在做什么、哪一页册子开着、画里是昼是夜。
+ *   saved —— 存在本机（localStorage）：天时与声音的偏好、起居注、观象册里已经观过的象，还有世界自己的存档
+ *            （田里种了什么、行囊里有什么、村里人跟你熟到几分……世界按名字一份一份交来，这里原样收着）。不上传，也没有账号。
+ *   ui    —— 只在内存：人此刻在哪一处、走近了哪件事、在做什么、哪一页册子开着、画里是昼是夜、下面浮着的几句话。
  */
 import { useSyncExternalStore } from 'react';
 import type { Season, Weather } from '../world/env/atmos';
@@ -44,15 +45,40 @@ export interface Saved {
   found: string[];
   /** 已经会走了（走动的提示不再出） */
   walked: boolean;
+  /** 已经告诉过「按住 Shift 跑」（电脑上只提示一回） */
+  runTold: boolean;
+  /**
+   * 世界的存档：世界按名字（ns）一份一份交来（events.mem），这里原样收着，下回开门时整个交还给它（KsOpts.mem）。
+   * 现有的名字见 world/mem.ts：bag 行囊 · farm 田里 · folk 村人 · stars 观过的星 · play 玩过的 · day 第几日
+   */
+  world: Record<string, unknown>;
+  /** 时辰流转得多快：每过一秒画里过多少个钟头（0 停；1/60 是画里一个钟头 = 这里一分钟） */
+  flow: number;
+  /** 第几日（头一回来是第 0 日；界面上写作「第一日」） */
+  day: number;
 }
 const KEY = 'anlewo:v1';
-// 寻常的一次来访：春天的上午，晴，从桃林走进来。之后改过的天时都记着
+/** 时辰流转的四档：停、缓、常、疾（天时页上选） */
+export const FLOWS: Array<[number, string, string]> = [
+  [0, '停', '时辰停着，不走'],
+  [1 / 120, '缓', '画里一个钟头，这里两分钟'],
+  [1 / 60, '常', '画里一个钟头，这里一分钟'],
+  [1 / 20, '疾', '画里一个钟头，这里二十秒'],
+];
+// 寻常的一次来访：春天的上午，晴，从桃林走进来；时辰慢慢地走。之后改过的天时都记着
 const DEFAULT: Saved = {
   v: 1, time: 'day', weather: 'clear', season: 'spring', master: 0.8, muted: false, sound: {}, haptics: true, quality: 'auto',
-  visits: 0, journal: [], found: [], walked: false,
+  visits: 0, journal: [], found: [], walked: false, runTold: false, world: {}, flow: 1 / 60, day: 0,
 };
 const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T => (list.includes(v as T) ? (v as T) : fallback);
 const unit = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback);
+/** 世界的存档：只认「名字 → 能 JSON 的东西」的一张表（数组、空的、不是对象的都不要） */
+function worldOf(v: unknown): Record<string, unknown> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (k && x !== undefined && x !== null && typeof x !== 'function') out[k] = x;
+  return out;
+}
 function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY);
@@ -72,6 +98,11 @@ function load(): Saved {
         journal: Array.isArray(o.journal) ? o.journal.filter((e) => e && typeof e === 'object' && typeof e.kind === 'string' && typeof e.t === 'number') : [],
         found: Array.isArray(o.found) ? [...new Set(o.found.filter((x): x is string => typeof x === 'string' && x.length > 0))] : [],
         walked: o.walked === true,
+        runTold: o.runTold === true,
+        world: worldOf(o.world),
+        // 流转的快慢：0（停）到每秒一个钟头；没存过、存坏了的用默认
+        flow: typeof o.flow === 'number' && Number.isFinite(o.flow) && o.flow >= 0 ? Math.min(1, o.flow) : DEFAULT.flow,
+        day: typeof o.day === 'number' && Number.isFinite(o.day) && o.day > 0 ? Math.floor(o.day) : 0,
       };
     }
   } catch { /* 读不到就用默认 */ }
@@ -94,7 +125,21 @@ export function addFound(name: string): boolean {
   return true;
 }
 
-export type Sheet = null | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about';
+/** 世界的存档里有一份变了：收进 saved.world（下回开门时交还给世界） */
+export function saveWorld(ns: string, v: unknown) {
+  if (!ns) return;
+  saved.set((s) => {
+    const world = { ...s.world };
+    if (v === undefined || v === null) delete world[ns]; else world[ns] = v;
+    return { ...s, world };
+  });
+}
+
+export type Sheet = null | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars';
+/** 画面下方浮着的一句话（「得麦三捆」「王婶记下了你的好」）；kind 是世界给的种类（bag 收得、folk 人情……），样式据此略有不同 */
+export interface Note { id: number; text: string; kind?: string }
+/** 星笺：夜里点了天上一处，它是什么（题、方位、原话与出处、白话；月是两句诗） */
+export interface SkyNote { kind: 'star' | 'planet' | 'moon' | 'han' | 'small'; title: string; hint: string; text?: string; source?: string; gloss?: string; lines?: string[] }
 export interface Ui {
   phase: 'boot' | 'title' | 'intro' | 'roam';
   /** 画到哪一步了（0…1）与那一步的名字（铺纸、远山、种桃……） */
@@ -113,7 +158,42 @@ export interface Ui {
   hour: number; tone: 'day' | 'night';
   /** 声音那一层备好了没有（声音册据此列出能调的几样） */
   sound: boolean;
+  /** 画面下方浮着的几句话（新的在下；最多三句，各自过一会儿退下去） */
+  notes: Note[];
+  /** 行囊里有什么（id → 数目；世界每换一样报一次） */
+  bag: Record<string, number>;
+  /** 人在跑（手机上「疾」那一枚跟着亮） */
+  run: boolean;
+  /** 第几日（头一回来是第 0 日） */
+  day: number;
+  /** 夜里点了天上一处：那张星笺（null 是收着） */
+  sky: SkyNote | null;
   error: string | null;
 }
-export const ui = createStore<Ui>({ phase: 'boot', progress: 0, stage: '', place: 'grove', busy: false, arrivedAt: 0, near: null, act: null, actState: {}, sheet: null, menu: false, hour: 9.2, tone: 'day', sound: false, error: null });
+export const ui = createStore<Ui>({
+  phase: 'boot', progress: 0, stage: '', place: 'grove', busy: false, arrivedAt: 0, near: null, act: null, actState: {}, sheet: null, menu: false,
+  hour: 9.2, tone: 'day', sound: false, notes: [], bag: {}, run: false, day: 0, sky: null, error: null,
+});
 export const setUi = (p: Partial<Ui>) => ui.set((s) => ({ ...s, ...p }));
+
+/** 一句话浮多久（毫秒；样式里的动画按这个长短排） */
+export const NOTE_MS = 4200;
+let noteSeq = 0;
+const noteTimers = new Map<number, number>();
+/**
+ * 画面下方浮一句话。一模一样的话还浮着时不叠两句：旧的那句收掉，新的从下面重新浮起来；最多同时三句（最旧的先退）。
+ */
+export function addNote(text: string, kind?: string) {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t) return;
+  const drop = (id: number) => { clearTimeout(noteTimers.get(id)); noteTimers.delete(id); setUi({ notes: ui.get().notes.filter((n) => n.id !== id) }); };
+  const n: Note = { id: ++noteSeq, text: t, kind };
+  const list = [...ui.get().notes.filter((x) => {
+    if (x.text !== t || x.kind !== kind) return true;
+    clearTimeout(noteTimers.get(x.id)); noteTimers.delete(x.id);
+    return false;
+  }), n];
+  while (list.length > 3) { const old = list.shift()!; clearTimeout(noteTimers.get(old.id)); noteTimers.delete(old.id); }
+  setUi({ notes: list });
+  noteTimers.set(n.id, window.setTimeout(() => drop(n.id), NOTE_MS));
+}

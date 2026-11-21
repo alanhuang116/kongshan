@@ -9,7 +9,7 @@
  * 每个零件把节点接到 v.out（或给定的 dest），声源到时自己停。
  */
 import type { Voice } from './engine';
-import { lastT, line, rand, strike, type Pts } from './util';
+import { clamp, lastT, line, rand, strike, type Pts } from './util';
 
 export type Dest = AudioNode;
 
@@ -137,6 +137,82 @@ export function hiss(v: Voice, o: HissO): GainNode {
   last.connect(g); g.connect(o.dest ?? v.out);
   return g;
 }
+export interface SprinkleO {
+  t?: number;
+  /** 这些点散在多长的一段里（秒） */
+  dur: number;
+  /** 一共几点 */
+  n: number;
+  /** 疏密随时间（u 从 0 到 1 走完这一段）；不给就是匀的 */
+  shape?: (u: number) => number;
+  /** 每一点的音高范围（Hz，对数均匀地取）与余音（降 60 分贝的秒数） */
+  f: readonly [number, number];
+  t60: readonly [number, number];
+  amp: number;
+  /** 一点里噪声占几成（其余是一个很快衰减的音）：0…1，默认 0.5 */
+  noise?: number;
+  /** 噪声那部分的明暗：一阶低通的系数，0.05 很闷 … 1 原样（默认 0.8） */
+  bright?: number;
+  /** 幅度分布的指数：越大，轻的越多（默认 2） */
+  skew?: number;
+  /** 左右散开多少（0…1）：给了就算成双声道，每一点各在一个方位 */
+  spread?: number;
+  dest?: Dest;
+}
+/**
+ * 一把细碎的点：麦秆一根根断、谷粒一粒粒落、种子落在土上、雪被踩实时冰晶一齐断开、火星迸开……
+ * 几十上百个很短的小声音，每个是一个很快衰减的音加一点滤过的噪声。直接算进一段波形里放（一个节点），不必每一点建几个节点。
+ */
+export function sprinkle(v: Voice, o: SprinkleO): AudioBufferSourceNode {
+  const c = v.ctx, sr = c.sampleRate, t = o.t ?? v.t, TAU = Math.PI * 2;
+  const n = Math.max(1, Math.floor(sr * (o.dur + o.t60[1] * 1.3 + 0.01))), stereo = !!o.spread, b = c.createBuffer(stereo ? 2 : 1, n, sr);
+  const L = b.getChannelData(0), R = stereo ? b.getChannelData(1) : L;
+  // 噪声过了低通会变小：按明暗补回来，闷的点与亮的点一样响
+  const shape = o.shape ?? (() => 1), nz = o.noise ?? 0.5, br = clamp(o.bright ?? 0.8, 0.02, 1), boost = 1 / Math.sqrt(br / (2 - br));
+  let top = 1e-9;
+  for (let i = 0; i <= 40; i++) top = Math.max(top, shape(i / 40));
+  for (let k = 0, guard = 0; k < o.n && guard < o.n * 60; guard++) {
+    // 按疏密取时刻（拒绝采样）
+    const u = Math.random();
+    if (Math.random() * top > shape(u)) continue;
+    k++;
+    const at = Math.floor(u * o.dur * sr), f = o.f[0] * Math.pow(o.f[1] / o.f[0], Math.random()), t60 = rand(o.t60[0], o.t60[1]);
+    const m = Math.min(n - at, Math.floor(sr * t60 * 1.2)), dec = Math.exp(-6.91 / (t60 * sr)), w = (TAU * f) / sr;
+    const g = o.amp * (Math.pow(Math.random(), o.skew ?? 2) * 0.85 + 0.15);
+    const pan = stereo ? (Math.random() * 2 - 1) * (o.spread ?? 0) : 0, gl = stereo ? Math.sqrt(0.5 * (1 - pan)) * 1.414 : 1, gr = stereo ? Math.sqrt(0.5 * (1 + pan)) * 1.414 : 1;
+    const ph = Math.random() * TAU;
+    let e = g, lp = 0;
+    for (let j = 0; j < m; j++) {
+      const x = Math.random() * 2 - 1;
+      lp += br * (x - lp);
+      const s = e * ((1 - nz) * Math.sin(ph + w * j) + nz * lp * boost) * (j < 8 ? j / 8 : 1);
+      L[at + j] += s * gl;
+      if (stereo) R[at + j] += s * gr;
+      e *= dec;
+    }
+  }
+  const s = c.createBufferSource();
+  s.buffer = b;
+  s.connect(o.dest ?? v.out);
+  s.start(t);
+  return s;
+}
+
+/** 一段由几个点连起来的包络（[0…1 的位置, 值]），算成给 setValueCurveAtTime 用的数组（首尾都是 0，不咔哒） */
+export function curveOf(n: number, pts: ReadonlyArray<readonly [number, number]>, peak = 1): Float32Array<ArrayBuffer> {
+  const a = new Float32Array(Math.max(2, n));
+  for (let i = 0; i < a.length; i++) {
+    const u = i / (a.length - 1);
+    let k = 0;
+    while (k < pts.length - 2 && pts[k + 1][0] < u) k++;
+    const [u0, v0] = pts[k], [u1, v1] = pts[Math.min(k + 1, pts.length - 1)];
+    a[i] = peak * (u1 > u0 ? v0 + ((v1 - v0) * clampU((u - u0) / (u1 - u0))) : v1);
+  }
+  a[0] = 0; a[a.length - 1] = 0;
+  return a;
+}
+const clampU = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+
 /** 颗粒：一路增益，被每秒几十上百点的随机曲线调着（许多细枝、许多齿、许多土粒）。返回它，别的声音接进来 */
 export function grain(v: Voice, t: number, dur: number, base: number, depth: number, rate = 1, dest: Dest = v.out): GainNode {
   const c = v.ctx, am = c.createGain(), d = c.createGain();
@@ -213,6 +289,8 @@ export interface VoicedO {
   direct?: number;
   /** 嗓子发毛：幅度上每秒 rate 下、深 depth，只在 [from, to] 这一段 */
   rough?: { rate: number; depth: number; from?: number; to?: number };
+  /** 颤音：音高上每秒 rate 下、上下 depth 音分（羊的「咩——」是一颤一颤的） */
+  vib?: { rate: number; depth: number };
   gain: number;
   dest?: Dest;
 }
@@ -226,6 +304,12 @@ export function voiced(v: Voice, o: VoicedO): { out: GainNode; osc: OscillatorNo
     const j = v.e.ctrlSrc('fast', t, rand(0.4, 0.8), len + 0.1), jd = c.createGain();
     jd.gain.value = o.jitter;
     j.connect(jd); jd.connect(osc.detune);
+  }
+  if (o.vib) {
+    const m = c.createOscillator(), md = c.createGain();
+    m.frequency.value = o.vib.rate; md.gain.value = o.vib.depth;
+    m.connect(md); md.connect(osc.detune);
+    m.start(t); m.stop(end + 0.05);
   }
   const tilt = c.createBiquadFilter();
   tilt.type = 'lowpass'; tilt.frequency.value = o.tilt ?? 3000; tilt.Q.value = 0.5;

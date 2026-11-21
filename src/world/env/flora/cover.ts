@@ -47,11 +47,13 @@ const BARE: Array<[number, number, number]> = (() => {
   for (const [k, r] of [['teaShed', 1.7], ['oxShed', 2.4], ['duckPen', 1.8], ['mill', 2.4], ['wash', 0.9], ['shrine', 0.8], ['swing', 1.2], ['chess', 1.3], ['cart', 1.4], ['netRack', 1.4]] as Array<[string, number]>) { const v = M[k] as { x: number; z: number } | undefined; if (v && typeof v.x === 'number') out.push([v.x, v.z, r]); }
   const d = M.dryYard as { x: number; z: number; r: number } | undefined; if (d) out.push([d.x, d.z, d.r + 0.2]);
   for (const h of (M.haystacks as Array<{ x: number; z: number }> | undefined) ?? []) out.push([h.x, h.z, 1.7]);
+  // 陶家的窑、坯棚，篾匠家的丝瓜架底下
+  { const C = SITE.crafts; out.push([C.kiln.x, C.kiln.z, 2.2], [C.potShed.x, C.potShed.z, 2.4], [C.loofah.x, C.loofah.z, 1.1]); }
   return out;
 })();
 const bare = (x: number, z: number) => { for (const [bx, bz, br] of BARE) if (Math.hypot(x - bx, z - bz) < br) return true; return false; };
-/** 这一处可以长草 */
-const open = (x: number, z: number) => !plotAt(x, z) && !inRect(SITE.yard, x, z, 0.15) && !inRect(SITE.veg, x, z, 0.2) && pathDist(x, z) > 0.3 && !inHouse(x, z) && !bare(x, z);
+/** 这一处可以长草（药圃里不长） */
+const open = (x: number, z: number) => !plotAt(x, z) && !inRect(SITE.yard, x, z, 0.15) && !inRect(SITE.veg, x, z, 0.2) && !inRect(SITE.crafts.herbs, x, z, 0.1) && pathDist(x, z) > 0.3 && !inHouse(x, z) && !bare(x, z);
 
 export function groundCover(S: Sink, area: Rect, density: number, seed = 20261113): Cover {
   S.place(0, 0, 0, 0, 1);

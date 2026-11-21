@@ -254,3 +254,199 @@ export const rattle = () => mesh(merge([pole(-0.05, 0.13, 0.006, 0.006, C.wood, 
 export const winePot = () => mesh(paint(lathe([[0.001, -0.17], [0.04, -0.17], [0.06, -0.12], [0.055, -0.07], [0.025, -0.03], [0.03, 0], [0.001, 0]], 10), C.china), 'wine-pot', true);
 /** 一块抹布 */
 export const rag = () => mesh(paint(sphere(1, 6, 4).scale(0.07, 0.018, 0.055), tone([0.8, 0.8, 0.76], 1.4)), 'rag');
+
+// ———————————————————————— 这一轮添的：村里人一天里用得着的家什 ————————————————————————
+let glowM: THREE.ShaderMaterial | null = null;
+/** 灯笼、灯盏：素纸的粉彩，夜里自己亮（画法里 glow × 夜，白天就是一盏素纸灯） */
+export const glowMat = () => (glowM ??= wash({ pig: [1, 1, 1], dens: 1, shade: 1.15, grain: 1.6, body: 1, line: 0.4, glow: [0.82, 0.52, 0.2], snow: 0 }));
+const lit = (g: Geo, name: string) => { const m = new THREE.Mesh(g, glowMat()); m.name = name; return m; };
+/** 一条弯的薄片（镰刃、锨面）：沿 path 扫，宽 w、厚 t；薄的那一面朝 up */
+const blade = (path: THREE.Vector3[], w: number, t: number, up: THREE.Vector3, c: RGB, scale?: (k: number) => number) => paint(sweep(path, [[-w / 2, -t / 2], [w / 2, -t / 2], [w / 2, t / 2], [-w / 2, t / 2]], { up, scale }), c);
+
+/** 镰：握处在原点，木柄沿 +y；柄梢一片月牙形的铁朝手背一侧（−z）弯出去、梢往下勾 */
+export function sickle(): THREE.Mesh {
+  const path = [V(0, 0.28, 0.01), V(0, 0.31, -0.05), V(0, 0.315, -0.12), V(0, 0.29, -0.19), V(0, 0.24, -0.24), V(0, 0.18, -0.255)];
+  return mesh(merge([pole(-0.06, 0.29, 0.014, 0.013, C.wood), blade(path, 0.034, 0.004, V(1, 0, 0), C.iron, (k) => 1 - 0.55 * k)]), 'sickle');
+}
+/** 一个麦个子（捆好立在地里的一捆麦）：底在原点，腰里一道草腰子，梢上是穗 */
+export function sheafGeo(): Geo {
+  const body = paint(lathe([[0.001, 0], [0.13, 0], [0.12, 0.12], [0.085, 0.38], [0.1, 0.46], [0.16, 0.62], [0.17, 0.7], [0.001, 0.74]], 9), C.straw);
+  const ears = paint(lathe([[0.001, 0.6], [0.18, 0.62], [0.2, 0.7], [0.14, 0.8], [0.001, 0.84]], 9), C.grain);
+  return merge([body, ears, hoop(0.092, 0.012, C.strawDark, 9).translate(0, 0.4, 0)]);
+}
+/** 一抱割下的麦（放倒在地上的一小堆，穗朝一头）：原点在正中的地面，长向沿 z */
+export function cutWheatGeo(): Geo {
+  const R = mulberry32(23), parts: Geo[] = [];
+  for (let i = 0; i < 9; i++) parts.push(paint(cyl(0.006, 0.008, 0.7, 3).applyMatrix4(M.mul(M.t((R() - 0.5) * 0.14, 0.03 + R() * 0.03, (R() - 0.5) * 0.08), M.rx(Math.PI / 2 + (R() - 0.5) * 0.2), M.rz((R() - 0.5) * 0.25))), C.straw));
+  parts.push(paint(sphere(1, 6, 3).scale(0.1, 0.035, 0.14).translate(0, 0.04, 0.33), C.grain));
+  return merge(parts);
+}
+/** 水担：一根扁担（沿 x，中点在原点）两头各挂一只木桶（桶里是水） */
+export function waterLoad(): THREE.Mesh {
+  const parts: Geo[] = [paint(box(1.5, 0.022, 0.045, 'x'), C.bamboo)];
+  for (const s of [-1, 1]) {
+    const x = s * 0.64;
+    parts.push(paint(lathe([[0.001, -0.56], [0.13, -0.56], [0.145, -0.28], [0.13, -0.28], [0.12, -0.53], [0.001, -0.53]], 10).translate(x, 0, 0), C.wood));
+    parts.push(hoop(0.14, 0.007, C.woodDark, 10).translate(x, -0.33, 0), hoop(0.135, 0.007, C.woodDark, 10).translate(x, -0.5, 0));
+    parts.push(paint(cyl(0.12, 0.12, 0.004, 10).translate(x, -0.31, 0), tone([0.82, 0.86, 0.88], 1)));
+    for (const e of [-1, 1]) parts.push(rodAB(V(x + e * 0.14, -0.29, 0), V(x, 0, 0), 0.005, C.rope, 3));
+  }
+  return mesh(merge(parts), 'water-load');
+}
+/** 矮凳：一条小板凳（凳面 h 高），原点在凳面正中的地面，长向沿 x */
+export function stool(h = 0.26, w = 0.36): THREE.Mesh {
+  const parts: Geo[] = [paint(boxUp(w, 0.035, 0.16, 'x').translate(0, h - 0.035, 0), C.wood)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(rodAB(V(sx * (w / 2 - 0.04), h - 0.03, sz * 0.05), V(sx * (w / 2 - 0.01), 0, sz * 0.07), 0.013, C.woodDark, 4));
+  return mesh(merge(parts), 'stool');
+}
+/** 搓草绳的一摊：一抱稻草、地上盘着的一圈绳。原点在地面，人坐在 −z 那头 */
+export function ropeHeap(): THREE.Mesh {
+  const R = mulberry32(31), parts: Geo[] = [];
+  for (let i = 0; i < 14; i++) parts.push(paint(cyl(0.005, 0.007, 0.6, 3).applyMatrix4(M.mul(M.t(0.28 + (R() - 0.5) * 0.18, 0.04 + R() * 0.07, (R() - 0.5) * 0.18), M.rz(Math.PI / 2 + (R() - 0.5) * 0.3), M.rx((R() - 0.5) * 0.3))), C.straw));
+  for (let k = 0; k < 4; k++) parts.push(hoop(0.12 + k * 0.035, 0.012, C.strawDark, 12).translate(-0.25, 0.012 + k * 0.006, 0.12));
+  return mesh(merge(parts), 'rope-heap');
+}
+/** 一段草绳（手里搓着的）：握处在原点，沿 +y 垂下去 */
+export const ropeEnd = () => mesh(pole(0, 0.55, 0.009, 0.008, C.strawDark, 4), 'rope');
+/**
+ * 斜织机（腰机改的，寻常人家用的那种）：一副木架，经线自后轴斜斜铺到人身前的卷布轴；
+ * beater 是打纬的筘（绕自己的 x 轴前后摆），shuttle 是梭（在经面上左右穿）。原点在机身正中的地面，人坐在 +z 那头朝 −z。
+ */
+export function loom(): { obj: THREE.Mesh; beater: THREE.Mesh; shuttle: THREE.Mesh } {
+  const parts: Geo[] = [];
+  // 两条长边（前低后高）、四条腿、坐板、前后两根轴
+  for (const s of [-1, 1]) {
+    parts.push(rodAB(V(s * 0.36, 0.42, 0.5), V(s * 0.36, 0.86, -0.55), 0.025, C.wood, 5));
+    parts.push(rodAB(V(s * 0.36, 0, 0.5), V(s * 0.36, 0.45, 0.5), 0.022, C.wood, 4), rodAB(V(s * 0.36, 0, -0.55), V(s * 0.36, 0.88, -0.55), 0.024, C.wood, 4));
+    parts.push(rodAB(V(s * 0.36, 0.12, 0.5), V(s * 0.36, 0.12, -0.55), 0.016, C.woodDark, 4));
+  }
+  parts.push(paint(boxUp(0.5, 0.03, 0.22, 'x').translate(0, 0.42, 0.72), C.wood));
+  for (const [y, z] of [[0.5, 0.42], [0.92, -0.55]]) parts.push(paint(cyl(0.04, 0.04, 0.76, 8).applyMatrix4(M.mul(M.t(0, y, z), M.rz(Math.PI / 2))), C.woodDark));
+  parts.push(paint(cyl(0.055, 0.055, 0.62, 8).applyMatrix4(M.mul(M.t(0, 0.5, 0.42), M.rz(Math.PI / 2))), C.paper));
+  // 经面：一张极薄的板（素白的经线），织好的布卷在前轴上
+  parts.push(paint(box(0.6, 0.004, 1.0).applyMatrix4(M.mul(M.t(0, 0.72, -0.07), M.rx(-0.42))), tone([0.96, 0.95, 0.9], 1)));
+  // 两块踏板
+  for (const s of [-1, 1]) parts.push(paint(box(0.09, 0.02, 0.5, 'z').applyMatrix4(M.mul(M.t(s * 0.1, 0.06, 0.45), M.rx(0.12))), C.wood));
+  const obj = mesh(merge(parts), 'loom');
+  const beater = mesh(merge([paint(box(0.66, 0.05, 0.035, 'x').translate(0, -0.3, 0), C.woodDark), paint(box(0.66, 0.025, 0.03, 'x').translate(0, -0.06, 0), C.wood), rodAB(V(-0.33, 0, 0), V(-0.33, -0.3, 0), 0.01, C.wood, 3), rodAB(V(0.33, 0, 0), V(0.33, -0.3, 0), 0.01, C.wood, 3)]), 'loom:beater');
+  beater.position.set(0, 1.05, 0.02); obj.add(beater);
+  const shuttle = mesh(paint(lathe([[0.001, -0.11], [0.018, -0.06], [0.02, 0.06], [0.001, 0.11]], 6).applyMatrix4(M.rz(Math.PI / 2)), C.woodPale), 'loom:shuttle');
+  shuttle.position.set(0, 0.76, 0.1); obj.add(shuttle);
+  return { obj, beater, shuttle };
+}
+/** 篾匠的一摊：编了一半的筐（竖着的篾条还没收口）、一捆劈好的篾、靠墙的两根毛竹。原点在筐底，毛竹在 +x 那边 */
+export function basketWork(): { obj: THREE.Mesh; strip: THREE.Mesh } {
+  const parts: Geo[] = [paint(lathe([[0.001, 0], [0.2, 0], [0.24, 0.08], [0.27, 0.2], [0.26, 0.2], [0.23, 0.08], [0.19, 0.02], [0.001, 0.02]], 14), C.bamboo)];
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; parts.push(rodAB(V(Math.cos(a) * 0.265, 0.19, Math.sin(a) * 0.265), V(Math.cos(a) * 0.32, 0.46, Math.sin(a) * 0.32), 0.006, C.bamboo, 3)); }
+  const R = mulberry32(57);
+  for (let i = 0; i < 12; i++) parts.push(paint(box(0.012, 0.003, 1.3, 'z').applyMatrix4(M.mul(M.t(0.55 + (R() - 0.5) * 0.08, 0.01 + i * 0.004, -0.15 + (R() - 0.5) * 0.06), M.ry((R() - 0.5) * 0.1))), C.bamboo));
+  for (const k of [0, 1]) parts.push(rodAB(V(0.9 + k * 0.16, 0, -0.6), V(0.85 + k * 0.2, 2.1, -1.0), 0.03, tone([0.82, 0.84, 0.6], 1.3), 6));
+  const strip = mesh(merge([paint(box(0.012, 0.9, 0.003), C.bamboo).translate(0, 0.35, 0), paint(box(0.03, 0.12, 0.012), C.woodDark).translate(0, -0.05, 0)]), 'basket-strip');
+  return { obj: mesh(merge(parts), 'basket-work'), strip };
+}
+/** 手磨：木架上两扇石磨，上扇（top）连着一根竖的木把一起转；架边一只豆盆。原点在架正中的地面 */
+export function quern(): { obj: THREE.Mesh; top: THREE.Mesh } {
+  const stone = tone([0.82, 0.82, 0.8], 1.6), parts: Geo[] = [paint(boxUp(0.7, 0.05, 0.7, 'x').translate(0, 0.52, 0), C.wood)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(rodAB(V(sx * 0.3, 0.53, sz * 0.3), V(sx * 0.33, 0, sz * 0.33), 0.03, C.wood, 4));
+  parts.push(paint(cylUp(0.27, 0.28, 0.1, 14), stone).translate(0, 0.57, 0), paint(lathe([[0.001, 0.57], [0.33, 0.57], [0.33, 0.6], [0.3, 0.6], [0.29, 0.585], [0.001, 0.585]], 14), stone));
+  parts.push(paint(lathe([[0.001, 0], [0.12, 0], [0.16, 0.14], [0.15, 0.14], [0.11, 0.02], [0.001, 0.02]], 10), C.wood).translate(0.55, 0, 0.2), paint(sphere(1, 7, 3).scale(0.13, 0.03, 0.13).translate(0.55, 0.12, 0.2), tone(PIG.huang, 1.1)));
+  const obj = mesh(merge(parts), 'quern');
+  const top = mesh(merge([paint(cylUp(0.26, 0.26, 0.11, 14), stone), paint(cyl(0.04, 0.04, 0.02, 8).translate(0.08, 0.115, 0), tone(PIG.mo, 2.4)), rodAB(V(0.21, 0.08, 0), V(0.21, 0.36, 0), 0.016, C.wood, 5)]), 'quern:top');
+  top.position.set(0, 0.67, 0); obj.add(top);
+  return { obj, top };
+}
+/** 豆腐担：一根扁担（沿 x，中点在原点）挑两只浅木盘，盘里的豆腐盖着白布 */
+export function tofuLoad(): THREE.Mesh {
+  const parts: Geo[] = [paint(box(1.5, 0.022, 0.045, 'x'), C.bamboo)];
+  for (const s of [-1, 1]) {
+    const x = s * 0.64;
+    parts.push(paint(boxUp(0.42, 0.07, 0.42), C.wood).translate(x, -0.5, 0), paint(boxUp(0.36, 0.05, 0.36), C.paper).translate(x, -0.45, 0));
+    for (const e of [-1, 1]) for (const f of [-1, 1]) parts.push(rodAB(V(x + e * 0.2, -0.44, f * 0.2), V(x, 0, 0), 0.004, C.rope, 3));
+  }
+  return mesh(merge(parts), 'tofu-load');
+}
+/** 背篓：竹编的高筐，背在背上。原点在两条背带的上端（贴着肩后），篓身朝 −z、往下 */
+export function backBasket(): THREE.Mesh {
+  const body = paint(lathe([[0.001, -0.62], [0.12, -0.62], [0.17, -0.4], [0.2, -0.08], [0.19, -0.06], [0.16, -0.38], [0.11, -0.6], [0.001, -0.6]], 11), C.bamboo).translate(0, 0, -0.2);
+  const herbs = paint(sphere(1, 7, 4).scale(0.16, 0.06, 0.16).translate(0, -0.1, -0.2), C.leaf);
+  return mesh(merge([body, herbs, hoop(0.2, 0.01, C.strawDark, 11).translate(0, -0.07, -0.2), rodAB(V(-0.1, 0, 0), V(-0.12, -0.45, -0.06), 0.008, C.rope, 3), rodAB(V(0.1, 0, 0), V(0.12, -0.45, -0.06), 0.008, C.rope, 3)]), 'back-basket');
+}
+/** 药锄：短柄的小锄，握处在原点，柄沿 +y，锄头朝 −z */
+export const herbHoe = () => mesh(merge([pole(-0.05, 0.42, 0.012, 0.011, C.wood), paint(box(0.05, 0.01, 0.1).applyMatrix4(M.mul(M.t(0, 0.42, -0.05), M.rx(0.3))), C.iron)]), 'herb-hoe');
+/** 药匾：一只圆的浅竹匾，摊着切好的药材。原点在匾底正中 */
+export function herbTray(seed = 1): THREE.Mesh {
+  const R = mulberry32(seed), parts: Geo[] = [paint(lathe([[0.001, 0], [0.4, 0], [0.45, 0.05], [0.43, 0.05], [0.39, 0.012], [0.001, 0.012]], 16), C.bamboo)];
+  const herb = [tone([0.78, 0.7, 0.56], 1.5), tone(PIG.lao, 1.2), tone([0.86, 0.8, 0.66], 1.2)];
+  for (let i = 0; i < 22; i++) { const a = R() * 6.28, d = Math.sqrt(R()) * 0.34; parts.push(paint(box(0.05 + R() * 0.05, 0.012, 0.03), herb[i % 3]).applyMatrix4(M.mul(M.t(Math.cos(a) * d, 0.02, Math.sin(a) * d), M.ry(R() * 3)))); }
+  return mesh(merge(parts), 'herb-tray');
+}
+/** 羊鞭：一根细长的竹竿，梢上拴一截皮条（垂着）。握处在原点，沿 +y */
+export const herdWhip = () => mesh(merge([pole(-0.15, 1.35, 0.01, 0.006, C.bamboo, 4), rodAB(V(0, 1.35, 0), V(0.03, 1.0, 0.08), 0.004, C.woodDark, 3)]), 'herd-whip');
+/** 灯笼：一只素纸的圆灯笼，提梁在原点，灯身沿 +y 往「下」（同桑篮的讲法）；夜里亮 */
+export function lantern(): THREE.Mesh {
+  const body = lathe([[0.001, 0.12], [0.07, 0.125], [0.11, 0.18], [0.12, 0.25], [0.11, 0.32], [0.07, 0.375], [0.001, 0.38]], 10);
+  const rims = [cyl(0.075, 0.075, 0.02, 10).translate(0, 0.12, 0), cyl(0.075, 0.075, 0.02, 10).translate(0, 0.38, 0)].map((g) => paint(g, tone([0.7, 0.6, 0.5], 2)));
+  return lit(merge([paint(body, [1, 0.97, 0.9]), ...rims, paint(cyl(0.004, 0.004, 0.12, 3).translate(0, 0.06, 0), C.rope)]), 'lantern');
+}
+/** 灯竿：一根插在地上的竹竿，梢上一截横木，挂一只灯笼（lamp 是灯笼，夜里亮）。原点在竿脚 */
+export function lanternPost(h = 1.9): { obj: THREE.Mesh; lamp: THREE.Mesh } {
+  const obj = mesh(merge([pole(0, h, 0.016, 0.012, C.bamboo, 5), rodAB(V(0, h - 0.05, 0), V(0.32, h + 0.02, 0), 0.008, C.bamboo, 4), rodAB(V(0.3, h + 0.01, 0), V(0.3, h - 0.1, 0), 0.003, C.rope, 3)]), 'lantern-post');
+  const lamp = lantern();
+  lamp.position.set(0.3, h - 0.1, 0); lamp.rotation.set(Math.PI, 0, 0);
+  obj.add(lamp);
+  return { obj, lamp };
+}
+/** 灯盏：一只陶灯碗，碗口一点火苗。原点在碗底；夜里亮 */
+export const oilLamp = () => lit(merge([paint(lathe([[0.001, 0], [0.03, 0], [0.05, 0.03], [0.045, 0.032], [0.001, 0.02]], 8), tone([0.72, 0.64, 0.56], 1.8)), paint(sphere(1, 6, 4).scale(0.008, 0.02, 0.008).translate(0.03, 0.05, 0), [1, 0.92, 0.7])]), 'oil-lamp');
+/** 梆子：一截挖空的硬木筒（带一道口子），握处在原点，筒沿 +y */
+export const clapper = () => mesh(merge([paint(cyl(0.035, 0.035, 0.24, 8).translate(0, 0.12, 0), tone([0.72, 0.56, 0.42], 2.1)), paint(box(0.012, 0.18, 0.02).translate(0, 0.12, 0.034), tone(PIG.mo, 2.6))]), 'clapper');
+/** 一根敲梆子、敲鼓的短棒：握处在原点，沿 +y */
+export const beatStick = (len = 0.26) => mesh(merge([pole(-0.04, len, 0.008, 0.007, C.woodDark, 4), paint(sphere(0.014, 5, 4).translate(0, len, 0), C.woodDark)]), 'stick');
+/** 说书的鼓：一面扁鼓架在三条腿的小架上。原点在架正中的地面；鼓面朝上，高 0.62 */
+export function storyDrum(): THREE.Mesh {
+  const parts: Geo[] = [paint(cyl(0.17, 0.17, 0.08, 14).translate(0, 0.62, 0), tone(PIG.zhu, 1.5)), paint(cyl(0.165, 0.165, 0.004, 14).translate(0, 0.662, 0), tone([0.92, 0.86, 0.74], 1.2))];
+  for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2; parts.push(rodAB(V(Math.cos(a) * 0.1, 0.58, Math.sin(a) * 0.1), V(Math.cos(a) * 0.24, 0, Math.sin(a) * 0.24), 0.012, C.woodDark, 4)); }
+  return mesh(merge(parts), 'story-drum');
+}
+/** 交床（胡床）：一具折叠的小坐具，两副交叉的腿，面是绷着的绳。原点在地面，面高 0.4 */
+export function foldStool(): THREE.Mesh {
+  const parts: Geo[] = [];
+  for (const sz of [-1, 1]) for (const k of [-1, 1]) parts.push(rodAB(V(-0.2, 0.4, sz * 0.15 * k), V(0.2, 0, -sz * 0.15 * k), 0.013, C.woodDark, 4));
+  for (const x of [-0.2, 0.2]) parts.push(rodAB(V(x, 0.4, -0.16), V(x, 0.4, 0.16), 0.014, C.wood, 4));
+  parts.push(paint(boxUp(0.38, 0.012, 0.3), C.rope).translate(0, 0.39, 0));
+  return mesh(merge(parts), 'fold-stool');
+}
+/** 锡杖：一根长杖，杖头一个铁环套着几个小环。底在原点，沿 +y */
+export function monkStaff(len = 1.7): THREE.Mesh {
+  const parts: Geo[] = [pole(0, len, 0.014, 0.012, C.woodDark), hoop(0.06, 0.006, C.iron, 10).applyMatrix4(M.mul(M.t(0, len + 0.06, 0), M.rx(Math.PI / 2)))];
+  for (const s of [-1, 1]) parts.push(hoop(0.022, 0.004, C.iron, 6).applyMatrix4(M.mul(M.t(s * 0.05, len + 0.03, 0), M.rx(Math.PI / 2))));
+  return mesh(merge(parts), 'monk-staff');
+}
+/** 蒲扇：一片圆圆的葵叶扇，短柄。握处在原点，柄沿 +y，扇面在 x–y 平面里 */
+export function fan(): THREE.Mesh {
+  const leaf = paint(cyl(0.13, 0.13, 0.006, 12).applyMatrix4(M.mul(M.t(0, 0.22, 0), M.rx(Math.PI / 2), M.s(1, 1, 1.15))), tone([0.9, 0.84, 0.62], 1.2));
+  return mesh(merge([pole(-0.04, 0.12, 0.007, 0.007, C.bamboo, 4), leaf]), 'fan');
+}
+/** 鞋底（纳了一半的）：握在左手里，原点在手里，鞋底沿 +y */
+export const shoeSole = () => mesh(merge([paint(sphere(1, 7, 3).scale(0.045, 0.12, 0.012).translate(0, 0.08, 0), C.paper), paint(cyl(0.002, 0.002, 0.25, 3).translate(0.05, 0.1, 0.012), C.rope)]), 'shoe-sole', true);
+/** 斧：握处在原点，柄沿 +y，斧头在梢上朝 −z */
+export const axe = () => mesh(merge([pole(-0.15, 0.6, 0.016, 0.015, C.wood), paint(box(0.03, 0.11, 0.14).translate(0, 0.58, -0.07), C.iron)]), 'axe');
+/** 劈柴的一摊：一个木墩、墩上立着一段待劈的木头、旁边码着劈好的柴。原点在木墩底正中，柴垛在 +x */
+export function woodChop(): { obj: THREE.Mesh; log: THREE.Mesh } {
+  const parts: Geo[] = [paint(cylUp(0.22, 0.24, 0.42, 10), C.wood), paint(cyl(0.21, 0.21, 0.004, 10).translate(0, 0.422, 0), C.woodPale)];
+  const R = mulberry32(73);
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 6 - row; i++) parts.push(paint(box(0.08, 0.08, 0.45, 'z'), R() < 0.5 ? C.woodPale : C.wood).translate(0.75 + (i + row * 0.5) * 0.09, 0.04 + row * 0.08, 0.1));
+  const log = mesh(paint(cylUp(0.09, 0.09, 0.32, 8), C.woodPale), 'log');
+  log.position.set(0, 0.42, 0);
+  return { obj: mesh(merge(parts), 'wood-chop'), log };
+}
+/** 木锨（扬场用）：握处在原点，长柄沿 +y，梢上一块宽的木板 */
+export const shovel = () => mesh(merge([pole(-0.4, 1.2, 0.015, 0.014, C.wood), paint(box(0.3, 0.35, 0.02).translate(0, 1.35, 0), C.woodPale)]), 'shovel');
+/** 拾穗的篮：同桑篮的样子，篮里是麦穗 */
+export function earBasket(): THREE.Mesh {
+  const m = basket();
+  const col = m.geometry.getAttribute('color') as THREE.BufferAttribute, pos = m.geometry.getAttribute('position') as THREE.BufferAttribute, g = tone(PIG.huang, 1.0);
+  for (let i = 0; i < col.count; i++) if (pos.getY(i) > 0.2 && pos.getY(i) < 0.31 && Math.hypot(pos.getX(i), pos.getZ(i)) < 0.152) col.setXYZ(i, g[0], g[1], g[2]);
+  m.name = 'ear-basket';
+  return m;
+}

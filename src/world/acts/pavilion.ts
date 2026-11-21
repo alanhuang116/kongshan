@@ -58,7 +58,7 @@ function guan(k: Anlewo): Act | null {
     set({ kind: 'read', title: MODE_NAME[mode], text: sy?.text ?? '以物观物。', source: sy?.source, gloss: sy?.gloss, choices: [{ id: 'again', label: '再坐一会儿' }, { id: 'done', label: '起身' }] });
     mode = null;
   };
-  const resetFx = () => { U.uCloud.value.copy(cloud0); k.atmos.starShift = 0; k.focus = null; };
+  const resetFx = () => { U.uCloud.value.copy(cloud0); k.atmos.starShift = 0; k.focus = null; k.atmos.sky.lines.setAll(0, 1.5); k.atmos.sky.labels.hideAll('guan'); };
   return {
     id: 'guan', name: '观物', anchor: seat.position.clone().add(V(0.6, 1.0, 0)), spot: { x: seat.position.x + 0.55, z: seat.position.z, yaw: seat.rotation.y }, radius: 2.0, state, noZoom: true,
     enter() {
@@ -93,6 +93,12 @@ function guan(k: Anlewo): Act | null {
         mode = c as Mode; t = 0;
         resetFx(); cloud0.copy(U.uCloud.value);
         if (mode === 'cicada') k.focus = 'cicada'; else if (mode === 'rain') k.focus = 'rain';
+        if (mode === 'star') {
+          // 候星移：北斗淡淡地描出来、北极星题一个名，看斗柄绕着它转
+          const sk = k.atmos.sky, d = sk.data.find('北斗'), S = sk.data.stars.dir, p = sk.data.dipper[7];
+          if (d) sk.lines.set(d.i, 0.55, 0.8);
+          sk.labels.show('guan-pole', '北极星', [S[p * 3], S[p * 3 + 1], S[p * 3 + 2]], { big: false });
+        }
         k.nav.setPose(look(mode), 2.2);
         k.world.fpsCap = 30;
         set({ kind: 'guan', title: MODE_NAME[mode], hint: mode === 'star' ? '一夜的星，在这一会儿里转过去' : '不必做什么。看着就好', progress: 0 });

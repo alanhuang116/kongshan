@@ -1,13 +1,15 @@
 /**
- * 界面与安乐窝之间的接线：启动、题名页背后的俯瞰、「入」、行走（摇杆）、去某处、做某事、改天时、声音，
- * 把做过的事记进起居注，把观到的象收进观象册；每秒看一眼画里是昼是夜，界面的颜色跟着换。
+ * 界面与安乐窝之间的接线：启动、题名页背后的俯瞰、「入」、行走（摇杆、「疾」）、去某处、做某事、改天时与时辰流转、声音，
+ * 把做过的事记进起居注，把观到的象收进观象册，把世界的存档（田、行囊、村人……）存到本机；
+ * 世界要说的一句话（「得麦三捆」）浮在画面下方；每秒看一眼画里是昼是夜，界面的颜色跟着换。
  */
 import { Anlewo, type TimeMode } from '../world/Anlewo';
 import type { Season, Weather } from '../world/env/atmos';
 import * as walk from '../world/walk';
 import { today } from './calendar';
 import * as snd from './sound';
-import { addEntry, addFound, patch, saved, setUi, ui, type Sheet } from './store';
+import { hasSheet } from './sheets/extra';
+import { addEntry, addFound, addNote, patch, saveWorld, saved, setUi, ui, type Sheet } from './store';
 import { WORDS, guaOf } from './texts';
 
 let ks: Anlewo | null = null;
@@ -31,7 +33,9 @@ const START = (() => {
   const q = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search), s = saved.get();
   const season = SEASONS.find((x) => x === q.get('season')) ?? s.season, weather = WEATHERS.find((x) => x === q.get('w')) ?? s.weather;
   const time = parseTime(q.get('t')) ?? s.time, hour = hourOf(time, season);
-  return { q, season, weather, time, hour, auto: q.has('auto') || q.get('ui') === '0' };
+  // 时辰流转的快慢：flow=0 让时辰停着（截图、自动检查时用），也可以给每秒几个钟头
+  const fq = q.get('flow'), flow = fq != null && /^\d+(\.\d+)?$/.test(fq) ? Math.min(1, Number(fq)) : s.flow;
+  return { q, season, weather, time, hour, flow, auto: q.has('auto') || q.get('ui') === '0' };
 })();
 
 // —— 昼与夜：界面用哪一套颜色 ——
@@ -88,7 +92,10 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', (e) => {
 }, true);
 
 /** 世界那边怎么叫这几页 → 界面上的哪一页 */
-const SHEET_OF: Record<string, Exclude<Sheet, null>> = { album: 'xiang', xiang: 'xiang', map: 'map', time: 'sky', sky: 'sky', sound: 'sound', journal: 'journal', about: 'about' };
+const SHEET_OF: Record<string, Exclude<Sheet, null>> = {
+  album: 'xiang', xiang: 'xiang', map: 'map', time: 'sky', sky: 'sky', sound: 'sound', journal: 'journal', about: 'about',
+  bag: 'bag', folk: 'folk', people: 'folk', stars: 'stars', starmap: 'stars',
+};
 
 /** 雾（0…1）缓缓到 v */
 let veilRun = 0, veiling = false;
@@ -117,6 +124,8 @@ export async function boot(canvas: HTMLCanvasElement) {
       quality: q.get('q') ?? (s.quality === 'auto' ? null : s.quality), season: START.season, weather: START.weather, hour: START.hour, moonPhase: t.moon,
       // 人总是从桃林最西头走进来
       start: q.get('s') ?? 'grove',
+      // 世界上回存下的那些份（田、行囊、村人……）与时辰流转的快慢
+      mem: s.world, flow: START.flow,
       events: {
         progress: (k, label) => setUi({ progress: k, stage: label }),
         place: (id) => setUi({ place: id, arrivedAt: Date.now() }),
@@ -127,15 +136,26 @@ export async function boot(canvas: HTMLCanvasElement) {
           setUi({ act: id, actState: { ...state } });
         },
         log: (e) => { addEntry(e); if (e.kind === 'xiang' && e.text) sight(e.text); },
-        step: (surface) => { const k = ks; snd.step(surface, k ? { wading: walk.waterDepth(k.player.pos.x, k.player.pos.z) > 0.02, fast: k.player.fast } : {}); },
+        step: (surface, o) => { const k = ks; snd.step(surface, k ? { wading: walk.waterDepth(k.player.pos.x, k.player.pos.z) > 0.02, fast: k.player.fast, run: o?.run, speed: o?.speed } : { run: o?.run, speed: o?.speed }); },
         sfx: (shot, opts) => snd.play(shot, opts),
         buzz: (ms) => buzz(ms),
         duck: (amount, fade) => snd.duck(amount, fade),
-        loop: (name, level) => snd.loop(name, level),
+        // 推磨、蜂箱、一片蛙……给了在哪里（x, z），就有左右远近
+        loop: (name, level, o) => snd.loop(name, level, o),
         // 世界请界面翻开一页（先天图那幅卷轴上的「观象册」）
-        open: (sheet) => { const s = SHEET_OF[sheet]; if (s) openSheet(s); },
-        // 榻上一觉、亭中小睡，世界自己拨了时辰：存档跟着记下这一刻
+        open: (sheet) => { const s = SHEET_OF[sheet]; if (s && hasSheet(s)) openSheet(s); },
+        // 榻上一觉、亭中小睡、时辰流转着（每八秒报一次），世界自己拨了时辰：存档跟着记下这一刻
         clock: (hour) => { patch({ time: Math.round(hour * 100) / 100 }); sense(); },
+        // 过了一夜
+        day: (n) => { patch({ day: n }); setUi({ day: n }); },
+        // 世界的存档里有一份变了：存到本机
+        mem: (ns, v) => saveWorld(ns, v),
+        bag: (items) => setUi({ bag: { ...items } }),
+        // 画面下方浮一句话
+        note: (text, kind) => addNote(text, kind),
+        run: (on) => setUi({ run: on }),
+        // 夜里点了天上一处：出一张星笺（null 收起）
+        skyCard: (c) => setUi({ sky: c ? { ...c } : null }),
       },
     });
   } catch (e) {
@@ -148,8 +168,10 @@ export async function boot(canvas: HTMLCanvasElement) {
   // 今天的节气：农夫说话时用
   k.term = t.termName || null;
   k.setTime(START.time, true);
+  setUi({ bag: { ...k.bag.items }, day: k.day, run: k.player.run });
+  if (k.day !== s.day) patch({ day: k.day });
   const w = window as unknown as Record<string, unknown>;
-  w.__ks = k; w.__walk = walk; w.__ui = { ui, saved, setUi, patch, sound: snd };   // 给调试与自动测试用
+  w.__ks = k; w.__walk = walk; w.__ui = { ui, saved, setUi, patch, addNote, sound: snd };   // 给调试与自动测试用
   sense();
   setInterval(sense, 1000);
   setInterval(soundTick, 250);
@@ -206,6 +228,8 @@ export function go(id: string) {
 }
 /** 做某件事：id 省略时做走近了的那件。人会自己走到位 */
 export function doAct(id?: string) { if (!ks) return; snd.play('tick', { vel: 0.5 }); ks.use(id); }
+/** 收起星笺（天上点亮的那一处也熄掉） */
+export function closeSky() { if (ks) ks.skyClose(); setUi({ sky: null }); }
 /** 取景偏移：把画面里的人往右（x）、往上（y）让出几成画幅（有面板时别挡着他） */
 export function frame(x: number, y: number) { ks?.nav.frame.set(x, y); }
 /** 摇杆：x 右、y 前，长度 ≤ 1 */
@@ -215,6 +239,18 @@ export function leaveAct() { if (ks?.act) ks.exitAct(); else setUi({ act: null, 
 export function actCmd(name: string, arg?: unknown) { ks?.cmd(name, arg); }
 
 export function setTime(mode: TimeMode | number) { patch({ time: mode }); ks?.setTime(mode); sense(); }
+/**
+ * 时辰流转得多快（每秒几个钟头；0 停）。「随此刻」时时辰跟着钟点走、不流转：这时选了一档会走的，
+ * 就从此刻的钟点起，让它照这一档走下去。
+ */
+export function setFlow(rate: number) {
+  const r = Math.max(0, Math.min(1, rate));
+  patch({ flow: r });
+  ks?.setFlow(r);
+  if (r > 0 && ks && ks.timeMode === 'now') setTime(Math.round(ks.atmos.hour * 100) / 100);
+}
+/** 「疾」：一直跑 / 不跑（手机上摇杆旁那一枚） */
+export function setRun(on: boolean) { ks?.setRun(on); buzz(6); }
 export function setWeather(w: Weather) { patch({ weather: w }); ks?.setWeather(w); }
 export function setSeason(s: Season) { patch({ season: s }); ks?.setSeason(s); sense(); }
 export function setMaster(v: number) { patch({ master: v }); snd.setMaster(v); }
@@ -222,6 +258,7 @@ export function setMuted(m: boolean) { patch({ muted: m }); snd.setMuted(m); }
 /** 一样环境声的音量（风、水、禽、虫、雨雪、村、远琴） */
 export function setLevel(id: string, v: number) { patch({ sound: { ...saved.get().sound, [id]: v } }); snd.setLevel(id, v); }
 export function openSheet(s: Sheet) {
+  if (s && !hasSheet(s)) return;
   snd.play(s ? 'open' : 'close', { vel: 0.5 });
   setUi({ sheet: s, menu: false });
 }

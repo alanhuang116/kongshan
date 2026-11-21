@@ -14,7 +14,7 @@
  * 笔的颜料写在每一笔上（材质的颜料是白的），所以一季只有两次绘制：淡彩一层、粉一层。
  */
 import type { Season } from '../atmos';
-import type { Plot, Rect } from '../../site';
+import { farmOwns, type Plot, type Rect } from '../../site';
 import { FGeo, clamp01, lerp, rand, tube, v3, type RGB, type Rand, type V3 } from './kit';
 import type { RDab, Sink } from './sink';
 import { FIELD, PETAL } from './tiles2';
@@ -103,7 +103,8 @@ export function fieldSet(se: Season, f: FieldPlan): FieldSet {
   const put = (L: RDab[], x: number, y: number, z: number, size: number, tile: number, c: RGB, tone: number, up = 0.46, sway = 0.5, rot = 0) => {
     if (R() > keep) return;
     const s = size * big;
-    L.push({ x, y: y + s * up, z, size: s, tile, nx: R.pm(0.3), ny: 1, nz: R.pm(0.3), r: c[0] * tone, g: c[1] * tone, b: c[2] * tone, rot: rot || R.pm(0.07), sway, k: R() });
+    const d: RDab = { x, y: y + s * up, z, size: s, tile, nx: R.pm(0.3), ny: 1, nz: R.pm(0.3), r: c[0] * tone, g: c[1] * tone, b: c[2] * tone, rot: rot || R.pm(0.07), sway, k: R() };
+    if (!farmOwns(x, z)) L.push(d);   // 行者自己种的那几块归农事那一路画（site.ts 的 FARM_OWN）；随机数照常取，别处的笔不变
   };
   const sp = se === 'spring', su = se === 'summer', au = se === 'autumn', wi = se === 'winter';
 
@@ -119,17 +120,26 @@ export function fieldSet(se: Season, f: FieldPlan): FieldSet {
           else if (R() < 0.62) put(wash, x, y, z, R.r(0.5, 0.7), F.maiSprout, [0.66, 0.77, 0.58], R.r(0.86, 1.02), 0.46, 0.2);
         });
         break;
-      case 'rape':
+      case 'rape': {
+        // 春天的菜花要成片：每一棵上再添一两簇（另用一份随机数，别处的笔不变）；畦心比畦边密、高一点，远看是一大片淡黄
+        const RR = rand(5151 + Math.round(p.x0 * 7 + p.z0 * 13)), cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2, hx = (p.x1 - p.x0) / 2, hz = (p.z1 - p.z0) / 2;
         eachRow(p, 1.15, 1.0, 1.4, R, (x, z) => {
           if (sp) {
             const s = R.r(0.98, 1.2);
             put(wash, x, y, z, s, F.caiPlant, [0.72, 0.83, 0.58], R.r(0.86, 1.05), 0.47, 0.6);
             // 菜花：淡黄，一行里有开得满的、有才打苞的
             if (R() < 0.9) { const v = R(); put(body, x + R.pm(0.12), y + s * 0.5, z + R.pm(0.12), R.r(0.72, 0.96), R() < 0.5 ? P.caihua0 : P.caihua1, v < 0.25 ? [1, 0.985, 0.8] : [1, 0.955, 0.66], R.r(0.97, 1.02), 0.3, 0.7); }
+            const mid = 1 - Math.max(Math.abs(x - cx) / hx, Math.abs(z - cz) / hz);
+            for (let k = 0, n = RR() < 0.55 + 0.4 * mid ? 2 : 1; k < n; k++) {
+              if (RR() > keep) continue;
+              const fx = x + RR.pm(0.3), fz = z + RR.pm(0.3), sz = RR.r(0.78, 1.05) * big * (0.92 + 0.16 * mid), v = RR(), c = v < 0.2 ? [1, 0.98, 0.78] : [1, 0.94, 0.6];
+              if (!farmOwns(fx, fz)) body.push({ x: fx, y: y + s * (0.55 + 0.12 * mid) + sz * 0.3, z: fz, size: sz, tile: RR() < 0.5 ? P.caihua0 : P.caihua1, nx: RR.pm(0.3), ny: 1, nz: RR.pm(0.3), r: c[0], g: c[1] * RR.r(0.98, 1.01), b: c[2], rot: RR.pm(0.07), sway: 0.7, k: RR() });
+            }
           } else if (su) put(wash, x, y, z, R.r(1.0, 1.2), F.caiPod, [0.8, 0.82, 0.58], R.r(0.88, 1.05), 0.47, 0.7);
           else if (R() < (au ? 0.85 : 0.6)) put(wash, x, y, z, R.r(0.42, 0.58) * (au ? 1 : 0.9), F.caiSeed, au ? [0.7, 0.82, 0.58] : [0.66, 0.75, 0.6], R.r(0.86, 1.04), 0.44, 0.15);
         });
         break;
+      }
       case 'bean':
         for (const [x, z, h] of beanSpots(p)) {
           if (sp) put(wash, x + R.pm(0.1), y, z + R.pm(0.1), R.r(0.5, 0.66), F.douLow, [0.72, 0.84, 0.58], R.r(0.88, 1.05), 0.36, 0.3);

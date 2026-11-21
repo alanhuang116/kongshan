@@ -1,0 +1,42 @@
+/* 星图（册子里的一页）：纸本、墨线、一点朱。昼是纸上墨，夜随界面换成深墨上的月白（颜色都取 base.css 的那组量）。
+   图是正方的，按册页的宽度缩放；手机上一屏放得下（393×714、375×548 都看过）。
+   与别的几页同一套器物：「回到此刻」是一枚凸起的小签；点着的那一个，名字大、所属小，下面是引语与白话；小字至少 ink-2、不小于 12.5px。 */
+.starmap-wrap { position: relative; width: min(100%, 352px); margin: 0 auto; }
+.starmap { display: block; width: 100%; height: auto; aspect-ratio: 1; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; overflow: visible; }
+.starmap:active { cursor: grabbing; }
+.starmap text { font-family: var(--kai); fill: var(--ink); }
+/* 圆图的底：比册页的纸略深一点点，像裱在纸上的一张拓片 */
+.starmap .sm-paper { fill: var(--ink); fill-opacity: 0.035; stroke: none; }
+.starmap .sm-rim { fill: none; stroke: var(--ink); stroke-opacity: 0.55; stroke-width: 1.1; }
+.starmap .sm-ring { fill: none; stroke: var(--ink); stroke-opacity: 0.32; stroke-width: 0.6; }
+.starmap .sm-eq { stroke-opacity: 0.42; stroke-width: 0.7; }
+.starmap .sm-xiu { fill: none; stroke: var(--ink); stroke-opacity: 0.16; stroke-width: 0.5; }
+.starmap .sm-ecl { fill: none; stroke: var(--mark); stroke-opacity: 0.55; stroke-width: 0.7; stroke-dasharray: 2.2 2.4; }
+.starmap .sm-han { fill: none; stroke: var(--ink); stroke-opacity: 0.06; stroke-width: 22; stroke-linecap: round; stroke-linejoin: round; }
+/* 地平之下：罩一层（昼是纸色，夜是夜色），星淡下去 */
+.starmap .sm-below { fill: var(--paper); fill-opacity: 0.6; }
+.starmap .sm-hor { fill: none; stroke: var(--ink); stroke-opacity: 0.4; stroke-width: 0.6; stroke-dasharray: 1 2.2; }
+.starmap .sm-lines { fill: none; stroke: var(--ink); stroke-opacity: 0.42; stroke-width: 0.45; stroke-linecap: round; }
+.starmap .sm-lines.is-hi { stroke: var(--mark); stroke-opacity: 0.9; stroke-width: 1.1; }
+.starmap .sm-star { fill: var(--ink); fill-opacity: 0.88; }
+.starmap .sm-name { font-size: 7.4px; text-anchor: middle; fill-opacity: 0.62; letter-spacing: 0.05em; pointer-events: none; }
+.starmap .sm-name.is-xiu { font-size: 8.4px; fill: var(--mark); fill-opacity: 0.85; }
+.starmap .sm-name.is-seen { fill-opacity: 0.85; }
+.starmap .sm-yuan { font-size: 9.5px; text-anchor: middle; fill-opacity: 0.5; letter-spacing: 0.3em; pointer-events: none; }
+.starmap .sm-planet circle { fill: none; stroke: var(--mark); stroke-width: 0.9; }
+.starmap .sm-planet text { font-size: 7.4px; fill: var(--mark); }
+.starmap .sm-moon circle { fill: var(--paper); stroke: var(--ink); stroke-width: 0.7; }
+.starmap .sm-moon text { font-size: 7.6px; }
+.starmap .sm-sun circle { fill: var(--mark); fill-opacity: 0.8; }
+.starmap .sm-hi { fill: none; stroke: var(--mark); stroke-opacity: 0.55; stroke-width: 0.8; }
+.starmap .sm-zenith path { stroke: var(--ink); stroke-opacity: 0.6; stroke-width: 0.7; }
+.starmap .sm-pole { fill: var(--mark); }
+.starmap .sm-dir { font-size: 9px; text-anchor: middle; fill-opacity: 0.6; letter-spacing: 0.2em; }
+.starmap-now.opt { position: absolute; right: 0; bottom: 2px; min-height: 36px; padding: 0 12px; font-size: 14px; letter-spacing: 0.12em; text-indent: 0.12em; }
+@media (pointer: coarse) { .starmap-now.opt { min-height: 44px; } }
+.starmap-info { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule-2); animation: fade-back 0.4s backwards; }
+.starmap-info .sm-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.starmap-info .sm-title b { font-family: var(--kai); font-size: 20px; font-weight: 400; letter-spacing: 0.12em; color: var(--title); }
+.starmap-info .sm-title span { font-family: var(--kai); font-size: 14px; letter-spacing: 0.08em; color: var(--ink-2); }
+.starmap-info .sheet-quote small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--ink-2); }
+@media (max-height: 600px) { .starmap-wrap { width: min(100%, 300px); } }

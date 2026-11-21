@@ -13,7 +13,7 @@ import { Brush, drawStrokes, packChar, unpackChar } from './brush';
  */
 const KEY = 'anlewo:write:v1';
 const KAI = '"LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif';
-const INK = '#1c1a17', ZHU = '177, 57, 43';
+const INK = '#1c1c1d', ZHU = '176, 57, 43';
 const isHan = (c: string) => /\p{Script=Han}/u.test(c);
 /** 上回没写完的那一篇（同一篇字才接着写） */
 function load(key: string, total: number): string[] {
@@ -38,7 +38,7 @@ function Thumb({ data, ch, size, here }: { data: string; ch: string; size: numbe
     const d = Math.min(2, window.devicePixelRatio || 1); c.width = c.height = Math.round(size * d);
     const g = c.getContext('2d')!; g.clearRect(0, 0, c.width, c.height);
     if (data) drawStrokes(g, unpackChar(data), 0, 0, c.width, INK);
-    else { g.font = `${c.width * 0.74}px ${KAI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = here ? `rgba(${ZHU}, 0.55)` : 'rgba(40, 36, 32, 0.22)'; g.fillText(ch, c.width / 2, c.width * 0.53); }
+    else { g.font = `${c.width * 0.74}px ${KAI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = here ? `rgba(${ZHU}, 0.55)` : 'rgba(36, 36, 38, 0.22)'; g.fillText(ch, c.width / 2, c.width * 0.53); }
   }, [data, ch, size, here]);
   return <canvas ref={ref} className={`copy-thumb${here ? ' is-here' : ''}`} style={{ width: size, height: size }} />;
 }
@@ -49,9 +49,9 @@ function renderPiece(cols: string[][], all: string[], head: string, cell: number
   const W = Math.round(cols.length * (cell + gap) + cell * 2.3 + pad * 2), H = Math.round(rows * cell + pad * 2);
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#f4f1e9'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#f4f4f1'; g.fillRect(0, 0, W, H);
   // 纸的纤维
-  for (let i = 0; i < (W * H) / 900; i++) { g.fillStyle = `rgba(96, 88, 76, ${Math.random() * 0.05})`; g.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 12, 1); }
+  for (let i = 0; i < (W * H) / 900; i++) { g.fillStyle = `rgba(92, 92, 94, ${Math.random() * 0.05})`; g.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 12, 1); }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   // 题
   let x = W - pad - cell * 0.36;
@@ -63,7 +63,7 @@ function renderPiece(cols: string[][], all: string[], head: string, cell: number
     col.forEach((ch, r) => {
       const y = pad + r * cell, s = all[k++];
       if (s) drawStrokes(g, unpackChar(s), x, y, cell, INK);
-      else { g.font = `${cell * 0.7}px ${KAI}`; g.fillStyle = 'rgba(40, 36, 32, 0.16)'; g.fillText(ch, x + cell / 2, y + cell * 0.53); }
+      else { g.font = `${cell * 0.7}px ${KAI}`; g.fillStyle = 'rgba(36, 36, 38, 0.16)'; g.fillText(ch, x + cell / 2, y + cell * 0.53); }
     });
   }
   // 款：年月，一方印
@@ -72,7 +72,7 @@ function renderPiece(cols: string[][], all: string[], head: string, cell: number
   [...tail].forEach((ch, i) => g.fillText(ch, tx, pad + cell * 0.5 + i * cell * 0.37));
   const seal = [...WORDS.seal].slice(0, 2), ss = cell * 0.46, sy = pad + cell * 0.5 + [...tail].length * cell * 0.37 + cell * 0.08;
   g.fillStyle = `rgb(${ZHU})`; g.fillRect(tx - ss / 2, sy, ss, ss * (seal.length > 1 ? 1.62 : 1));
-  g.fillStyle = '#fbf4ec'; g.font = `600 ${ss * 0.62}px "Noto Serif SC", serif`;
+  g.fillStyle = '#fbf6f2'; g.font = `600 ${ss * 0.62}px "Noto Serif SC", serif`;
   seal.forEach((ch, i) => g.fillText(ch, tx, sy + ss * (0.45 + i * 0.72)));
   return c;
 }
@@ -184,9 +184,9 @@ export default function Copy({ model, head, hint }: { model: string[]; /** 写�
       <div className="copy copy-piece" data-testid="copy-piece">
         <div className="piece-wrap"><img src={piece} alt="你写的这一篇" /></div>
         <div className="copy-tools">
-          {!done && <button className="ink-btn" onClick={() => setPiece(null)}>接着写</button>}
-          <button className="ink-btn" onClick={() => savePiece(piece)}>存为图片</button>
-          {done && <button className="ink-btn is-soft" onClick={again}>再写一遍</button>}
+          {!done && <span className="ink-well"><button className="ink-btn" onClick={() => setPiece(null)}>接着写</button></span>}
+          {done ? <span className="ink-well"><button className="ink-btn" onClick={() => savePiece(piece)}>存为图片</button></span> : <button className="ink-btn is-soft" onClick={() => savePiece(piece)}>存为图片</button>}
+          {done && <button className="ink-link" onClick={again}>再写一遍</button>}
         </div>
       </div>
     );
@@ -209,8 +209,8 @@ export default function Copy({ model, head, hint }: { model: string[]; /** 写�
         </div>
         <div className="copy-tools">
           <button className="ink-btn is-soft" onClick={redo} data-testid="copy-redo">重写</button>
-          <button className="ink-btn" onClick={next} data-testid="copy-next">{at + 1 >= total ? '写完' : '下一字'}</button>
-          {written > 0 && <button className="ink-btn is-soft" onClick={look} data-testid="copy-look">看全篇</button>}
+          <span className="ink-well"><button className="ink-btn" onClick={next} data-testid="copy-next">{at + 1 >= total ? '写完' : '下一字'}</button></span>
+          {written > 0 && <button className="ink-link" onClick={look} data-testid="copy-look">看全篇</button>}
         </div>
         {hint && <p className="copy-hint">{hint}</p>}
       </div>

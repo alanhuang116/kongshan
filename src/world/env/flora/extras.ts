@@ -7,7 +7,7 @@
 import * as SITE_ALL from '../../site';
 import { SITE, TREES, pathDist, plotAt, streamAt, type Rect } from '../../site';
 
-export type ExtraKind = 'jujube' | 'persimmon' | 'apricot' | 'pomegranate' | 'willow';
+export type ExtraKind = 'jujube' | 'persimmon' | 'apricot' | 'pomegranate' | 'willow' | 'toona' | 'gleditsia' | 'firmiana';
 export interface ExtraTree { kind: ExtraKind; x: number; z: number; s: number; seed: number; r: number; /** 朝哪边探（世界方向） */ to?: [number, number] }
 export interface Extras {
   trees: ExtraTree[];
@@ -38,6 +38,8 @@ export function siteExtras(): Extras {
   for (const [k, r] of [['teaShed', 2.4], ['wash', 2], ['mill', 4], ['oxShed', 3.6], ['swing', 2.6], ['chess', 2], ['duckPen', 2.6], ['shrine', 1.8], ['cart', 2.2], ['trellis', 2.6], ['netRack', 2.6]] as Array<[string, number]>) { const p = pt(k); if (p) keep.push([p.x, p.z, r]); }
   { const d = MORE.dryYard as (Pt & { r: number }) | undefined; if (d) keep.push([d.x, d.z, d.r + 1.6]); }
   { const b = (MORE.wineShop as { bench?: Pt } | undefined)?.bench; if (b) keep.push([b.x, b.z, 1.8]); }
+  // 两户的营生（窑、坯棚）、丝瓜架：别在上面长树
+  { const C = SITE.crafts; keep.push([C.kiln.x, C.kiln.z, 3.4], [C.potShed.x, C.potShed.z, 3.2], [C.loofah.x, C.loofah.z, 2.0]); }
   for (const p of (MORE.haystacks as Pt[] | undefined) ?? []) keep.push([p.x, p.z, 2.8]);
   for (const r of ROCKS) keep.push([r.x, r.z, r.r + 0.9]);
   const trees: ExtraTree[] = [];
@@ -55,8 +57,9 @@ export function siteExtras(): Extras {
   const ex: Extras = { trees, door: [], pumpkin: [], scallion: [], fence: [], trellis: null, damp: [], waterside: [] };
 
   // —— 各家一株果树：屋侧、屋后、门前斜对着的地方，挨个试 ——
-  const kinds: Record<string, ExtraKind> = { a: 'jujube', b: 'persimmon', school: 'apricot', d: 'pomegranate', e: 'persimmon' };
-  const size: Record<ExtraKind, [number, number]> = { jujube: [1, 0.18], persimmon: [1.05, 0.22], apricot: [1.45, 0.2], pomegranate: [1, 0.14], willow: [1.35, 0.4] };
+  // （篾匠家门前一株香椿，陶家一株枣）
+  const kinds: Record<string, ExtraKind> = { a: 'jujube', b: 'persimmon', school: 'apricot', d: 'pomegranate', e: 'persimmon', f: 'toona', g: 'jujube' };
+  const size: Record<ExtraKind, [number, number]> = { jujube: [1, 0.18], persimmon: [1.05, 0.22], apricot: [1.45, 0.2], pomegranate: [1, 0.14], willow: [1.35, 0.4], toona: [1.05, 0.2], gleditsia: [1.15, 0.32], firmiana: [1.08, 0.22] };
   SITE.houses.forEach((h, i) => {
     const kind = kinds[h.id] ?? (['jujube', 'persimmon', 'pomegranate'] as ExtraKind[])[i % 3], sg = i % 2 ? 1 : -1, w = h.w / 2, d = h.d / 2;
     const gap = kind === 'pomegranate' ? 3.2 : 4.6, off = kind === 'pomegranate' ? 2.7 : 3.2;
@@ -87,10 +90,21 @@ export function siteExtras(): Extras {
     }
   }
 
+  // —— 洗衣埠北岸一株老皂角（荚是捶衣、洗东西用的）；草堂院里西北角一株梧桐（「月到梧桐上，风来杨柳边。院深人复静」） ——
+  for (const [kind, cands, to] of [['gleditsia', [[52.8, 23.6], [53.6, 22.4], [44.6, 21.6]], [-1, 1]], ['firmiana', [[-8.4, -2.4], [-8.9, -1.4], [-7.9, -3.4]], [1, 0.6]]] as Array<[ExtraKind, Array<[number, number]>, [number, number]]>) {
+    for (const [x, z] of cands) {
+      if (!free(x, z, 4.2)) continue;
+      trees.push({ kind, x, z, s: size[kind][0], seed: kind === 'gleditsia' ? 9811 : 9823, r: size[kind][1], to });
+      break;
+    }
+  }
+
   // —— 瓜架、篱上的牵牛 ——
   const tr = pt('trellis');
   if (tr) ex.trellis = { x: tr.x, z: tr.z, w: 3.2, d: 2.4, h: 2.15 };
   { const Y = SITE.yard, G = SITE.gate; ex.fence.push({ ax: G.x + G.w / 2 + 2.2, az: Y.z1, bx: Math.min(Y.x1 - 3.2, G.x + G.w / 2 + 9), bz: Y.z1, h: 1.05 }); }
+  // 院西篱的南段（小门往南）也爬着一段
+  { const Y = SITE.yard, SG = SITE.sideGate; ex.fence.push({ ax: Y.x0, az: SG.z + SG.w / 2 + 1.6, bx: Y.x0, bz: SG.z + SG.w / 2 + 6.2, h: 1.05 }); }
 
   // —— 潮处与水边 ——
   ex.damp.push({ x: SITE.well.x, z: SITE.well.z, r0: 0.95, r1: 1.9 });

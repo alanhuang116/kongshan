@@ -5,12 +5,14 @@
  *   avatar       一个人，按网址参数摆姿态：
  *                who=farmer|picker|kid1|…（村里人的打扮；不给就是读书人）
  *                pose=stand|kneel|sit|crouch  from=（先摆这个姿态，再换到 pose，停在第 k 秒看过渡）  k=0.45  dur=0.9
- *                hands=free|sleeve|pray|lap   bow=0…1  bowt=（俯身开始后第几秒，默认等它落定）
- *                speed=1.45  phase=0…1  climb=坡度  turn=角速度   look=x,y,z（相对小人，头看向哪）
+ *                hands=free|sleeve|pray|lap|back   bow=0…1  bowt=（俯身开始后第几秒，默认等它落定）
+ *                speed=1.45（3 小跑、4.6 跑；孩子的速度按他自己的尺度给）  phase=0…1  climb=坡度  turn=角速度   look=x,y,z（相对小人，头看向哪）
+ *                gesture=tidy|sky|glance|stretch|beard|look|shade（闲时的小动作）  gside=1|-1  gt=（开始后第几秒，默认 1.6）
  *                reach=L|R|LR  rp=x,y,z（相对小人，右手的；左手取镜像）  rd=x,y,z（指向）  stick=1（右手挂一根 0.34 的小棍）
- *                seat=zafu（蒲团，配 pose=sit）| stool | bench（凳，配 pose=bench；sh=凳高 sz=凳心在脚后多远）  yaw=度  live=1（一直动着；speed>0 时绕圈走）
- *   avatarWalk   一排八个，定格在一个步态周期的八个相位：speed=1.45 row=z|x climb= hands= who=
- *   avatarPoses  站 / 拢袖 / 合十 / 鞠躬 / 跪 / 叩拜一半 / 叩拜到底 / 坐 / 蹲 / 左手够球 / 右手够球 / 右手持棍；sel=4,5,6 只看这几个  face=各自转多少度  who=
+ *                seat=zafu（蒲团，配 pose=sit）| stool | bench（凳，配 pose=bench；sh=凳高 sz=凳心在脚后多远）| mat（草席，配 pose=sit|lie）  yaw=度  live=1（一直动着；speed>0 时绕圈走）
+ *                pose=lie 仰卧（from=sit&pose=lie&k=0.7 看躺下的半途）
+ *   avatarWalk   一排八个，定格在一个步态周期的八个相位：speed=1.45（4.6 是跑） row=z|x climb= hands= who=
+ *   avatarPoses  站 / 拢袖 / 合十 / 鞠躬 / 跪 / 叩拜一半 / 叩拜到底 / 坐 / 蹲 / 左手够球 / 右手够球 / 右手持棍 / 仰卧在草席上；sel=4,5,6 只看这几个  face=各自转多少度  who=
  *   looks        村里人的打扮排成一排（连读书人）；far=1 再在四十米外排一排
  *
  * 人物与生灵（life/）：farmer picker kids elder carpenters fisher animals lifeAll——都是整村的人与生灵，只是机位各对着一处。
@@ -19,7 +21,7 @@
 import * as THREE from 'three';
 import type { LabCtx, LabMake } from '../ink-lab';
 import { Figure } from '../../world/avatar/figure';
-import type { HandsName, Look, PoseName, Seat, Side } from '../../world/avatar/types';
+import type { GestureName, HandsName, Look, PoseName, Seat, Side } from '../../world/avatar/types';
 import { boxUp, cylUp, sphere } from '../../world/core/geo';
 import { createLand } from '../../world/env/land';
 import { PIG, wash } from '../../world/ink/ink';
@@ -78,6 +80,11 @@ const stick = () => new THREE.Mesh(cylUp(0.006, 0.008, 0.34, 8).translate(0, -0.
 function seat(r: Rig, kind: string | null) {
   const k = r.av.look.scale;
   if (kind === 'zafu') { r.slot.add(new THREE.Mesh(cylUp(0.3, 0.31, 0.14 * k, 20), M.straw)); r.lift.position.y = 0.14 * k; r.av.setSeat({ h: 0.14, r: 0.31 }); }
+  else if (kind === 'mat') {
+    // 草席（观星那一领）：厚 1.6 厘米、0.92×1.85 米；人坐在离北头 0.85 米处，躺下头朝北头、脚朝南头
+    r.slot.add(new THREE.Mesh(boxUp(0.92 * k, 0.016 * k, 1.85 * k).translate(0, 0, 0.075 * k), M.straw));
+    r.lift.position.y = 0.016 * k; r.av.setSeat({ h: 0.016, hx: 0.46, hz: 0.925, cz: 0.075 });
+  }
   else if (kind === 'stool' || kind === 'bench') {
     // 凳（pose=bench 用）：root 仍在脚踩的地上；凳面高 sh、凳心在脚后 sz（都按他自己的尺度）
     const h = num('sh', 0.44), cz = num('sz', -0.34);
@@ -125,7 +132,9 @@ const avatar: LabMake = (c) => {
   if (qs.get('stick')) av.joints.handR.add(stick());
   av.bow = num('bow', 0);
   const m: Move = { speed: num('speed', 0), climb: num('climb', 0), turn: num('turn', 0) };
-  if (qs.has('bowt')) run(r, num('bowt', 3));
+  const gest = qs.get('gesture') as GestureName | null;
+  if (gest) { run(r, 1.5); av.gesture(gest, num('gside', 1) < 0 ? -1 : 1); run(r, num('gt', 1.6), m); }
+  else if (qs.has('bowt')) run(r, num('bowt', 3));
   else if (m.speed > 0) walkTo(r, m, num('phase', 0.25));
   else if (!from) run(r, 3);
   settle(r);
@@ -169,6 +178,7 @@ const avatarPoses: LabMake = (c) => {
     { reach: 'L', rp: new THREE.Vector3(0.24, 1.38, 0.4), rd: new THREE.Vector3(0, 1, 0) },
     { reach: 'R', rp: new THREE.Vector3(-0.3, 0.92, 0.46), rd: new THREE.Vector3(0, -0.4, 1).normalize(), hands: 'sleeve' },
     { stick: true, reach: 'R', rp: new THREE.Vector3(-0.2, 1.12, 0.34), rd: new THREE.Vector3(0, 0.75, 0.66).normalize() },
+    { pose: 'lie', seat: 'mat' },
   ];
   // sel=4,5,6：只看这几个，排成一排（左起）
   const sel = qs.get('sel') ? qs.get('sel')!.split(',').map(Number) : null, gx = num('gap', 1.15), gz = 1.7;
@@ -176,7 +186,8 @@ const avatarPoses: LabMake = (c) => {
     const at = sel ? sel.indexOf(i) : i;
     if (at < 0) return;
     const col = i % 6, row = Math.floor(i / 6);
-    const x = sel ? ((sel.length - 1) / 2 - at) * gx : (2.5 - col) * gx + (row ? gx * 0.5 : 0), z = sel ? 0 : row ? 0 : gz;
+    // （第三排——躺着的——放在最后面）
+    const x = sel ? ((sel.length - 1) / 2 - at) * gx : (2.5 - col) * gx + (row ? gx * 0.5 : 0), z = sel ? 0 : row === 0 ? gz : row === 1 ? 0 : -gz * 1.3;
     const r = posed(c, x, z, s, sel ? (num('face', 0) * Math.PI) / 180 : 0, who());
     settle(r);
     g.add(r.slot);
@@ -248,4 +259,16 @@ export const MODELS: Record<string, LabMake> = {
   fisher: (c) => lifeScene(c, at(SITE.ferry.x + 4, SITE.ferry.z + 2, 16, 150, 12)),
   animals: (c) => lifeScene(c, at(houseA.x + 1, houseA.z + 5, 12, 20, 14)),
   lifeAll: (c) => lifeScene(c, { tx: 40, ty: 6, tz: 40, d: 150, az: 20, el: 34 }),
+  // 后添的几处：槐树下说书（傍晚 t=19.5）、王家门前（冬天 t=10.5 season=winter；雨天 w=rain）、丁家檐下织布、己家篾匠、庚家坯棚与窑、王家那片麦（夏天）
+  story: (c) => lifeScene(c, at(91.2, 18.6, 12, 200, 16)),
+  afront: (c) => lifeScene(c, at(houseA.x - 0.5, houseA.z + 4.5, 14, 0, 14)),
+  loom: (c) => lifeScene(c, at(119.2, -8.0, 8, 200, 14, 0.7)),
+  bamboo: (c) => lifeScene(c, at(39.2, -3.4, 8, 10, 16, 0.6)),
+  potter: (c) => lifeScene(c, at(140, 26, 22, 190, 20)),
+  reap: (c) => lifeScene(c, at(-2, 64, 26, 230, 22)),
+  // 生灵那一路：草堂鸡埘（院子东北角）、屋后池（鸳鸯、鱼、蛙；夏夜看萤）、鸭栏（黄昏 t=17.9 看鸭上岸）、碓房东头的驴；单看一种的姿态用 fauna.ts 的 beast
+  coop: (c) => lifeScene(c, at(12.6, -0.6, 7, 250, 14)),
+  pond: (c) => lifeScene(c, at(SITE.pond.x, SITE.pond.z, 16, 160, 22)),
+  duckpen: (c) => lifeScene(c, at(SITE.more.duckPen.x - 2, SITE.more.duckPen.z, 10, 200, 18)),
+  mill: (c) => lifeScene(c, at(SITE.more.mill.x + 4, SITE.more.mill.z - 3, 12, 60, 16)),
 };

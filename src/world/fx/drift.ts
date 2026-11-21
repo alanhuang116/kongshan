@@ -24,7 +24,8 @@ void main() {
   float air = step(0.0005, abs(aArg.y));
   if (aArg.z < 0.004 || abs(air - uPass) > 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec4 v = viewMatrix * vec4(aPos.xyz, 1.0);
-  float dist = max(-v.z, 0.1), size = aPos.w, alpha = aArg.z;
+  // 屋顶底下不飘落花落叶（屋里、亭里、檐下）
+  float dist = max(-v.z, 0.1), size = aPos.w, alpha = aArg.z * (1.0 - inkRoofFall(aPos.xyz));
   // 远处小得不足一两个像素的：放大到一两个像素，同时调淡（不然一闪一闪）
   float px = size * projectionMatrix[1][1] * 0.5 / (uView.y * dist);
   float k = max(1.0, uDab.x / px);

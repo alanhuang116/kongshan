@@ -297,16 +297,38 @@ export const STUDY_SHOTS: Pick<Record<Shot, Fn>, 'page' | 'paper' | 'brush' | 'i
     reson(v, ex, 410, 9, 0.6);
     return 1;
   },
-  /** 有人叩门：指节敲在门板上，「笃、笃笃」 */
+  /**
+   * 叩门环：门上的铁环提起来叩在门钹上，「当、当当」——铁的一声短而闷的响（几个不成整数倍的分音，零点一两秒就收了），
+   * 门板跟着低低一「咚」，环落回去还轻轻磕一下。variant: 'knuckle' 是指节敲在门板上（「笃、笃笃」）。
+   */
   knock(v) {
-    const a = 1.6 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.95, 1.05), d1 = rand(0.38, 0.46), at = [0, d1, d1 + rand(0.17, 0.21)];
+    const p = v.pitch * rand(0.95, 1.05), d1 = rand(0.38, 0.46), at = [0, d1, d1 + rand(0.17, 0.21)];
+    if (v.raw.variant === 'knuckle') {
+      const a = 1.6 * (0.5 + 0.7 * v.vel);
+      at.forEach((dt, i) => {
+        const ex = tap(v, v.t + dt, 1.6, a * [1, 0.85, 0.95][i] * rand(0.9, 1.1), 0.25);
+        reson(v, ex, 215 * p, 8, 1.5);
+        reson(v, ex, 540 * p, 10, 0.8);
+        reson(v, ex, 1180 * p, 9, 0.35);
+      });
+      return 1.2;
+    }
+    const a = 0.5 + 0.7 * v.vel, f0 = rand(1250, 1500) * p;
     at.forEach((dt, i) => {
-      const ex = tap(v, v.t + dt, 1.6, a * [1, 0.85, 0.95][i] * rand(0.9, 1.1), 0.25);
-      reson(v, ex, 215 * p, 8, 1.5);
-      reson(v, ex, 540 * p, 10, 0.8);
-      reson(v, ex, 1180 * p, 9, 0.35);
+      const t = v.t + dt, k = [1, 0.8, 0.95][i] * rand(0.9, 1.08);
+      // 铁环磕在门钹上：铁的几个分音，很快收住（环是挂着的，一碰就松）
+      mode(v, f0, 0.09 * a * k, 0.16, 0.0005, v.out, t);
+      mode(v, f0 * 2.61, 0.05 * a * k, 0.09, 0.0004, v.out, t);
+      mode(v, f0 * 4.73, 0.025 * a * k, 0.05, 0.0004, v.out, t);
+      burst(v, { t, dur: 0.008, f: 3500, q: 1, amp: 0.12 * a * k, att: 0.0004 });
+      // 门板：低低一「咚」
+      const ex = tap(v, t, 2.2, 0.9 * a * k, 0.2);
+      reson(v, ex, 180 * p, 7, 1.3);
+      reson(v, ex, 430 * p, 9, 0.6);
+      // 环落回去轻轻再磕一下
+      mode(v, f0 * 1.01, 0.025 * a * k, 0.08, 0.0005, v.out, t + rand(0.035, 0.06));
     });
-    return 1.2;
+    return 1.3;
   },
   /**
    * 一滴露水从桃叶上滚下来，落在下面一片叶子上：几乎没有声音。

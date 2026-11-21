@@ -240,7 +240,7 @@ export function furnish(c: Ctx, dm: HallDims): void {
     b.add('thatch', at(tint(roll, 1.0, 0.99, 0.93), kx - kw / 2 + 0.13, kh + 0.075, kz));
     for (const z of [-0.18, 0.17]) obj.push(dye(at(tube(ringPts(0.075, 12), 0.005, 4).rotateX(Math.PI / 2), kx - kw / 2 + 0.13, kh + 0.075, kz + z), INK.hemp, 1.6));
     obj.push(dye(at(wobble(sbox(0.3, 0.085, 0.13, 0.1), 0.005, 5, 86), kx + kw / 2 - 0.2, kh + 0.05, kz - 0.18, 0.06), INK.wood, 1.9));
-    obj.push(dye(at(wobble(sbox(0.46, 0.11, 0.36, 0.09), 0.016, 4, 87, 55), kx + kw / 2 - 0.3, kh + 0.06, kz + 0.1, -0.04), INK.indigo, 1.25));
+    // （被随季节换：春秋叠着一床、夏天收了铺竹席、冬天摊开再加一床——在 seasons.ts）
     c.anchor('couch', ox + kx, oy + kh, oz + kz, 0);
     c.solid({ id: '草堂·榻', kind: 'rect', x: ox + kx, z: oz + kz, w: kw, d: kd, top: oy + kh });
     // 榻上方：一幅水墨小景

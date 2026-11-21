@@ -60,6 +60,16 @@ export const U = {
   uFar: { value: new THREE.Vector4(0.965, 70, 420, 0.72) },
   uSnow: { value: 0 },
   uWet: { value: 0 },
+  /**
+   * 屋顶遮着的地方（雪不积、雨不湿、贴地的雾进不去、落花落叶不飘进来）：至多 ROOFS 个转了向的盒子。
+   * uRoofA[i] = (中心 x, 中心 z, 半宽, 半深)，uRoofB[i] = (cos 转角, sin 转角, 盒底 y, 盒顶 y)。半宽为 0 的不算。见 setRoofs()
+   */
+  uRoofA: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uRoofB: { value: Array.from({ length: 16 }, () => new THREE.Vector4(1, 0, 0, 0)) },
+  /** 所有屋顶合起来的范围（x0, z0, x1, z1）：范围外的一点不用一个个去比 */
+  uRoofAll: { value: new THREE.Vector4(0, 0, -1, -1) },
+  /** 屋顶此刻剖开着（进了草堂，镜头从上往里看）：雨雪落花按整根空气柱挡；平时只挡屋檐以下 */
+  uRoofCut: { value: 0 },
   /** 夜（0…1）：给灯火、星月用 */
   uNight: { value: 0 },
   /** 这一帧主画面的深度图与尺寸（烟、雾、光晕这些后画的东西靠它知道自己被什么挡着） */
@@ -72,6 +82,41 @@ export const U = {
 export const INK_PARS = /* glsl */ `
 uniform vec3 uPaper; uniform vec3 uLight; uniform vec3 uMist; uniform vec3 uKey; uniform vec4 uFog; uniform vec4 uFar; uniform vec4 uCloud;
 uniform float uSnow; uniform float uWet; uniform float uTime; uniform float uNight;
+uniform vec4 uRoofA[16]; uniform vec4 uRoofB[16]; uniform vec4 uRoofAll; uniform float uRoofCut;
+/** 这一点在不在屋顶底下（0 露天 … 1 遮着）：边上软一点，免得一条齐线 */
+float inkShelter(vec3 w) {
+  if (w.x < uRoofAll.x || w.z < uRoofAll.y || w.x > uRoofAll.z || w.z > uRoofAll.w) return 0.0;
+  float s = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec4 a = uRoofA[i];
+    if (a.z <= 0.0) continue;
+    vec4 b = uRoofB[i];
+    vec2 d = w.xz - a.xy;
+    vec2 l = vec2(d.x * b.x + d.y * b.y, -d.x * b.y + d.y * b.x);
+    vec2 e = abs(l) - a.zw;
+    float inXZ = 1.0 - smoothstep(-0.12, 0.08, max(e.x, e.y));
+    float inY = smoothstep(b.z - 0.3, b.z, w.y) * (1.0 - smoothstep(b.w - 0.05, b.w + 0.05, w.y));
+    s = max(s, inXZ * inY);
+  }
+  return s;
+}
+/** 在不在屋顶底下那一整根空气柱里（不管多高）：雨雪、落花用——剖开屋顶往里看时，屋顶上头的雪也不该落进屋里 */
+float inkUnderRoof(vec3 w) {
+  if (w.x < uRoofAll.x || w.z < uRoofAll.y || w.x > uRoofAll.z || w.z > uRoofAll.w) return 0.0;
+  float s = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec4 a = uRoofA[i];
+    if (a.z <= 0.0) continue;
+    vec4 b = uRoofB[i];
+    vec2 d = w.xz - a.xy;
+    vec2 l = vec2(d.x * b.x + d.y * b.y, -d.x * b.y + d.y * b.x);
+    vec2 e = abs(l) - a.zw;
+    s = max(s, (1.0 - smoothstep(-0.15, 0.05, max(e.x, e.y))) * smoothstep(b.z - 0.3, b.z, w.y));
+  }
+  return s;
+}
+/** 落下来的东西（雨、雪、花瓣）此刻该不该挡掉 */
+float inkRoofFall(vec3 w) { return uRoofCut > 0.5 ? inkUnderRoof(w) : inkShelter(w); }
 float ih(vec3 p) { p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float in3(vec3 x) {
   vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -105,6 +150,8 @@ float inkFogK(vec3 w) {
   }
   return min(uFar.x, k);
 }
+/** 贴地的雾，屋里只剩一成多（门窗敞着，也不是一点没有） */
+float inkFogIn(vec3 w) { return inkFogK(w) * (1.0 - 0.85 * inkShelter(w)); }
 /** 远处褪成墨色。keep 是「留着颜色」的程度（花这样的粉彩留着） */
 vec3 inkFar(vec3 c, vec3 w, float keep) {
   float m = smoothstep(uFar.y, uFar.z, distance(w, cameraPosition)) * uFar.w * (1.0 - keep);
@@ -170,7 +217,9 @@ void main() {
   // 阴阳向背：受光与背光两分，交界处跟着水渍走，不是一条齐线
   float lit = smoothstep(-0.2, 0.24, dot(N, uKey) + (n0 - 0.5) * 0.5);
   lit = mix(lit, 1.0, uP.z);
-  float dens = uP.x * mix(uP.y, 1.0, lit) * (0.8 + 0.42 * n1) * (1.0 + 0.3 * uWet);
+  // 屋顶底下：雪不积、雨不湿、雾进不来多少（只在下雪、下雨、起雾时才去比）
+  float sh = (uSnow > 0.001 || uWet > 0.001 || uFog.x > 0.006) ? inkShelter(vW) : 0.0;
+  float dens = uP.x * mix(uP.y, 1.0, lit) * (0.8 + 0.42 * n1) * (1.0 + 0.3 * uWet * (1.0 - sh));
   float extra = 0.0;
   vec3 P = uPig * vC;
   #ifdef INK_MAP
@@ -218,12 +267,12 @@ void main() {
   vec3 c = base * pow(clamp(P, vec3(0.002), vec3(1.0)), vec3(max(dens, 0.0))) * pow(uPig, vec3(extra));
   // 雪：朝上的面留白
   if (uSnow > 0.001 && uQ.w > 0.0) {
-    float s = smoothstep(0.62 - uSnow * 0.3, 0.9 - uSnow * 0.25, N.y + (n0 - 0.5) * 0.35) * min(1.0, uSnow * 1.5) * uQ.w;
+    float s = smoothstep(0.62 - uSnow * 0.3, 0.9 - uSnow * 0.25, N.y + (n0 - 0.5) * 0.35) * min(1.0, uSnow * 1.5) * uQ.w * (1.0 - sh);
     c = mix(c, uLight * vec3(0.975, 0.98, 0.99), s);
   }
   c = inkFar(c, vW, uP.w);
   c += uGlow * uNight;
-  c = mix(c, uMist, inkFogK(vW));
+  c = mix(c, uMist, sh > 0.0 ? inkFogK(vW) * (1.0 - 0.85 * sh) : inkFogK(vW));
   gl_FragColor = vec4(c, 1.0);
   gAux = vec4(normalize(mat3(viewMatrix) * N).xy * 0.5 + 0.5, uT.w, uQ.x);
 }
@@ -346,13 +395,14 @@ void main() {
   float n1 = in3(vW * 0.9 + 3.1);
   float lit = smoothstep(-0.35, 0.45, dot(normalize(vN), uKey) + (n1 - 0.5) * 0.6);
   lit = mix(lit, 1.0, uP.z);
-  float dens = uP.x * mix(uP.y, 1.0, lit) * (0.55 + 0.9 * t.r) * (1.0 + 0.3 * uWet);
+  float sh = (uSnow > 0.001 || uWet > 0.001 || uFog.x > 0.006) ? inkShelter(vW) : 0.0;
+  float dens = uP.x * mix(uP.y, 1.0, lit) * (0.55 + 0.9 * t.r) * (1.0 + 0.3 * uWet * (1.0 - sh));
   vec3 P = mix(uPig * vC, uAccent, t.g);
   vec3 base = mix(uPaper, uLight, uP.w);
   vec3 c = base * pow(max(P, vec3(0.002)), vec3(dens));
-  if (uSnow > 0.001 && uQ.w > 0.0) c = mix(c, uLight * vec3(0.975, 0.98, 0.99), smoothstep(0.3, 0.9, vN.y + n1 * 0.5) * min(1.0, uSnow * 1.3) * uQ.w * 0.7);
+  if (uSnow > 0.001 && uQ.w > 0.0) c = mix(c, uLight * vec3(0.975, 0.98, 0.99), smoothstep(0.3, 0.9, vN.y + n1 * 0.5) * min(1.0, uSnow * 1.3) * uQ.w * 0.7 * (1.0 - sh));
   c = inkFar(c, vW, uP.w);
-  c = mix(c, uMist, inkFogK(vW));
+  c = mix(c, uMist, sh > 0.0 ? inkFogK(vW) * (1.0 - 0.85 * sh) : inkFogK(vW));
   gl_FragColor = vec4(c, a);
   gAux = vec4(0.5, 0.5, 0.0, uQ.x);
 }
@@ -437,3 +487,21 @@ float fxSeen(float viewZ, float soft) {
 `;
 /** 后画的那一层在三维里的图层号 */
 export const FX_LAYER = 2;
+
+/** 一处屋顶遮着的地方：中心、半宽半深（顺着屋子转过的方向）、转角（同 three 的 rotation.y）、从多高到多高 */
+export interface Roof { x: number; z: number; hw: number; hd: number; yaw?: number; y0: number; y1: number }
+/** 告诉画法哪些地方有屋顶（至多 16 处；再调一次就整个换掉） */
+export function setRoofs(list: Roof[]) {
+  const A = U.uRoofA.value, B = U.uRoofB.value;
+  let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+  for (let i = 0; i < A.length; i++) {
+    const r = list[i];
+    if (!r) { A[i].set(0, 0, 0, 0); B[i].set(1, 0, 0, 0); continue; }
+    // three 的 rotation.y = a 时，局部 +x 在世界里是 (cos a, −sin a)：把世界坐标转回局部用同一对 cos、sin
+    const a = r.yaw ?? 0, c = Math.cos(a), s = Math.sin(a);
+    A[i].set(r.x, r.z, r.hw, r.hd); B[i].set(c, -s, r.y0, r.y1);
+    const e = Math.hypot(r.hw, r.hd) + 0.3;
+    x0 = Math.min(x0, r.x - e); x1 = Math.max(x1, r.x + e); z0 = Math.min(z0, r.z - e); z1 = Math.max(z1, r.z + e);
+  }
+  U.uRoofAll.value.set(x0, z0, x1, z1);
+}

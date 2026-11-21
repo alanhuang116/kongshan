@@ -8,23 +8,24 @@
 import * as THREE from 'three';
 import type { Season } from '../atmos';
 import type { Flora, FloraOpts } from './index';
-import { dabMat, dabMesh, wash } from '../../ink/ink';
+import { U, dabMat, dabMesh, wash } from '../../ink/ink';
 import { atlas } from '../../ink/brush';
 import type { Plot, Rect, Tree } from '../../site';
 import { rand } from './kit';
 import { LAYERS, Sink } from './sink';
 import { DEFS, Layer, type AtlasId } from './layers';
 import { BLOOM, EVER, TREE } from './tiles';
-import { FIELD, PETAL } from './tiles2';
+import { FIELD_ALL, PETAL_ALL } from './tiles3';
 import { peach } from './peach';
 import { willow } from './willow';
 import { pine, type PineOpts } from './pine';
 import { plum } from './plum';
-import { backdrop, broad, fruitSpec, huaiSpec, mulberry, woodSpec } from './broad';
+import { backdrop, broad, huaiSpec, mulberry, treeSpec, woodSpec } from './broad';
 import { bamboo } from './bamboo';
 import { dampAndWater, groundCover, type Cover, type Reed } from './cover';
 import type { ExtraKind, Extras } from './extras';
 import { fieldFixed, fieldSet, type FieldPlan, type Pond } from './field';
+import { mushrooms, wildFixed, wildSet } from './wild';
 
 export interface Plan {
   trees: Tree[];
@@ -128,12 +129,13 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
     S.place(t.x, y, t.z, yaw, t.s);
     if (t.kind === 'willow') willow(S, R, { lite });
     else if (t.kind === 'apricot') peach(S, R, { tint: [1, 1.13, 1.14], bloom: 0.8, lite });
-    else { const tips: THREE.Vector3[] = []; broad(S, R, fruitSpec(t.kind, R, lite), tips); fruit.push({ kind: t.kind as ExtraKind, tips }); }
+    else { const tips: THREE.Vector3[] = []; broad(S, R, treeSpec(t.kind, R, lite), tips); fruit.push({ kind: t.kind as ExtraKind, tips }); }
   }
 
-  // —— 地上的草；潮处的苔、水边的菖蒲；田里不变的架与垄 ——
+  // —— 地上的草；潮处的苔、水边的菖蒲；北墙根、竹林下、池岸的苔与蕨；田里不变的架与垄 ——
   const cov: Cover = plan.cover ? groundCover(S, plan.cover, q.density) : { wild: [], lane: [], bund: [], reeds: [] };
   if (ex) dampAndWater(S, ex, q.density);
+  if (plan.cover) wildFixed(S, q.density);
   const fp: FieldPlan = { plots: plan.plots ?? [], veg: plan.veg ?? null, mums: plan.mums ?? null, pond: plan.pond ?? null, reeds: plan.reeds ?? cov.reeds, wild: cov.wild, lane: cov.lane, bund: cov.bund, extras: ex, fruit, ground: plan.ground, clear: plan.clear ?? (() => true), density: q.density };
   const hasField = fp.plots.length > 0 || !!fp.veg || !!fp.mums || !!fp.pond || fp.reeds.length > 0 || fp.wild.length > 0 || !!ex;
   if (hasField) fieldFixed(S, fp);
@@ -149,8 +151,9 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
 
   // —— 笔：一层一次绘制 ——
   const px = Math.round(192 * q.tex);
-  const AT: Record<AtlasId, ReturnType<typeof atlas>> = { tree: atlas(TREE.tiles, TREE.cols, px, 11), bloom: atlas(BLOOM.tiles, BLOOM.cols, px, 5), ever: atlas(EVER.tiles, EVER.cols, Math.round(224 * q.tex), 23), field: atlas(FIELD.tiles, FIELD.cols, px, 31) };
-  const petalA = hasField ? atlas(PETAL.tiles, PETAL.cols, px, 37) : null;
+  // （FIELD、PETAL 两张图集末尾拼着 tiles3.ts 添的几格：兰、笋、狗尾草……蓼、蒲公英、蘑菇……不另开图集）
+  const AT: Record<AtlasId, ReturnType<typeof atlas>> = { tree: atlas(TREE.tiles, TREE.cols, px, 11), bloom: atlas(BLOOM.tiles, BLOOM.cols, px, 5), ever: atlas(EVER.tiles, EVER.cols, Math.round(224 * q.tex), 23), field: atlas(FIELD_ALL.tiles, FIELD_ALL.cols, px, 31) };
+  const petalA = hasField ? atlas(PETAL_ALL.tiles, PETAL_ALL.cols, px, 37) : null;
   const layers: Layer[] = [];
   for (const id of LAYERS) {
     let dabs = S.dabs[id];
@@ -169,6 +172,7 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
     let f = sets.get(s);
     if (f || !hasField || !petalA) return f ?? { wash: null, body: null, pads: null };
     const d = fieldSet(s, fp);
+    if (plan.cover) { const w = wildSet(s, fp); for (const x of w.wash) d.wash.push(x); for (const x of w.body) d.body.push(x); }
     f = {
       wash: d.wash.length ? dabMesh(d.wash, dabMat({ ...AT.field, pig: [1, 1, 1], dens: 1.15, shade: 1.3, snow: 1, sway: 0.3 })) : null,
       body: d.body.length ? dabMesh(d.body, dabMat({ ...petalA, pig: [1, 1, 1], accent: [0.78, 0.8, 0.5], dens: 1, shade: 1.25, body: BODY, snow: 0.2, sway: 0.3 })) : null,
@@ -180,11 +184,17 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
   };
   fieldOf(o.season); show(o.season, 1);
 
+  // —— 雨后的蘑菇：另成一份，下起雨来慢慢冒出来，雨停了还留一阵（冬天不出） ——
+  const extraTrunks = (ex?.trees ?? []).map((t) => ({ x: t.x, z: t.z, r: t.r }));
+  const mush = plan.cover && petalA ? dabMesh(mushrooms(q.density, extraTrunks), dabMat({ ...petalA, pig: [1, 1, 1], accent: [0.8, 0.8, 0.6], dens: 1, shade: 1.25, body: 0.7, snow: 0, sway: 0, alpha: 0 })) : null;
+  let wetK = 0;
+  if (mush) { mush.name = 'flora:mushrooms'; mush.visible = false; group.add(mush); }
+
   let season: Season = o.season, from: Season = o.season, fade = 1;
   return {
     group,
     bloomSpots: blooms.sort((a, b) => b.w - a.w).slice(0, 12).map((b) => b.p),
-    extraTrunks: (ex?.trees ?? []).map((t) => ({ x: t.x, z: t.z, r: t.r })),
+    extraTrunks,
     setSeason(s) {
       if (s === season) return;
       // 上一回还没换完：把半路上的那一套收起来
@@ -205,6 +215,13 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
       for (const L of layers) if (L.def.body) L.body = L.def.body * dim;
       const f = sets.get(season);
       if (f?.body) ((f.body.material as THREE.ShaderMaterial).uniforms.uP.value as THREE.Vector4).w = BODY * dim;
+      // 蘑菇：看画里的雨（不另记天时）。冒得慢（十来秒），收得更慢
+      if (mush) {
+        const want = U.uWet.value > 0.3 && season !== 'winter' ? 1 : 0;
+        wetK += (want - wetK) * Math.min(1, dt / (want > wetK ? 8 : 45));
+        ((mush.material as THREE.ShaderMaterial).uniforms.uQ.value as THREE.Vector4).z = wetK;
+        mush.visible = wetK > 0.02;
+      }
     },
   };
 }

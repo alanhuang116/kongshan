@@ -17,7 +17,7 @@ export const paint = (g: Geo, c: RGB): Geo => colorize(g, (_x, _y, _z, _nx, _ny,
 /** 生灵身上用的材质：颜色在顶点上，这里只管粉不粉、明暗、勾不勾线 */
 export const creatureMat = (o: WashOpts = {}) => wash({ pig: [1, 1, 1], dens: 1, shade: 1.5, grain: 2.4, body: 0.15, ...o });
 
-interface Piece { off: number; n: number; src: Float32Array; srcN: Float32Array }
+interface Piece { off: number; n: number; src: Float32Array; srcN: Float32Array; hid: boolean }
 
 export class Parts {
   mesh: THREE.Mesh;
@@ -26,6 +26,14 @@ export class Parts {
   private cache = new Map<Geo, Geo>();
   private pos!: Float32Array; private nor!: Float32Array;
   private pa!: THREE.BufferAttribute; private na!: THREE.BufferAttribute;
+  /** 这一帧动过的顶点范围（只把这一段交给显卡；没动的、收着的不再传） */
+  private lo = Infinity; private hi = -1;
+  /**
+   * 按摆着的那些块算包围球，整块不在画面里时交给 three 剔掉（省一次绘制）。默认不开（老用法：各块都按世界坐标摆、不靠包围球）；
+   * 开了就要求每一块都经 place() 摆过（没摆过的不算在球里）。
+   */
+  cull = false;
+  private tr = new Float32Array(0); private rad = new Float32Array(0);
 
   constructor(mat: THREE.Material, name: string) {
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
@@ -49,7 +57,7 @@ export class Parts {
     let o = 0, k = 0;
     for (const g of this.staged) {
       const c = g.attributes.position.count, src = g.attributes.position.array as Float32Array, srcN = g.attributes.normal.array as Float32Array;
-      this.pcs.push({ off: o, n: c, src, srcN });
+      this.pcs.push({ off: o, n: c, src, srcN, hid: false });
       this.pos.set(src, o * 3); this.nor.set(srcN, o * 3);
       uv.set(g.attributes.uv.array as Float32Array, o * 2); col.set(g.attributes.color.array as Float32Array, o * 3);
       const ix = g.index!.array;
@@ -63,13 +71,22 @@ export class Parts {
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+    // 各块自身有多大（摆的时候按它的缩放放大）：包围球用
+    this.tr = new Float32Array(this.pcs.length * 4); this.rad = new Float32Array(this.pcs.length);
+    this.staged.forEach((g, i) => { g.computeBoundingSphere(); const s = g.boundingSphere!; this.rad[i] = s.center.length() + s.radius; });
     this.staged = []; this.cache.clear();
     return this;
   }
   get triangles() { return (this.mesh.geometry.index?.count ?? 0) / 3; }
+  /** 一共几块 */
+  get count() { return this.pcs.length; }
   /** 把第 k 块搬到 m 这个位置上（世界矩阵；可以沿自己的 y 拉长——绳、线就是这样拉出来的） */
   place(k: number, m: THREE.Matrix4) {
     const c = this.pcs[k], P = this.pos, N = this.nor, S = c.src, SN = c.srcN;
+    c.hid = false;
+    if (c.off < this.lo) this.lo = c.off;
+    if (c.off + c.n > this.hi) this.hi = c.off + c.n;
+    if (this.cull) { const T = this.tr, o4 = k * 4, me = m.elements; T[o4] = me[12]; T[o4 + 1] = me[13]; T[o4 + 2] = me[14]; T[o4 + 3] = Math.max(Math.hypot(me[0], me[1], me[2]), Math.hypot(me[4], me[5], me[6]), Math.hypot(me[8], me[9], me[10])); }
     const e = m.elements, e0 = e[0], e1 = e[1], e2 = e[2], e4 = e[4], e5 = e[5], e6 = e[6], e8 = e[8], e9 = e[9], e10 = e[10], tx = e[12], ty = e[13], tz = e[14];
     const inv = 1 / (Math.hypot(e0, e1, e2) || 1), invY = 1 / (Math.hypot(e4, e5, e6) || 1);
     let o = c.off * 3;
@@ -79,13 +96,49 @@ export class Parts {
       N[o] = e0 * a + e4 * b + e8 * d; N[o + 1] = e1 * a + e5 * b + e9 * d; N[o + 2] = e2 * a + e6 * b + e10 * d;
     }
   }
-  /** 收起来（缩成一点，看不见） */
+  /** 收起来（缩成一点，看不见）。已经收着的不再动 */
   hide(k: number) {
     const c = this.pcs[k], P = this.pos;
+    if (c.hid) return;
+    c.hid = true;
+    if (c.off < this.lo) this.lo = c.off;
+    if (c.off + c.n > this.hi) this.hi = c.off + c.n;
     let o = c.off * 3;
     for (let i = 0; i < c.n; i++, o += 3) { P[o] = 0; P[o + 1] = -500; P[o + 2] = 0; }
   }
-  commit() { this.pa.needsUpdate = true; this.na.needsUpdate = true; }
+  /** 收着没有 */
+  hidden(k: number) { return this.pcs[k].hid; }
+  /**
+   * 把这一帧动过的那一段交给显卡。上一回交的还没画出去（网格这一帧不在画面里）就并成一段，免得漏传。
+   */
+  commit() {
+    if (this.hi < 0) return;
+    const s = this.lo * 3, e = this.hi * 3;
+    for (const a of [this.pa, this.na]) {
+      const r = a.updateRanges;
+      if (r.length) { const c = r[0], s0 = Math.min(c.start, s), e0 = Math.max(c.start + c.count, e); c.start = s0; c.count = e0 - s0; r.length = 1; }
+      else a.addUpdateRange(s, e - s);
+      a.needsUpdate = true;
+    }
+    this.lo = Infinity; this.hi = -1;
+    if (this.cull) this.bound();
+  }
+  /** 包围球：摆着的各块（收着的不算） */
+  private bound() {
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    const T = this.tr;
+    for (let k = 0; k < this.pcs.length; k++) {
+      if (this.pcs[k].hid) continue;
+      const o4 = k * 4, r = this.rad[k] * (T[o4 + 3] || 1);
+      if (T[o4] - r < x0) x0 = T[o4] - r; if (T[o4] + r > x1) x1 = T[o4] + r;
+      if (T[o4 + 1] - r < y0) y0 = T[o4 + 1] - r; if (T[o4 + 1] + r > y1) y1 = T[o4 + 1] + r;
+      if (T[o4 + 2] - r < z0) z0 = T[o4 + 2] - r; if (T[o4 + 2] + r > z1) z1 = T[o4 + 2] + r;
+    }
+    const s = this.mesh.geometry.boundingSphere!;
+    if (x0 === Infinity) { s.center.set(0, -1000, 0); s.radius = 0.01; }
+    else { s.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); s.radius = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + 0.5; }
+    this.mesh.frustumCulled = true;
+  }
 }
 
 // —— 摆矩阵（不新建对象） ——

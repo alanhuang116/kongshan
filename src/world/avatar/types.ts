@@ -13,8 +13,10 @@ import type { RGB } from '../ink/ink';
 /**
  * 姿态。sit 是席地盘腿坐（琴桌前、榻上、蒲团上）；bench 是坐在凳上——两腿垂着，大腿差不多平、小腿差不多直，脚踩在地上。
  * 两种坐法 root 放的地方不同：sit 的 root 在臀下的那个面上；bench 的 root 仍在脚踩的地上（所以站起、坐下不用挪 root）。
+ * lie 是仰卧（观星）：root 与 sit 一样在臀下那个面上（席面），头朝身后（−z）、脚朝前（+z）——
+ *   躺平后头顶在 root 后约 0.75 米、脚尖在 root 前约 0.9 米，席要铺得下这一段。站着直接给 lie 会先坐下再躺；躺着给 stand 会先坐起再站。
  */
-export type PoseName = 'stand' | 'kneel' | 'sit' | 'crouch' | 'bench';
+export type PoseName = 'stand' | 'kneel' | 'sit' | 'crouch' | 'bench' | 'lie';
 /**
  * 头上：none 光着髻（束一条带）；li 斗笠（戴着，或挂在背后）；jin 幅巾（软巾裹着髻，脑后垂两条带——读书人）；
  * bun 妇人的髻（插一根簪）；tufts 童子的总角（头顶两个小髻）。
@@ -49,9 +51,18 @@ export interface Look {
   /** 衣纹（衣上那几笔线）画几成：0 不画 … 1 */ folds: number;
   /** 背光面是受光面的几倍浓 */ shade: number;
 }
-/** 手的摆法：free 自然下垂、走路时随步子摆；sleeve 两手拢在身前（古人站立行走的常态）；pray 胸前合十；lap 叠放腹前（坐着时即禅定印） */
-export type HandsName = 'free' | 'sleeve' | 'pray' | 'lap';
+/**
+ * 手的摆法：free 自然下垂、走路时随步子摆（跑起来屈肘前后摆）；sleeve 两手拢在身前（古人站立行走的常态）；pray 胸前合十；
+ * lap 叠放腹前（坐着时即禅定印）；back 负手——两手背在身后，右手握着左腕（读书人散步、站着看景的样子）
+ */
+export type HandsName = 'free' | 'sleeve' | 'pray' | 'lap' | 'back';
 export type Side = 'L' | 'R';
+/**
+ * 闲时的小动作（只在站着或走着、手没被别的事占着时做；做事时一概不出）：
+ * tidy 理一理袖子（一手拈住另一只袖口抖两下）；sky 抬头望天（两手背到身后）；glance 回头看一眼；stretch 伸个懒腰；
+ * beard 捻须；look 走着往旁边看一眼；shade 抬袖遮雨（小臂斜横在额前，一直举着，直到给 null）
+ */
+export type GestureName = 'tidy' | 'sky' | 'glance' | 'stretch' | 'beard' | 'look' | 'shade';
 
 /**
  * 身下的东西。两种用法：
@@ -108,6 +119,19 @@ export interface Avatar {
   setGround?(fn: ((x: number, z: number) => number | null) | null): void;
   /** 身下垫着什么（坐蒲团、跪拜垫时由活动告诉他）；null 即直接在地上 */
   setSeat?(s: Seat | null): void;
+  /**
+   * 闲时的一个小动作（side：1 偏左手、−1 偏右手；不给随便）。正被别的事占着（见 engaged）时不做；做到一半被占了就收住。
+   * shade 是「一直举着」的，给 null 才放下；别的做完自己收。
+   */
+  gesture?(name: GestureName | null, side?: 1 | -1): void;
+  /** 此刻在做哪个小动作（收尾的那一段也算） */
+  readonly gesturing?: GestureName | null;
+  /** 此刻（要换成的）手的摆法 */
+  readonly hands?: HandsName;
+  /** 站好了、能迈步了（姿态是 stand，过渡也走完了）。坐着、躺着、正起身时为假——行者这时不听行走的输入，免得人没站起来就滑着走 */
+  readonly ready?: boolean;
+  /** 正被「外面」占着：不是站着、在俯身、手伸着、手里拿着东西、头看着某处、身下垫着东西——做事时都是这样，闲时的小动作这时不出 */
+  readonly engaged?: boolean;
   setVisible(v: boolean): void;
   dispose(): void;
 }

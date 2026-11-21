@@ -1,14 +1,14 @@
 /**
- * 禽：鸡（一只公鸡、几只母鸡、一窝小鸡）、鸭（溪上、池里）、白鹭（河滩浅水里，人近了就飞）、
- * 麻雀（篱上的一群；老梅上打架的那两只）、燕子（春夏贴着田飞）。
+ * 禽：白鹭（河滩浅水里，人近了就飞）、麻雀（篱上的一群；老梅上打架的那两只）、燕子（春夏贴着田飞；檐下一窝）、丁家的两只白鹅。
+ * 鸡、鸭挪到了 fauna/hens.ts、fauna/ducks.ts（三群鸡与鸡埘、溪上一群鸭与鸭栏、池里一对鸳鸯）。
  * 都照旧画里的样子：一个身子、一截颈、几点颜色。每一种是一个几何（一次绘制），见 rig.ts。
  */
 import * as THREE from 'three';
 import { M, V, box, cyl, merge, sphere, sweep, type Geo } from '../core/geo';
 import { mulberry32 } from '../core/rng';
 import type { Season } from '../env/atmos';
-import { PIG, type RGB } from '../ink/ink';
-import { SITE, STREAM } from '../site';
+import { PIG, U, type RGB } from '../ink/ink';
+import { SITE, STREAM, ground } from '../site';
 import type { Ctx } from './person';
 import { Parts, child, creatureMat, paint, tone, trs } from './rig';
 import { COOPS, DUCK_REACH, FENCE_PERCH, GEESE, NEST, PLUM_PERCH, egretSpots, footY, type Spot } from './spots';
@@ -17,189 +17,12 @@ const SUN: Record<Season, [number, number]> = { spring: [6.0, 18.2], summer: [5.
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const sm = (k: number) => { k = k < 0 ? 0 : k > 1 ? 1 : k; return k * k * (3 - 2 * k); };
-const _b = new THREE.Matrix4(), _m = new THREE.Matrix4(), _y = new THREE.Matrix4();
+const _b = new THREE.Matrix4(), _m = new THREE.Matrix4(), _y = new THREE.Matrix4(), _p = new THREE.Vector3();
 /** 一个椭球 */
 const ell = (rx: number, ry: number, rz: number, c: RGB, ws = 8, hs = 6) => paint(sphere(1, ws, hs).scale(rx, ry, rz), c);
 /** 一个朝 +z 的小尖（喙） */
 const beak = (r: number, len: number, c: RGB) => paint(cyl(0.0005, r, len, 5).applyMatrix4(M.rx(Math.PI / 2)), c);
 const RED = tone(PIG.zhu, 1.1), OCHRE = tone([0.93, 0.8, 0.5], 1.4), INK = tone(PIG.jiao, 2.2), WHITE: RGB = [0.97, 0.97, 0.95];
-
-// ———————————————————————— 鸡 ————————————————————————
-function henGeo(body: RGB, tail: RGB, k = 1, cock = false): { body: Geo; head: Geo; leg: Geo } {
-  const parts: Geo[] = [ell(0.088 * k, 0.085 * k, 0.135 * k, body).translate(0, 0.19 * k, 0)];
-  for (const s of [-1, 1]) parts.push(ell(0.03 * k, 0.055 * k, 0.095 * k, [body[0] * 0.82, body[1] * 0.82, body[2] * 0.82]).translate(s * 0.07 * k, 0.2 * k, -0.01));
-  if (cock) {
-    // 公鸡的尾：几根高高拱起来再垂下去的长翎
-    for (let i = 0; i < 4; i++) {
-      const a = 0.25 + i * 0.26, r = 0.2 + 0.03 * i, pts = [0, 0.33, 0.66, 1].map((t) => V((i - 1.5) * 0.012, 0.26 + Math.sin(a + t * 1.9) * r * (0.5 + 0.5 * t), -0.12 - (1 - Math.cos(t * 2.0)) * r * 0.75));
-      parts.push(paint(sweep(pts, [[-0.006, -0.022], [0.006, -0.022], [0.006, 0.022], [-0.006, 0.022]], { scale: (t) => 1.1 - 0.75 * t, up: V(1, 0, 0) }), tail));
-    }
-  } else parts.push(ell(0.018 * k, 0.085 * k, 0.065 * k, tail).applyMatrix4(M.mul(M.t(0, 0.27 * k, -0.14 * k), M.rx(-0.55))));
-  // 头颈：原点在颈根
-  const hp: Geo[] = [paint(cyl(0.022 * k, 0.034 * k, 0.11 * k, 6).applyMatrix4(M.mul(M.rx(0.35), M.t(0, 0.05 * k, 0))), body), ell(0.034 * k, 0.034 * k, 0.038 * k, body).translate(0, 0.112 * k, 0.045 * k), beak(0.012 * k, 0.04 * k, OCHRE).translate(0, 0.108 * k, 0.095 * k)];
-  hp.push(ell(0.008 * k, (cock ? 0.03 : 0.016) * k, (cock ? 0.04 : 0.026) * k, RED).translate(0, (cock ? 0.158 : 0.148) * k, 0.04 * k), ell(0.008 * k, (cock ? 0.022 : 0.01) * k, 0.01 * k, RED).translate(0, 0.08 * k, 0.07 * k));
-  const leg = merge([paint(cyl(0.006 * k, 0.007 * k, 0.11 * k, 4).translate(0, -0.055 * k, 0), OCHRE), paint(box(0.034 * k, 0.005, 0.05 * k).translate(0, -0.11 * k, 0.014 * k), OCHRE)]);
-  return { body: merge(parts), head: merge(hp), leg };
-}
-interface Bird { kind: 0 | 1 | 2; x: number; z: number; yaw: number; tx: number; tz: number; state: number; t: number; ph: number; home: number; k: number[]; s: number; peck: number; mum: Bird | null; crow: number }
-
-export class Chickens {
-  parts: Parts;
-  private birds: Bird[] = [];
-  private R = mulberry32(88);
-  private nextCluck = 6; private nextCrow = 3;
-
-  constructor() {
-    const P = (this.parts = new Parts(creatureMat({ body: 0.55, shade: 1.45 }), 'chickens'));
-    const sets = [henGeo(tone([0.86, 0.72, 0.56], 1.5), tone(PIG.jiao, 1.6)), henGeo(WHITE, [0.86, 0.86, 0.84]), henGeo(tone([0.8, 0.76, 0.7], 1.6), INK), henGeo(tone([0.84, 0.6, 0.46], 1.6), tone([0.5, 0.56, 0.6], 2.6), 1.25, true)];
-    const chick = merge([ell(0.04, 0.038, 0.048, tone(PIG.huang, 0.9)).translate(0, 0.045, 0), ell(0.027, 0.027, 0.027, tone(PIG.huang, 0.8)).translate(0, 0.085, 0.032), beak(0.007, 0.02, OCHRE).translate(0, 0.082, 0.062)]);
-    const add = (kind: 0 | 1 | 2, set: number, home: number, mum: Bird | null = null): Bird => {
-      const g = sets[set], [x0, z0] = this.somewhere(home);
-      const b: Bird = { kind, x: x0, z: z0, yaw: this.R() * 6.28, tx: 0, tz: 0, state: 0, t: this.R() * 3, ph: this.R() * 6, home, k: kind === 2 ? [P.add(chick)] : [P.add(g.body), P.add(g.head), P.add(g.leg), P.add(g.leg)], s: kind === 1 ? 1.25 : 1, peck: 0, mum, crow: 0 };
-      b.tx = b.x; b.tz = b.z;
-      this.birds.push(b);
-      return b;
-    };
-    add(1, 3, 0); add(0, 0, 0); add(0, 1, 0);
-    const mum = add(0, 2, 0);
-    for (let i = 0; i < 4; i++) add(2, 0, 0, mum);
-    add(0, 0, 1); add(0, 1, 1); add(0, 2, 1); add(0, 0, 1);
-    P.build();
-  }
-
-  /** 自家门前那一片里的一处（别走进院墙、屋里去） */
-  private somewhere(home: number): [number, number] {
-    const h = COOPS[home], lx = (this.R() - 0.5) * 8, lz = -1.2 + this.R() * 5.4, cy = Math.cos(h.yaw), sy = Math.sin(h.yaw);
-    return [h.x + lx * cy + lz * sy, h.z - lx * sy + lz * cy];
-  }
-
-  update(c: Ctx, feedAt: { x: number; z: number } | null) {
-    const [sr, ss] = SUN[c.season], P = this.parts, R = this.R, dt = c.dt, t = c.t;
-    const out = c.hour > sr - 0.7 && c.hour < ss + 0.4 && c.rain < 0.6 && c.snow < 0.75;
-    const near = Math.min(c.camPos.distanceTo(_p.set(COOPS[0].x, c.camPos.y, COOPS[0].z)), c.camPos.distanceTo(_p.set(COOPS[1].x, c.camPos.y, COOPS[1].z)));
-    P.mesh.visible = out && near < 240;
-    if (!P.mesh.visible) return;
-    // 清早打鸣：伸长了脖子朝天叫
-    const dawn = c.hour > sr - 0.6 && c.hour < sr + 0.6;
-    this.nextCrow -= dt;
-    if (dawn && this.nextCrow < 0) { this.nextCrow = 16 + R() * 14; const k = this.birds[0]; k.crow = 2.6; c.sfx('rooster', k.x, k.z, 0.8); }
-    this.nextCluck -= dt;
-    if (this.nextCluck < 0) { this.nextCluck = 7 + R() * 12; const b = this.birds[1 + Math.floor(R() * 3)]; if (Math.hypot(c.player.x - b.x, c.player.z - b.z) < 40) c.sfx(R() < 0.25 ? 'chick' : 'hen', b.x, b.z, 0.3 + 0.3 * R()); }
-    if (near > 110 && c.frame % 4) return;
-    for (const b of this.birds) {
-      const home = COOPS[b.home], chick = b.kind === 2;
-      b.t -= dt;
-      // 人走近了：小跑着躲开
-      const pdx = b.x - c.player.x, pdz = b.z - c.player.z, pd = Math.hypot(pdx, pdz);
-      if (pd < 1.5 && b.state !== 3) { b.state = 3; b.t = 1.2 + R(); b.tx = b.x + (pdx / (pd || 1)) * 2.6; b.tz = b.z + (pdz / (pd || 1)) * 2.6; }
-      if (b.t < 0) {
-        if (chick && b.mum) { b.state = 1; b.t = 0.6 + R(); b.tx = b.mum.x + (R() - 0.5) * 0.9; b.tz = b.mum.z + (R() - 0.5) * 0.9; }
-        else if (feedAt && b.home === 1) { const far = Math.hypot(feedAt.x - b.x, feedAt.z - b.z) > 0.9; b.state = far ? 1 : 0; b.t = far ? 2 : 1 + R() * 2; if (far) { b.tx = feedAt.x + (R() - 0.5) * 1.3; b.tz = feedAt.z + (R() - 0.5) * 1.3; } }
-        else {
-          const r = R();
-          b.state = r < 0.5 ? 0 : r < 0.85 ? 1 : 2; b.t = b.state === 0 ? 2 + R() * 4 : b.state === 1 ? 2 + R() * 3 : 1 + R() * 2;
-          if (b.state === 1) [b.tx, b.tz] = this.somewhere(b.home);
-        }
-      }
-      const moving = b.state === 1 || b.state === 3;
-      let v = 0;
-      if (moving) {
-        const dx = b.tx - b.x, dz = b.tz - b.z, d = Math.hypot(dx, dz);
-        if (d < 0.12) { b.state = 0; b.t = 1 + R() * 3; }
-        else {
-          const off = wrap(Math.atan2(dx, dz) - b.yaw);
-          b.yaw += Math.max(-6 * dt, Math.min(6 * dt, off));
-          v = (b.state === 3 ? 1.5 : chick ? 0.55 : 0.36) * Math.max(0.2, Math.cos(off));
-          b.x += Math.sin(b.yaw) * v * dt; b.z += Math.cos(b.yaw) * v * dt; b.ph += v * dt * (chick ? 40 : 22);
-        }
-      }
-      // 啄：头一下一下地点到地上
-      if (b.state === 0 && !chick) { b.peck -= dt; if (b.peck < -0.5 - 0.9 * ((b.ph * 7.3) % 1)) { b.peck = 0.3; b.ph += 0.37; } } else b.peck = Math.min(b.peck, 0);
-      if (b.crow > 0) b.crow -= dt;
-      const gy = footY(b.x, b.z), pk = b.peck > 0 ? Math.sin((b.peck / 0.3) * Math.PI) : 0, crow = b.crow > 0 ? sm(Math.min(1, (2.6 - b.crow) * 3)) * sm(b.crow * 2.5) : 0;
-      if (chick) { P.place(b.k[0], trs(_b, b.x, gy + 0.006 * Math.abs(Math.sin(b.ph)), b.z, b.yaw, 0.15 * Math.sin(b.ph * 0.5), 0)); continue; }
-      const s = b.s, step = Math.sin(b.ph);
-      trs(_b, b.x, gy + (moving ? 0.008 * Math.abs(step) : 0), b.z, b.yaw, 0.7 * pk - 0.3 * crow, 0);
-      P.place(b.k[0], _b);
-      const look = b.state === 2 ? 0.7 * Math.sign(Math.sin(t * 1.3 + b.ph)) * sm(Math.abs(Math.sin(t * 1.3 + b.ph)) * 3) : 0;
-      P.place(b.k[1], child(_m, _b, 0, 0.24 * s, (0.1 + (moving ? 0.014 * step : 0)) * s, look, 1.5 * pk - 0.75 * crow, 0));
-      for (let i = 0; i < 2; i++) P.place(b.k[2 + i], child(_m, _b, (i ? -0.04 : 0.04) * s, 0.115 * s, 0.005, 0, (moving ? 0.6 * (i ? -step : step) : 0) - 0.7 * pk + 0.3 * crow, 0));
-    }
-    P.commit();
-  }
-}
-const _p = new THREE.Vector3();
-
-// ———————————————————————— 鸭 ————————————————————————
-/** 溪上某个里程处的一点（lat 是偏离中线多少，朝左岸为正）：位置、水面高、水流方向 */
-function onStream(s: number, lat: number, out: { x: number; z: number; y: number; tx: number; tz: number }) {
-  let i = 1; while (i < STREAM.length - 1 && STREAM[i].s < s) i++;
-  const a = STREAM[i - 1], b = STREAM[i], k = Math.max(0, Math.min(1, (s - a.s) / (b.s - a.s || 1))), l = Math.hypot(b.x - a.x, b.z - a.z) || 1, tx = (b.x - a.x) / l, tz = (b.z - a.z) / l;
-  out.x = lerp(a.x, b.x, k) - tz * lat; out.z = lerp(a.z, b.z, k) + tx * lat; out.y = lerp(a.y, b.y, k); out.tx = tx; out.tz = tz;
-}
-interface Duck { pond: boolean; s: number; lat: number; ts: number; tl: number; x: number; z: number; y: number; yaw: number; t: number; dab: number; ph: number; k: number[] }
-export class Ducks {
-  parts: Parts;
-  private ducks: Duck[] = [];
-  private R = mulberry32(31); private quack = 9;
-  constructor() {
-    const P = (this.parts = new Parts(creatureMat({ body: 0.85, shade: 1.4 }), 'ducks'));
-    const geo = (body: RGB, head: RGB) => ({
-      body: merge([ell(0.095, 0.075, 0.17, body, 9, 6).translate(0, 0.02, 0), ell(0.03, 0.03, 0.06, body).applyMatrix4(M.mul(M.t(0, 0.07, -0.16), M.rx(-0.6))), ...[-1, 1].map((s) => ell(0.03, 0.045, 0.11, [body[0] * 0.9, body[1] * 0.9, body[2] * 0.9]).translate(s * 0.075, 0.045, -0.02))]),
-      head: merge([paint(cyl(0.024, 0.032, 0.11, 6).applyMatrix4(M.mul(M.rx(0.25), M.t(0, 0.05, 0))), head), ell(0.04, 0.038, 0.046, head).translate(0, 0.122, 0.04), paint(box(0.03, 0.012, 0.055).translate(0, 0.112, 0.1), OCHRE)]),
-    });
-    const white = geo(WHITE, WHITE), brown = geo(tone([0.82, 0.74, 0.62], 1.5), tone([0.56, 0.62, 0.6], 2.2));
-    const add = (pond: boolean, g: { body: Geo; head: Geo }) => {
-      const R = this.R, d: Duck = { pond, s: lerp(DUCK_REACH.s0, DUCK_REACH.s1, R()), lat: (R() - 0.5) * 1.6, ts: 0, tl: 0, x: 0, z: 0, y: 0, yaw: R() * 6.28, t: R() * 5, dab: 0, ph: R() * 6, k: [P.add(g.body), P.add(g.head)] };
-      if (pond) { d.s = R() * 6.28; d.lat = 0.2 + 0.4 * R(); }
-      d.ts = d.s; d.tl = d.lat;
-      this.ducks.push(d);
-    };
-    add(false, white); add(false, white); add(false, brown); add(true, white); add(true, brown);
-    P.build();
-  }
-  update(c: Ctx) {
-    const [sr, ss] = SUN[c.season], P = this.parts, R = this.R, dt = c.dt, t = c.t;
-    const out = c.hour > sr - 0.3 && c.hour < ss + 0.5 && c.snow < 0.8;
-    P.mesh.visible = out && Math.min(c.camPos.distanceTo(_p.set(SITE.bridge.x + 16, c.camPos.y, SITE.bridge.z)), c.camPos.distanceTo(_p.set(SITE.pond.x, c.camPos.y, SITE.pond.z))) < 230;
-    if (!P.mesh.visible) return;
-    this.quack -= dt;
-    if (this.quack < 0) { this.quack = 12 + R() * 22; const d = this.ducks[Math.floor(R() * this.ducks.length)]; if (Math.hypot(c.player.x - d.x, c.player.z - d.z) < 45) c.sfx('duck', d.x, d.z, 0.3 + 0.3 * R()); }
-    const o = _o, Pd = SITE.pond;
-    for (const d of this.ducks) {
-      d.t -= dt;
-      const scared = Math.hypot(c.player.x - d.x, c.player.z - d.z) < 2.6;
-      if (d.t < 0 || (scared && d.dab <= 0 && d.t < 3)) {
-        d.t = 5 + R() * 9;
-        if (d.pond) { d.ts = R() * 6.28; d.tl = 0.12 + 0.55 * R(); } else { d.ts = lerp(DUCK_REACH.s0, DUCK_REACH.s1, R()); d.tl = (R() - 0.5) * 2.0; }
-        if (!scared && R() < 0.45) d.dab = 2.4;
-        if (scared) d.t = 4;
-      }
-      // 朝要去的地方慢慢划过去
-      let gx: number, gz: number;
-      if (d.pond) { gx = Pd.x + Math.cos(d.ts) * Pd.rx * d.tl; gz = Pd.z + Math.sin(d.ts) * Pd.rz * d.tl; d.y = Pd.y; } else { onStream(d.ts, d.tl, o); gx = o.x; gz = o.z; }
-      if (d.x === 0 && d.z === 0) { d.x = gx; d.z = gz; }
-      const dx = gx - d.x, dz = gz - d.z, dist = Math.hypot(dx, dz);
-      let v = 0;
-      if (d.dab > 0) d.dab -= dt;
-      else if (dist > 0.25) {
-        const off = wrap(Math.atan2(dx, dz) - d.yaw);
-        d.yaw += Math.max(-1.6 * dt, Math.min(1.6 * dt, off));
-        v = (scared ? 0.7 : 0.22) * Math.max(0.25, Math.cos(off));
-        d.x += Math.sin(d.yaw) * v * dt; d.z += Math.cos(d.yaw) * v * dt;
-      }
-      if (!d.pond) { let i = 1; while (i < STREAM.length - 1 && STREAM[i].x < d.x) i++; d.y = STREAM[i].y; }
-      d.ph += dt * (1.2 + v * 6);
-      // 扎猛子：屁股朝天
-      const tip = d.dab > 0 ? sm(Math.min(1, (2.4 - d.dab) * 2.5)) * sm(d.dab * 2.5) : 0;
-      trs(_b, d.x, d.y + 0.008 * Math.sin(d.ph) - 0.03 * tip, d.z, d.yaw, 1.15 * tip + 0.03 * Math.sin(d.ph * 0.7), 0.04 * Math.sin(d.ph * 0.9));
-      P.place(d.k[0], _b);
-      P.place(d.k[1], child(_m, _b, 0, 0.06, 0.12, 0.25 * Math.sin(t * 0.5 + d.ph) * (1 - tip), 0.5 * tip + 0.05 * Math.sin(d.ph * 1.3), 0));
-    }
-    P.commit();
-  }
-}
-const _o = { x: 0, z: 0, y: 0, tx: 0, tz: 0 };
 
 // ———————————————————————— 白鹭 ————————————————————————
 interface Egret { x: number; z: number; y: number; yaw: number; hx: number; hz: number; hyaw: number; state: number; t: number; a: number; cx: number; cz: number; r: number; stab: number; ph: number; k: number[]; lx: number; lz: number; ly: number; lyaw: number }
@@ -300,6 +123,9 @@ const arc = (b: Wee, ax: number, ay: number, az: number, bx: number, by: number,
 export class FenceSparrows {
   parts: Parts;
   private birds: Array<Wee & { u: number; state: number; t: number; fx: number; fy: number; fz: number; gx: number; gz: number }> = [];
+  /** 第 i 只此刻在地上的话，它在哪（雪地脚印用）；在篱上、在飞是 null */
+  onGround(i: number): { x: number; z: number; y: number } | null { const b = this.birds[i]; return b && b.state === 2 && this.parts.mesh.visible ? b : null; }
+  get count() { return this.birds.length; }
   private R = mulberry32(7);
   constructor() {
     const P = (this.parts = new Parts(creatureMat({ body: 0.3 }), 'sparrows:fence')), g = sparrowGeo();
@@ -308,7 +134,9 @@ export class FenceSparrows {
   }
   update(c: Ctx) {
     const [sr, ss] = SUN[c.season], P = this.parts, R = this.R, dt = c.dt, F = FENCE_PERCH;
-    P.mesh.visible = c.hour > sr - 0.2 && c.hour < ss + 0.2 && c.rain < 0.5 && c.snow < 0.6 && c.camPos.distanceTo(_p.set((F.x0 + F.x1) / 2, F.y, F.z)) < 120;
+    // 下雪也出来：雪地上找食（院门外的雪上跳来跳去，留下一对对的爪印）
+    P.mesh.visible = c.hour > sr - 0.2 && c.hour < ss + 0.2 && c.rain < 0.5 && c.camPos.distanceTo(_p.set((F.x0 + F.x1) / 2, F.y, F.z)) < 120;
+    const snowy = U.uSnow.value > 0.3;
     if (!P.mesh.visible) return;
     const scare = Math.hypot(c.player.x - (F.x0 + F.x1) / 2, c.player.z - F.z) < 3.4;
     for (const b of this.birds) {
@@ -317,12 +145,12 @@ export class FenceSparrows {
       if (b.state === 0) {
         // 在篱上：左右看、跳一小步
         b.x = px; b.y = F.y; b.z = F.z; b.flap = 0;
-        if (b.t < 0) { b.t = 1.2 + R() * 3; if (R() < 0.5) b.yaw = (R() < 0.5 ? 0 : Math.PI) + (R() - 0.5) * 1.2; else if (R() < 0.6) b.u = Math.max(0, Math.min(1, b.u + (R() - 0.5) * 0.12)); else { b.state = 1; b.t = 0.7; b.fx = b.x; b.fy = b.y; b.fz = b.z; b.gx = px + (R() - 0.5) * 1.2; b.gz = F.z + 0.7 + R() * 1.1; } }
+        if (b.t < 0) { b.t = 1.2 + R() * 3; if (R() < 0.5) b.yaw = (R() < 0.5 ? 0 : Math.PI) + (R() - 0.5) * 1.2; else if (R() < (snowy ? 0.15 : 0.6)) b.u = Math.max(0, Math.min(1, b.u + (R() - 0.5) * 0.12)); else { b.state = 1; b.t = 0.7; b.fx = b.x; b.fy = b.y; b.fz = b.z; b.gx = px + (R() - 0.5) * 1.2; b.gz = F.z + 0.7 + R() * 1.1; } }
         if (scare) { b.state = 4; b.t = 1.5 + R() * 0.4; b.fx = b.x; b.fy = b.y; b.fz = b.z; }
       } else if (b.state === 1) {
         // 落到地上
         arc(b, b.fx, b.fy, b.fz, b.gx, footY(b.gx, b.gz), b.gz, 1 - Math.max(0, b.t) / 0.7, 0.15); b.flap = 1;
-        if (b.t < 0) { b.state = 2; b.t = 3 + R() * 5; }
+        if (b.t < 0) { b.state = 2; b.t = snowy ? 9 + R() * 9 : 3 + R() * 5; }
       } else if (b.state === 2) {
         // 地上啄、跳
         b.flap = 0; b.y = footY(b.x, b.z) + 0.02 * Math.abs(Math.sin(c.t * 9 + b.u * 20)) * (Math.sin(c.t * 1.3 + b.u * 9) > 0.3 ? 1 : 0);
@@ -414,7 +242,7 @@ export class PlumSparrows {
 /** 燕子：春夏的白天，贴着田飞「8」字，忽高忽低；翅膀扇几下、滑一段 */
 export class Swallows {
   parts: Parts;
-  private birds: Array<{ cx: number; cz: number; A: number; B: number; w: number; ph: number; h: number; x: number; y: number; z: number; k: number[] }> = [];
+  private birds: Array<{ cx: number; cz: number; A: number; B: number; w: number; ph: number; h: number; x: number; y: number; z: number; k: number[]; gy: number }> = [];
   constructor() {
     const P = (this.parts = new Parts(creatureMat({ body: 0.5, shade: 1.3, line: 0.6 }), 'swallows')), dark = tone([0.5, 0.54, 0.64], 2.4), R = mulberry32(12);
     const b = ell(0.022, 0.02, 0.065, dark, 6, 5);
@@ -433,19 +261,27 @@ export class Swallows {
     const F = SITE.mulberry;
     for (let i = 0; i < 7; i++) {
       const west = i < 4;
-      this.birds.push({ cx: west ? -28 + R() * 10 : (F.x0 + F.x1) / 2 - 30 + R() * 20, cz: west ? 86 + R() * 14 : 84 + R() * 16, A: 34 + R() * 16, B: 18 + R() * 12, w: 0.2 + R() * 0.08, ph: R() * 6.28, h: R() * 6.28, x: 0, y: 0, z: 0, k: [P.add(body), P.add(wl), P.add(wr)] });
+      this.birds.push({ cx: west ? -28 + R() * 10 : (F.x0 + F.x1) / 2 - 30 + R() * 20, cz: west ? 86 + R() * 14 : 84 + R() * 16, A: 34 + R() * 16, B: 18 + R() * 12, w: 0.2 + R() * 0.08, ph: R() * 6.28, h: R() * 6.28, x: 0, y: 0, z: 0, k: [P.add(body), P.add(wl), P.add(wr)], gy: NaN });
     }
     P.build();
   }
   update(c: Ctx) {
     const [sr, ss] = SUN[c.season], P = this.parts;
-    P.mesh.visible = (c.season === 'spring' || c.season === 'summer') && c.hour > sr + 0.2 && c.hour < ss && c.rain < 0.7;
+    // 远了不画；稍远隔帧动；地面高隔几帧才重新量一次（燕子贴着平平的田飞）
+    const d = Math.min(Math.hypot(c.camPos.x + 23, c.camPos.z - 93), Math.hypot(c.camPos.x - 77, c.camPos.z - 92));
+    P.mesh.visible = (c.season === 'spring' || c.season === 'summer') && c.hour > sr + 0.2 && c.hour < ss && c.rain < 0.7 && d < 190;
     if (!P.mesh.visible) return;
-    const t = c.t;
+    if (d > 70 && c.frame % 2) return;
+    // 要下雨了、夏天的傍晚，燕子飞得低（「燕子低飞」）
+    const t = c.t, low = c.rain > 0.02 || (c.season === 'summer' && c.hour > 15) ? 0.45 : 1;
+    let i = 0;
     for (const b of this.birds) {
+      i++;
       const u = t * b.w + b.ph, x = b.cx + b.A * Math.sin(u), z = b.cz + b.B * Math.sin(2 * u), vx = b.A * Math.cos(u), vz = 2 * b.B * Math.cos(2 * u);
       const yaw = Math.atan2(vx, vz), curv = (vx * (-4 * b.B * Math.sin(2 * u)) - vz * (-b.A * Math.sin(u))) / Math.pow(vx * vx + vz * vz, 1.5);
-      const y = footY(x, z) + 1.0 + 2.4 * (0.5 + 0.5 * Math.sin(u * 2.7 + b.h)) ** 2 + 0.3 * Math.sin(t * 2.1 + b.h);
+      // 地面高用总图的算法（不去查行走那张一格一格现算的图：燕子满田飞，一飞到没算过的地方就要现算一块）
+      if (!(b.gy === b.gy) || (c.frame + i) % 20 === 0) b.gy = ground(x, z);
+      const y = b.gy + 0.6 + (0.4 + 2.4 * (0.5 + 0.5 * Math.sin(u * 2.7 + b.h)) ** 2) * low + 0.3 * Math.sin(t * 2.1 + b.h);
       const pitch = Math.max(-0.5, Math.min(0.5, -(y - b.y) / (Math.hypot(x - b.x, z - b.z) || 1)));
       b.x = x; b.y = y; b.z = z;
       trs(_b, x, y, z, yaw, pitch, Math.max(-1, Math.min(1, -curv * 22)));
@@ -514,7 +350,9 @@ export class Geese {
  */
 export class NestSwallows {
   parts: Parts;
-  private birds: Array<{ t: number; T: number; out: boolean; far: THREE.Vector3; side: number; x: number; y: number; z: number; k: number[] }> = [];
+  private birds: Array<{ t: number; T: number; out: boolean; far: THREE.Vector3; side: number; x: number; y: number; z: number; k: number[]; mud: boolean }> = [];
+  /** 衔泥的地方：石桥西边的北岸 */
+  private mudAt = (() => { const p = STREAM.reduce((a, q) => (Math.abs(q.x - 5) < Math.abs(a.x - 5) ? q : a)); const z = p.z - p.w - 0.25; return new THREE.Vector3(p.x, footY(p.x, z) + 0.04, z); })();
   private R = mulberry32(45);
   constructor() {
     const P = (this.parts = new Parts(creatureMat({ body: 0.5, shade: 1.3, line: 0.6 }), 'swallows:nest')), dark = tone([0.5, 0.54, 0.64], 2.4);
@@ -529,7 +367,7 @@ export class NestSwallows {
       return paint(g, dark);
     };
     const wl = wing(1), wr = wing(-1);
-    for (let i = 0; i < 2; i++) this.birds.push({ t: i * 5, T: 4, out: false, far: new THREE.Vector3(), side: 1, x: NEST.x, y: NEST.y, z: NEST.z, k: [P.add(body), P.add(wl), P.add(wr)] });
+    for (let i = 0; i < 2; i++) this.birds.push({ t: i * 5, T: 4, out: false, far: new THREE.Vector3(), side: 1, x: NEST.x, y: NEST.y, z: NEST.z, k: [P.add(body), P.add(wl), P.add(wr)], mud: false });
     P.build();
   }
   update(c: Ctx) {
@@ -540,20 +378,28 @@ export class NestSwallows {
       b.t += c.dt;
       if (b.t > b.T) {
         b.t = 0; b.out = !b.out;
-        if (b.out) { b.T = 9 + R() * 6; const a = -0.9 + R() * 2.2, d = 22 + R() * 26; b.far.set(NEST.x + Math.sin(a) * d, NEST.y + 1 + R() * 5, NEST.z + Math.cos(a) * d); b.side = R() < 0.5 ? 1 : -1; }
+        if (b.out) {
+          // 春天多半是去溪边衔泥（落在岸上一啄一啄，再飞回窝里）
+          b.mud = c.season === 'spring' && c.rain < 0.3 && R() < 0.45;
+          if (b.mud) { b.T = 11 + R() * 3; b.far.copy(this.mudAt); b.far.x += (R() - 0.5) * 1.6; b.side = R() < 0.5 ? 0.4 : -0.4; }
+          else { b.T = 9 + R() * 6; const a = -0.9 + R() * 2.2, d = 22 + R() * 26; b.far.set(NEST.x + Math.sin(a) * d, NEST.y + 1 + R() * 5, NEST.z + Math.cos(a) * d); b.side = R() < 0.5 ? 1 : -1; }
+        }
         else b.T = 2.5 + R() * 3.5;
       }
       let yaw = Math.PI, pitch = -0.5, roll = 0, flap = 0, x = NEST.x + (i ? 0.1 : -0.08), y = NEST.y - 0.02 + (i ? 0.03 : 0), z = NEST.z + 0.03;
       if (b.out) {
         // 一圈：出去、兜到远处、回来（首尾都在窝边）
-        const u = b.t / b.T, w = (1 - Math.cos(u * Math.PI * 2)) / 2, s = Math.sin(u * Math.PI * 2), a = Math.atan2(b.far.x - NEST.x, b.far.z - NEST.z);
+        // 衔泥：当中一段停在岸上
+        const u0 = b.t / b.T, sit = b.mud && u0 > 0.42 && u0 < 0.58, u = b.mud ? (u0 < 0.42 ? (u0 / 0.42) * 0.5 : u0 > 0.58 ? 0.5 + ((u0 - 0.58) / 0.42) * 0.5 : 0.5) : u0;
+        const w = (1 - Math.cos(u * Math.PI * 2)) / 2, s = Math.sin(u * Math.PI * 2), a = Math.atan2(b.far.x - NEST.x, b.far.z - NEST.z);
         x = lerp(NEST.x, b.far.x, w) + b.side * s * 9 * Math.cos(a);
         z = lerp(NEST.z + 0.2, b.far.z, w) - b.side * s * 9 * Math.sin(a);
-        y = lerp(NEST.y - 0.1, b.far.y, w) - 1.2 * Math.sin(u * Math.PI) * Math.sin(u * Math.PI * 3);
+        y = lerp(NEST.y - 0.1, b.far.y, w) - (b.mud ? 0 : 1.2) * Math.sin(u * Math.PI) * Math.sin(u * Math.PI * 3);
         const dx = x - b.x, dy = y - b.y, dz = z - b.z, h = Math.hypot(dx, dz);
         if (h > 1e-4) { yaw = Math.atan2(dx, dz); pitch = Math.max(-0.7, Math.min(0.7, -dy / h)); }
         roll = b.side * 0.5 * Math.cos(u * Math.PI * 2);
         flap = Math.sin(c.t * 2.3 + i * 2) > 0 || u < 0.08 || u > 0.92 ? Math.sin(c.t * 34 + i) : 0.35;
+        if (sit) { y = b.far.y + 0.012 * Math.abs(Math.sin(c.t * 7)); pitch = 0.35 * Math.max(0, Math.sin(c.t * 5 + i)); roll = 0; flap = 0.25 + 0.1 * Math.sin(c.t * 9); }
       }
       b.x = x; b.y = y; b.z = z;
       trs(_b, x, y, z, yaw, pitch, roll);

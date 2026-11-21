@@ -2,17 +2,27 @@
  * 行者：你操纵的那个小人在世界里怎么走。
  *   输入是一个相对镜头的方向（键盘 WASD、摇杆）；也可以给一个地点让他自己走过去（点地面、走向某件事）。
  *   每一步都问 walk.ts「能不能到」：碰到篱笆、树石顺着滑，过溪走桥或踏石，不会从桥上掉下去。
- *   几处为了「像人」：掉头时先慢下来、转过身再走（转身有个上限，不是一帧翻面）；
- *     上下台阶时身子按坡走（取前后一步之内地面的平均），不是一级一顿。
+ *   三档快慢：平时从容地走（WALK，夜里再慢一点）；摇杆推到头快走（FAST，是一路小跑）；按住或点一下锁住 Shift、点「疾」是跑（RUN）。
+ *   几处为了「像人」：
+ *     快慢的变化有上限——起步、起跑要几步才快起来，急停也要一两步，不是一下子换速；
+ *     掉头时先慢下来、转过身再走（转身有个上限，不是一帧翻面）；跑起来身子顺着去的方向，拐弯走一道弧，
+ *       自己跑过去时（点地面）到拐点、到终点之前先放慢，不冲过头；
+ *     上下台阶时身子按坡走（取前后一步之内地面的平均），不是一级一顿；台阶、坡上自动慢些（跑上台阶时步子也收小）。
+ *   闲着的时候（站久了、散步时）做点小动作、负手而行、下雨抬袖——见 avatar/idle.ts；做事时一概不出。
  *   位置与朝向写到小人的 root 上；身体怎么动（步态、姿势）是小人自己的事（avatar/）。
  */
 import * as THREE from 'three';
+import { Idle } from './avatar/idle';
 import type { Avatar } from './avatar/types';
-import { findPath, groundAt, move, standable, type Zone } from './walk';
+import { U } from './ink/ink';
+import { findPath, groundAt, move, placeAt, standable, type Zone } from './walk';
 
-/** 平时是从容地走——这里是散步的地方；按住 Shift、摇杆推到头才快走几步 */
-export const WALK = 1.4, FAST = 3.0;
+/** 平时是从容地走——这里是散步的地方；摇杆推到头快走（一路小跑）；按住（或点一下锁住）Shift、点界面上的「疾」是跑 */
+export const WALK = 1.4, FAST = 3.0, RUN = 4.6;
+/** 快慢变化的上限（米/秒²）：加快、放慢；拐弯时方向变化的上限（横向的加速度） */
+export const ACC = 4.2, DEC = 7.5, LAT = 12;
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
+const smooth = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** 自己走的一条路：pts 是依次要到的点，i 是正往哪一个去 */
 interface Goal { pts: Array<[number, number]>; i: number; r: number; then?: () => void; fail?: () => void; t: number; mark: number; d0: number }
@@ -23,9 +33,22 @@ export class Player {
   zone: Zone = 'ground';
   /** 相对镜头的输入：x 右、y 前，长度 ≤ 1 */
   input = new THREE.Vector2();
+  /** 快走（总装在摇杆推到头时设） */
   fast = false;
+  /** 跑（总装按 Shift、「疾」设）：手动走、自己走过去（点地面）时都跑 */
+  run = false;
+  /**
+   * 快慢打几折（0…1）：乘在三档的目标速度上（走、快走、跑都乘）。挑着担子、扛着东西时由那件事设（农事挑担设 0.72），放下设回 1。
+   * 步态本来就按速度走，不用另管。（是类上的字段，外面用 'pace' in p 判断有没有）
+   */
+  pace = 1;
   /** 正在做事：不听行走的输入 */
   locked = false;
+  /**
+   * 总装告诉行者此刻是不是在做事——自己走动着做的那几件事（浇菊……）locked 为假，闲时的小动作要靠它才知道别出来。
+   * 不给也行：拿着东西、手伸着、头看着某处时身子自己知道（Avatar.engaged）。
+   */
+  busy: (() => boolean) | null = null;
   /** 此刻的地面速度（米/秒） */
   speed = 0;
   /** 身子另外抬高多少（坐在蒲团上、蹲在池岸上时由活动设；有缓动） */
@@ -33,6 +56,8 @@ export class Player {
   /** 站定后该转向哪（弧度）；null 则保持 */
   faceTo: number | null = null;
   onStep: ((foot: 'L' | 'R') => void) | null = null;
+  /** 闲时的小动作（站久了、散步时） */
+  idle: Idle;
   private vel = new THREE.Vector2();
   private goal: Goal | null = null;
   private ground = 0; private climb = 0;
@@ -40,6 +65,7 @@ export class Player {
   static TURN = 7.5;
   private settle: { x: number; z: number; t: number } | null = null;
   private slide: { x0: number; z0: number; x1: number; z1: number; t: number; dur: number } | null = null;
+  private envT = 0; private indoor = false;
 
   constructor(scene: THREE.Scene, public av: Avatar) {
     scene.add(av.root);
@@ -47,16 +73,20 @@ export class Player {
     // 告诉小人脚下真实的地面（台阶是一级一级的）：脚踩在踏面上，不陷、不悬
     // （只报与脚下相差不到两级的高度：台沿外、水面上那些走不到的地方不算数，免得脚去够它）
     av.setGround?.((x, z) => { const g = groundAt(x, z, this.zone); return g == null || Math.abs(g - this.ground) > 0.4 ? null : g; });
+    this.idle = new Idle(av);
   }
 
   get moving() { return this.speed > 0.08; }
   get walking() { return !!this.goal; }
+  /** 此刻是不是在跑（跑的那一档、且真的快起来了） */
+  get running() { return this.speed > 2.2; }
 
   /** 直接放到某处（换处、上下楼） */
   teleport(x: number, z: number, yaw: number, zone: Zone = 'ground') {
     this.zone = zone; this.goal = null; this.settle = null; this.slide = null; this.vel.set(0, 0); this.speed = 0; this.faceTo = null; this.lift = this.liftS = 0;
     const y = groundAt(x, z, zone) ?? 0;
     this.pos.set(x, y, z); this.ground = y; this.yaw = yaw;
+    this.idle.reset(); this.envT = 0;
     this.apply();
   }
   /**
@@ -71,7 +101,7 @@ export class Player {
   }
   /** 正走着的那条路（给调试与测试看） */
   get path() { return this.goal ? this.goal.pts.slice(this.goal.i) : null; }
-  stop() { this.goal = null; this.vel.set(0, 0); }
+  stop() { this.goal = null; this.vel.multiplyScalar(this.speed > 2.2 ? 1 : 0); }
   /** 不问挡不挡，迈一小步挪到准确的位置（走到一件事跟前的最后半步；脚是真的在走，不是滑过去） */
   settleAt(x: number, z: number) { this.settle = { x, z, t: 0 }; this.goal = null; this.vel.set(0, 0); }
   /**
@@ -102,14 +132,19 @@ export class Player {
 
   update(dt: number, t: number, camYaw: number) {
     let wx = 0, wz = 0, mag = 0;
-    const manual = !this.locked && this.input.lengthSq() > 0.0009;
+    // 身子还没站好（坐着、躺着、正起身）：不听行走的输入，自己走的那条路也先等着——免得人没站起来就滑着走
+    const standing = this.av.ready ?? true;
+    const manual = !this.locked && standing && this.input.lengthSq() > 0.0009;
+    // 这一刻是哪一档：跑（自己走过去时也跑）、快走、从容地走（夜里再慢一成）；再打上 pace 的折扣（挑担子时慢些）
+    const running = this.run && (manual || !!this.goal);
+    const gear = (running ? RUN : this.fast ? FAST : WALK * (1 - 0.1 * U.uNight.value)) * Math.max(0, Math.min(1, this.pace));
     if (manual) {
       // 手一动，自己走的那条路就作罢
       this.goal = null; this.faceTo = null; this.settle = null;
       const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
       wx = rx * this.input.x + fx * this.input.y; wz = rz * this.input.x + fz * this.input.y;
       mag = Math.min(1, Math.hypot(wx, wz)); const l = Math.hypot(wx, wz) || 1; wx /= l; wz /= l;
-    } else if (this.goal) {
+    } else if (this.goal && standing) {
       const g = this.goal;
       let p = g.pts[g.i], dx = p[0] - this.pos.x, dz = p[1] - this.pos.z, d = Math.hypot(dx, dz);
       g.t += dt;
@@ -118,8 +153,16 @@ export class Player {
       const last = g.i === g.pts.length - 1;
       if (last && d < g.r) { this.goal = null; this.vel.set(0, 0); g.then?.(); }
       else {
-        // 快到终点时慢下来，正好停在那里；拐点处不停
-        wx = dx / Math.max(d, 1e-4); wz = dz / Math.max(d, 1e-4); mag = last ? Math.min(1, 0.22 + d / 0.9) : 1;
+        wx = dx / Math.max(d, 1e-4); wz = dz / Math.max(d, 1e-4);
+        if (last) {
+          // 快到终点时慢下来，正好停在那里；跑着的从两米上下就开始放慢，到跟前也只剩走路那么快
+          mag = gear > 2 ? Math.min(1, (0.55 + 0.75 * Math.sqrt(2 * DEC * Math.max(0, d - g.r))) / gear) : Math.min(1, 0.22 + d / 0.9);
+        } else {
+          // 拐点：拐得越急、离得越近越慢（走路时碰不到这个上限）
+          const q = g.pts[g.i + 1], bx = q[0] - p[0], bz = q[1] - p[1], bl = Math.hypot(bx, bz) || 1;
+          const vc = Math.max(WALK, gear * (0.3 + 0.7 * smooth(-0.2, 1, (wx * bx + wz * bz) / bl)));
+          mag = Math.min(1, Math.sqrt(vc * vc + 2 * DEC * 0.55 * Math.max(0, d - 0.2)) / gear);
+        }
         // 走不动了（被挡着）或走了太久：算走不到
         if (g.t - g.mark > 0.8) { if (g.d0 - d < 0.1) { this.goal = null; this.vel.set(0, 0); g.fail?.(); } else { g.mark = g.t; g.d0 = d; } }
         if (g.t > 90) { this.goal = null; g.fail?.(); }
@@ -127,11 +170,25 @@ export class Player {
     }
     // 要去的方向与身子朝向差得多（掉头、急拐）：先慢下来，转过身再走
     const off = mag > 0 ? Math.abs(wrap(Math.atan2(wx, wz) - this.yaw)) : 0;
-    // 台阶、坡上走得慢些（一步一级，不赶）
-    const slow = 1 - 0.4 * Math.min(1, Math.abs(this.climb) / 0.4);
-    const top = (this.fast || (manual && mag > 0.94) ? FAST : WALK) * mag * slow * (0.28 + 0.72 * Math.max(0, Math.cos(Math.min(off, Math.PI / 2))) ** 0.6);
-    const k = Math.min(1, dt * (mag > 0 ? 8 : 11));
-    this.vel.x += (wx * top - this.vel.x) * k; this.vel.y += (wz * top - this.vel.y) * k;
+    // 台阶、坡上走得慢些（一步一级，不赶）；跑着慢得更多
+    const slow = 1 - (running ? 0.5 : 0.4) * Math.min(1, Math.abs(this.climb) / (running ? 0.35 : 0.4));
+    const top = gear * mag * slow * (0.28 + 0.72 * Math.max(0, Math.cos(Math.min(off, Math.PI / 2))) ** 0.6);
+    {
+      // 快慢与方向分开变：快慢的变化有上限（加快 ACC、放慢 DEC），方向的变化也有上限（越快拐得越缓）
+      const cur = this.vel.length(), k = Math.min(1, dt * (mag > 0 ? 8 : 11));
+      // （头一步蹬得猛些：站着起步时加速的上限高，快起来以后回到 ACC）
+      const acc = ACC + 3 * Math.max(0, 1 - cur / 1.5);
+      // （停下来：匀着收到零，不拖一条慢慢爬的尾巴——脚步跟不上那条尾巴，会把后脚落在老远）
+      const want = top, dv = mag > 0 ? Math.max(-DEC * dt, Math.min(acc * dt, (want - cur) * k)) : -Math.min(cur, DEC * dt);
+      const sNew = Math.max(0, cur + dv);
+      let th = cur > 1e-4 ? Math.atan2(this.vel.x, this.vel.y) : Math.atan2(wx, wz);
+      if (mag > 0) {
+        const tw = Math.atan2(wx, wz), dth = wrap(tw - th);
+        if (cur < 0.05) th = tw;
+        else { const m = (LAT / Math.max(cur, 0.8)) * dt; th += Math.max(-m, Math.min(m, dth * Math.min(1, dt * 10))); }
+      }
+      this.vel.set(Math.sin(th) * sNew, Math.cos(th) * sNew);
+    }
     const sp = this.vel.length();
     let turn = 0;
     if (this.slide) {
@@ -154,8 +211,13 @@ export class Player {
       const moved = Math.hypot(n.x - px, n.z - pz);
       this.pos.x = n.x; this.pos.z = n.z; this.ground = n.y;
       this.speed += (moved / Math.max(dt, 1e-3) - this.speed) * Math.min(1, dt * 12);
-      // 身子转向要去的方向（有输入时看输入，没有就看余速）；转得再急也有个上限
-      const want = mag > 0 ? Math.atan2(wx, wz) : Math.atan2(this.vel.x, this.vel.y), d = wrap(want - this.yaw);
+      // 身子转向要去的方向（有输入时看输入，没有就看余速）；转得再急也有个上限。
+      // 快起来以后身子顺着真正去的方向（略往要拐的那边领一点），不会横着跑
+      const vDir = Math.atan2(this.vel.x, this.vel.y);
+      let want = mag > 0 ? Math.atan2(wx, wz) : vDir;
+      const fk = smooth(1.2, 2.4, sp);
+      if (mag > 0 && fk > 0) want = vDir + wrap(want - vDir) * (1 - fk) + Math.max(-0.35, Math.min(0.35, wrap(want - vDir))) * fk;
+      const d = wrap(want - this.yaw);
       const step = Math.max(-Player.TURN * dt, Math.min(Player.TURN * dt, d * Math.min(1, dt * 10)));
       this.yaw = wrap(this.yaw + step); turn = step / Math.max(dt, 1e-3);
     } else {
@@ -168,6 +230,10 @@ export class Player {
     this.pos.y += (this.ground + (rp.y - this.ground) * k2 - this.pos.y) * Math.min(1, dt * 12);
     this.liftS += (this.lift - this.liftS) * Math.min(1, dt * 5);
     this.apply();
+    // 闲着的时候：小动作、负手、遮雨（在不在屋檐下，半秒量一次）
+    this.envT -= dt;
+    if (this.envT <= 0) { this.envT = 0.5; this.indoor = placeAt(this.pos.x, this.pos.z, this.zone).indoor > 0.2; }
+    this.idle.update(dt, { speed: this.speed, busy: this.locked || !!this.busy?.() || !!this.slide || !!this.settle, night: U.uNight.value, rain: U.uWet.value, indoor: this.indoor });
     this.av.update(dt, t, { speed: this.speed < 0.05 ? 0 : this.speed, climb: this.climb, turn });
   }
 

@@ -23,9 +23,9 @@ const PAL: Record<'day' | 'dawn' | 'dusk' | 'night', Pal> = {
   night: { paper: [0.2, 0.235, 0.3], mist: [0.225, 0.265, 0.335], light: [0.82, 0.86, 0.9], ink: [0.24, 0.26, 0.32], skyPig: [0.62, 0.66, 0.8], skyD: 1.1, mtPig: [0.6, 0.64, 0.74] },
 };
 /** 日出、日落的时刻；日头最高时的仰角（度） */
-const SUN: Record<Season, [number, number, number]> = { spring: [6.0, 18.2, 56], summer: [5.1, 19.1, 74], autumn: [6.3, 17.5, 52], winter: [7.0, 17.0, 34] };
-/** 每季大约在一年的第几天（摆星斗用） */
-const DAY: Record<Season, number> = { spring: 95, summer: 185, autumn: 280, winter: 5 };
+export const SUN: Record<Season, [number, number, number]> = { spring: [6.0, 18.2, 56], summer: [5.1, 19.1, 74], autumn: [6.3, 17.5, 52], winter: [7.0, 17.0, 34] };
+/** 每季大约在一年的第几天（摆日月星斗用；第几日往后推，见 env/stars/astro.ts 的 skyDay） */
+export const DAY: Record<Season, number> = { spring: 95, summer: 185, autumn: 280, winter: 5 };
 
 const mix3 = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const sm = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -50,7 +50,7 @@ export class Atmos {
   starShift = 0;
   private hourS = 9; private first = true;
 
-  constructor(scene: THREE.Scene, private painter: Painter) { scene.add(this.sky.mesh); }
+  constructor(scene: THREE.Scene, private painter: Painter) { scene.add(this.sky.group); }
 
   setHour(h: number, instant = false) { this.hour = ((h % 24) + 24) % 24; if (instant) this.hourS = this.hour; }
   setSeason(s: Season) { this.season = s; }
@@ -70,7 +70,7 @@ export class Atmos {
     W.rain += ((this.weather === 'rain' ? 1 : 0) - W.rain) * k; W.snow += ((this.weather === 'snow' ? 1 : 0) - W.snow) * k; W.mist += ((this.weather === 'mist' ? 1 : 0) - W.mist) * k;
     this.snowCover = Math.max(0, Math.min(1, this.snowCover + (W.snow > 0.5 ? dt * 0.03 : -dt * 0.012)));
 
-    const h = this.hourS, [sr, ss, maxEl] = SUN[this.season];
+    const h = this.hourS, [sr, ss] = SUN[this.season];
     // 夜、晨、昏各占几成
     const night = h < 12 ? 1 - sm(sr - 1.1, sr + 0.25, h) : sm(ss + 0.15, ss + 1.5, h);
     const dawn = Math.max(0, 1 - Math.abs(h - (sr + 0.15)) / 1.35), dusk = Math.max(0, 1 - Math.abs(h - (ss - 0.25)) / 1.5);
@@ -95,15 +95,11 @@ export class Atmos {
     U.uFar.value.set(0.965, 60, 300 - 120 * Math.max(W.mist, W.rain), 0.9);
     U.uCloud.value.x = 0.9 * (1 - 0.5 * night);
 
-    // 日月的位置：日从东边起、偏南过、西边落；月在夜里走一道差不多的弧
-    const f = (h - sr) / (ss - sr), el = Math.sin(Math.PI * Math.max(0, Math.min(1, f))) * (maxEl * Math.PI) / 180;
-    const fa = Math.max(-0.08, Math.min(1.08, f));
-    const hx = Math.cos(Math.PI * fa), hz = 0.62 * Math.sin(Math.PI * fa) + 0.12, hl = Math.hypot(hx, hz);
-    const sunEl = f < 0 ? f * 1.2 : f > 1 ? (1 - f) * 1.2 : el;
-    this.sunDir.set((hx / hl) * Math.cos(sunEl), Math.sin(sunEl), (hz / hl) * Math.cos(sunEl)).normalize();
-    const nf = ((h - (ss + 0.6) + 24) % 24) / (24 - (ss + 0.6) + sr - 0.6), mel = Math.sin(Math.PI * Math.max(0, Math.min(1, nf))) * 1.0;
-    const mx = Math.cos(Math.PI * nf) * 0.9, mz = 0.7 * Math.sin(Math.PI * nf) + 0.2, ml = Math.hypot(mx, mz);
-    this.moonDir.set((mx / ml) * Math.cos(mel), Math.sin(mel), (mz / ml) * Math.cos(mel)).normalize();
+    // 日月的位置：按天文算（env/stars/astro.ts）——那一天的太阳从东南或东北升起、正午在正南、多高都是真的，
+    // 日出日落正落在上面那张表的时刻；月在日之东「盈亏 × 360°」处，跟着白道有高有低
+    const now = this.sky.clock({ season: this.season, base: DAY[this.season], sr, ss, hour: h, phase: this.moonPhase, shift: this.starShift });
+    this.sunDir.set(now.sunW[0], now.sunW[1], now.sunW[2]);
+    this.moonDir.set(now.moonW[0], now.moonW[1], now.moonW[2]);
     // 分阴阳向背的「光」：白天跟日，夜里跟月；压得太低时抬一抬（不然全是背光）
     const key = U.uKey.value.copy(night > 0.5 ? this.moonDir : this.sunDir);
     key.y = Math.max(key.y, 0.34); key.normalize();
@@ -111,7 +107,8 @@ export class Atmos {
     // 天
     const s = this.sky.u, clear = 1 - Math.max(W.mist, W.rain, W.snow);
     set3(s.uSkyPig.value, P.skyPig);
-    s.uSky.value.set(P.skyD * (1 + 0.9 * W.rain + 0.4 * W.snow), 0.85 * clear, night * clear, 0);
+    // 晴夜里云（留白的那几块）淡一些，星空干净
+    s.uSky.value.set(P.skyD * (1 + 0.9 * W.rain + 0.4 * W.snow), 0.85 * clear * (1 - 0.5 * night), night * clear, 0);
     const low = sm(0.5, 0.08, this.sunDir.y);
     set3(s.uGlowPig.value, mix3([0.99, 0.74, 0.66], [0.98, 0.62, 0.42], h > 12 ? 1 : 0));
     s.uGlow.value.set(this.sunDir.x, 0, this.sunDir.z, (0.9 * dawn + 1.5 * dusk) * clear);
@@ -119,11 +116,14 @@ export class Atmos {
     // 日：低的时候是一点朱，高了淡成近乎纸色
     const sc = mix3([1, 0.95, 0.86], [0.9, 0.44, 0.36], low);
     s.uSun.value.set(sc[0], sc[1], sc[2], this.sunDir.y > -0.03 ? 0.021 * clear * (1 - night) * (0.55 + 0.45 * low) : 0);
-    s.uMoonDir.value.copy(this.moonDir);
-    s.uMoon.value.set(this.moonDir.y > 0.02 ? 0.034 : 0, this.moonPhase, night * clear * sm(0.02, 0.12, this.moonDir.y), 0);
+    // 月：画的是跟着星斗走的那个（候星移时一起转）；亮面朝日，明暗界由日月的角距定；白天也淡淡地看得见（离日远时）
+    const md = this.sky.moonDraw, cosE = this.sunDir.dot(this.moonDir), illum = (1 - cosE) / 2;
+    const moonUp = sm(0.02, 0.12, md.y), dayMoon = (1 - night) * 0.3 * sm(0.35, 0.75, illum);
+    s.uMoonDir.value.copy(md);
+    s.uMoon.value.set(md.y > -0.04 ? 0.034 : 0, cosE, (night + dayMoon) * clear * moonUp, night);
     set3(s.uMtPig.value, P.mtPig);
     s.uMt.value.x = 1 - 0.75 * W.mist - 0.85 * W.rain - 0.7 * W.snow;
-    this.sky.setStars(DAY[this.season], h + this.starShift);
+    this.sky.update(dt, { night, clear, moonUp: night > 0.3 ? moonUp : 0, illum });
 
     // 风：慢慢变向、时强时弱；雨雪天大些
     const wa = 0.6 + Math.sin(t * 0.021) * 0.5 + Math.sin(t * 0.0073) * 0.4;

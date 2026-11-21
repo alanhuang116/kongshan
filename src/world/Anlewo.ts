@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three';
 import { World, detectQuality, type Pointer, type Quality } from './core/World';
-import { FX_LAYER, PIG, U, wash } from './ink/ink';
+import { FX_LAYER, PIG, U, setRoofs, wash, type Roof } from './ink/ink';
 import { Atmos, type Season, type Weather } from './env/atmos';
 import { createLand, type Land } from './env/land';
 import { Nav, PLACE } from './nav';
@@ -14,8 +14,11 @@ import { Player } from './player';
 import { SITE, YARD_Y, ground, pathDist, riverAt, streamAt } from './site';
 import type { Act, Spot } from './acts/types';
 import { createActs } from './acts';
+import { clearSky, pickSky, type SkyCard } from './acts/skyinfo';
 import type { Avatar, PoseName } from './avatar/types';
 import { addDisc, placeAt, setDynamic, setTerrain, useSolids, waterDepth, type SolidLike, type Zone } from './walk';
+import { Mem } from './mem';
+import { Bag } from './bag';
 
 export type TimeMode = 'now' | 'dawn' | 'day' | 'dusk' | 'night';
 /** 画面上的一个标记：走近了可以做的事 */
@@ -32,23 +35,37 @@ export interface KsEvents {
   act?(id: string | null, state: Record<string, unknown>): void;
   /** 一件事做完，记进册子 */
   log?(entry: { kind: string; n?: number; text?: string; minutes?: number }): void;
-  /** 落一步：脚下是什么（earth grass stone wood floor wet） */
-  step?(surface: string): void;
+  /** 落一步：脚下是什么（earth grass stone wood floor wet）；run 是不是真在跑（速度过了 2.2 米/秒），speed 是此刻的速度 */
+  step?(surface: string, o?: { run: boolean; speed: number }): void;
   /** 出一声；振一下（手机） */
   sfx?(shot: string, opts?: { vel?: number; pan?: number; pitch?: number; dur?: number; delay?: number; x?: number; z?: number }): void;
   buzz?(ms: number | number[]): void;
   /** 环境声压低（0…1） */
   duck?(amount: number, fade?: number): void;
   /** 一样持续的声音（kettle 壶里的水声、inkstone 研墨……）开到几成；0 停 */
-  loop?(name: string, level: number): void;
+  loop?(name: string, level: number, o?: { x?: number; z?: number }): void;
   /** 请界面打开某一页（album 观象册、map 村图、time 天时……） */
   open?(sheet: string): void;
-  /** 世界自己把时辰拨了（榻上一觉到天亮、亭中小睡）：界面好让存档跟上 */
+  /** 世界自己把时辰拨了（榻上一觉到天亮、亭中小睡、时辰流转着）：界面好让存档跟上 */
   clock?(hour: number): void;
+  /** 过了一夜，到了第几日（从头一回来算起，第一天是 0） */
+  day?(n: number): void;
+  /** 世界的存档里有一份变了（k.mem）：界面存到本机 */
+  mem?(ns: string, v: unknown): void;
+  /** 行囊里的东西变了 */
+  bag?(items: Record<string, number>): void;
+  /** 画面下方浮一句话（「得麦三捆」「王婶记下了你的好」）；kind 给界面挑样式 */
+  note?(text: string, kind?: string): void;
+  /** 跑起来了 / 停下了（界面上「疾」那一枚跟着亮） */
+  run?(on: boolean): void;
+  /** 夜里点了天上一处：出一张星笺（null 收起） */
+  skyCard?(card: SkyCard | null): void;
 }
 /** 此刻该是什么声音：给声音那一层的一份「现场」（每隔一小会儿取一次） */
 export interface Soundscape {
   place: string; hour: number; night: number; dawn: number; dusk: number; season: Season; rain: number; snow: number; mist: number; wind: number; indoor: number;
+  /** 地上的积雪 0…1（Atmos.snowCover）：踩雪的脚步、雪后的静跟着它 */
+  cover: number;
   /** 正在专心听什么（观物亭里听蝉、听雨时）：声音那一层把它提起来、别的压下去 */
   focus: string | null;
   /** 离各样声源多近（0…1） */
@@ -56,11 +73,17 @@ export interface Soundscape {
   /** 雷雨（0…1）：夏天下大雨时，声音自己安排远处的雷 */
   storm: number;
 }
-export interface KsOpts { quality?: string | null; season: Season; weather: Weather; hour: number; moonPhase: number; start?: string; events: KsEvents }
+export interface KsOpts {
+  quality?: string | null; season: Season; weather: Weather; hour: number; moonPhase: number; start?: string; events: KsEvents;
+  /** 世界的存档（上回 events.mem 存下的那些份） */
+  mem?: Record<string, unknown> | null;
+  /** 时辰流转得多快：每过一秒画里过多少个钟头（0 停着；1/60 是一秒一分钟——一个钟头一分钟） */
+  flow?: number;
+}
 
 /** 别的几路做的模块：这里只认它们的形状 */
 interface FloraLike { group: THREE.Group; setSeason(s: Season): void; update(dt: number, t: number, o: { night: number; wind: number; player: THREE.Vector3 }): void; bloomSpots: THREE.Vector3[] }
-export interface BuildLike { group: THREE.Group; hallRoof: THREE.Object3D; hallFront: THREE.Object3D; anchors: Record<string, THREE.Object3D>; parts: Record<string, THREE.Object3D>; setLamp(k: number): void; update(dt: number, t: number): void }
+export interface BuildLike { group: THREE.Group; hallRoof: THREE.Object3D; hallFront: THREE.Object3D; anchors: Record<string, THREE.Object3D>; parts: Record<string, THREE.Object3D>; setLamp(k: number): void; update(dt: number, t: number): void; setSeason?(s: Season): void }
 export interface NpcLike { id: string; name: string; root: THREE.Object3D; pos: THREE.Vector3; present: boolean; attend(p: THREE.Vector3 | null): void; avatar?: Avatar }
 export interface LifeLike { group: THREE.Group; npcs: Record<string, NpcLike>; blockers: Array<{ x: number; z: number; r: number }>; setSeason(s: Season): void; update(dt: number, t: number, o: { hour: number; night: number; rain: number; snow: number; player: THREE.Vector3; camera: THREE.Camera }): void }
 export interface FxLike {
@@ -88,6 +111,8 @@ async function part<T>(mods: Record<string, () => Promise<Record<string, unknown
 export class Anlewo {
   world!: World; q!: Quality; atmos!: Atmos; land!: Land; nav!: Nav; player!: Player;
   far: FarLike | null = null; flora: FloraLike | null = null; build: BuildLike | null = null; life: LifeLike | null = null; fx: FxLike | null = null;
+  /** 陶家窑口的烟（冬天歇窑时关上） */
+  kiln: { on: boolean } | null = null;
   timings: Record<string, number> = {};
   acts: Record<string, Act> = {};
   act: Act | null = null;
@@ -118,6 +143,18 @@ export class Anlewo {
   term: string | null = null;
   private gnomon: THREE.Mesh | null = null;
   private windDir = new THREE.Vector2();
+  /** 世界的存档（各模块按名字取自己那一份）、行囊 */
+  mem!: Mem; bag!: Bag;
+  /** 时辰流转：每秒过多少个钟头（0 停）。'now'（随此刻）时不用它 */
+  flow = 0;
+  /** 第几日（头一回来是第 0 日）；过了子夜、榻上睡一觉都加一 */
+  day = 0;
+  /** 过了一夜时要做的（庄稼长一截、村里人的日子翻一页……）：各模块 push 进来 */
+  onDay: Array<(day: number) => void> = [];
+  private clockT = 0;
+  /** 跑：按住 Shift、点一下 Shift 锁住、或界面上的「疾」 */
+  runLock = false;
+  private shiftAt = 0; private shiftUsed = false;
 
   private constructor(o: KsOpts) { this.events = o.events; this.season = o.season; }
 
@@ -128,6 +165,13 @@ export class Anlewo {
     const mark = (name: string) => { const n = performance.now(); k.timings[name] = Math.round(n - tPrev); tPrev = n; };
     const prog = (v: number, s: string) => o.events.progress?.(v, s);
     k.q = detectQuality(o.quality);
+    k.mem = new Mem(o.mem);
+    k.mem.onSave = (ns, v) => o.events.mem?.(ns, v);
+    k.bag = new Bag(k.mem);
+    k.bag.onChange = (it) => o.events.bag?.(it);
+    k.bag.onNote = (t) => k.note(t, 'bag');
+    k.day = Math.max(0, Math.floor(k.mem.get('day', 0)));
+    k.flow = Math.max(0, o.flow ?? 0);
     k.world = new World(canvas, k.q);
     const scene = k.world.scene;
     prog(0.05, '铺纸');
@@ -152,8 +196,8 @@ export class Anlewo {
     mark('land');
     await pause();
     prog(0.42, '结庐');
-    k.build = await part(M_BUILD, '屋舍', (m) => (m.createBuildings as (a: unknown) => Promise<BuildLike>)({ q: k.q }));
-    if (k.build) { scene.add(k.build.group); const sol = k.build.group.userData.solids as SolidLike[] | undefined; if (sol?.length) useSolids(sol); }
+    k.build = await part(M_BUILD, '屋舍', (m) => (m.createBuildings as (a: unknown) => Promise<BuildLike>)({ q: k.q, season: o.season }));
+    if (k.build) { scene.add(k.build.group); const sol = k.build.group.userData.solids as SolidLike[] | undefined; if (sol?.length) { useSolids(sol); setRoofs(roofsFrom(sol)); } }
     mark('build');
     await pause();
     prog(0.58, '种桃');
@@ -172,14 +216,16 @@ export class Anlewo {
       if (A) {
         const ch: Array<{ id: string; pos: THREE.Vector3 }> = [];
         if (A.chimney) ch.push({ id: 'wing', pos: A.chimney.position.clone() });
-        for (const id of ['a', 'b', 'd', 'e']) { const c = A['chimney' + id.toUpperCase()]; if (c) ch.push({ id, pos: c.position.clone() }); }
+        for (const id of ['a', 'b', 'd', 'e', 'f', 'g']) { const c = A['chimney' + id.toUpperCase()]; if (c) ch.push({ id, pos: c.position.clone() }); }
         k.safe('fx', () => fx.setChimneys?.(ch));
         // 夜里亮着的：草堂案上那盏、两扇窗，各家门口的灯笼
         const H = SITE.hall, lamps: THREE.Vector3[] = [];
         if (A.lamp) lamps.push(A.lamp.position.clone());
         for (const s of [-1, 1]) lamps.push(new THREE.Vector3(H.x + (s * H.w) / 3, YARD_Y + H.floor + 1.6, H.z + H.d / 2 + 0.25));
-        for (const id of ['A', 'B', 'D', 'E']) { const d = A['door' + id]; if (d) lamps.push(d.position.clone().add(new THREE.Vector3(0, 1.9, 0))); }
+        for (const id of ['A', 'B', 'D', 'E', 'F', 'G']) { const d = A['door' + id]; if (d) lamps.push(d.position.clone().add(new THREE.Vector3(0, 1.9, 0))); }
         k.safe('fx', () => fx.setLamps?.(lamps, 2.2));
+        // 陶家的馒头窑：春夏秋烧着，冬天歇窑（setSeason 里关）
+        if (A.kilnSmoke) k.safe('fx', () => { k.kiln = k.fx!.smoke(A.kilnSmoke.position, { size: 0.42, rise: 15, amount: 0.85, warm: 0.5 }); k.kiln.on = o.season !== 'winter'; });
       }
     }
     mark('life');
@@ -187,16 +233,26 @@ export class Anlewo {
     prog(0.86, '行者');
     const av = (await part(M_AVATAR, '行者', (m) => (m.createAvatar as (q: Quality) => Avatar)(k.q))) ?? plainFigure();
     k.player = new Player(scene, av);
-    k.player.onStep = () => k.events.step?.(k.surface());
+    // 脚步声要知道的是「真在跑」（速度过了 2.2），不是按着 Shift 的意思
+    k.player.onStep = () => k.events.step?.(k.surface(), { run: k.player.running, speed: k.player.speed });
+    // 正在做一件事（哪怕是自己走动着做的）：行者不冒出负手、伸懒腰那些闲时动作
+    k.player.busy = () => !!k.act;
     k.nav = new Nav(k.world, k.player);
     k.nav.onPlace = (id) => k.events.place?.(id);
     k.startId = o.start ?? 'grove';
     k.placeAt(k.startId);
-    // 点地面时落下的一圈墨晕；圭表的日影
-    k.tapRing = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.2, 40).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    // 点地面时落下的一圈墨晕：像界面上的墨环一样是一笔绕成的——环身浓淡不匀、两边晕开、留一道口；圭表的日影
+    k.tapRing = new THREE.Mesh(new THREE.RingGeometry(0.13, 0.22, 48).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
       uniforms: { uInk: U.uInk, uA: { value: 0 } }, transparent: true, depthTest: false, depthWrite: false,
-      vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'uniform vec3 uInk; uniform float uA; void main() { gl_FragColor = vec4(uInk, uA); }',
+      vertexShader: 'varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 uInk; uniform float uA; varying vec2 vP;
+        void main() {
+          float t = (length(vP) - 0.13) / 0.09, a = atan(vP.y, vP.x);
+          float edge = smoothstep(0.0, 0.4, t) * smoothstep(1.0, 0.55, t);
+          float body = 0.72 + 0.28 * sin(a * 3.0 + 1.3) * sin(a * 5.0 + 0.4);
+          float gap = smoothstep(0.12, 0.7, abs(mod(a - 0.8 + 3.14159, 6.28318) - 3.14159));
+          gl_FragColor = vec4(uInk, uA * edge * body * gap);
+        }`,
     }));
     k.tapRing.layers.set(FX_LAYER); k.tapRing.visible = false;
     scene.add(k.tapRing);
@@ -229,8 +285,59 @@ export class Anlewo {
     this.timeMode = mode;
     this.atmos.setHour(this.hourFor(mode), instant);
   }
-  /** 做事时把时辰拨到某一刻（并告诉界面） */
-  passTo(hour: number) { this.setTime(hour, true); this.events.clock?.(hour); }
+  /** 做事时把时辰拨到某一刻（并告诉界面）。往前拨过了子夜（夜里睡到天亮）就是过了一夜 */
+  passTo(hour: number) {
+    const h0 = this.atmos.hour;
+    if (hour < h0 - 1e-6 && h0 - hour > 0.01) this.newDay();
+    this.setTime(hour, true); this.events.clock?.(hour);
+  }
+  /** 过了一夜 */
+  newDay() {
+    this.day++;
+    this.mem.set('day', this.day);
+    this.events.day?.(this.day);
+    for (const f of this.onDay) { try { f(this.day); } catch (e) { console.warn('过夜时出错', e); } }
+  }
+  /** 时辰流转得多快（每秒过多少钟头；0 停） */
+  setFlow(rate: number) { this.flow = Math.max(0, rate); }
+  /** 画面下方浮一句话 */
+  note(text: string, kind?: string) { this.events.note?.(text, kind); }
+
+  /** 平时夜里点天：开着的那张星笺（点的时候人在哪、开了多久） */
+  private skyOpen: { x: number; z: number; t: number } | null = null;
+  /** 头一个晴夜在外头时提一句「可以抬头点星」（存档里记过就不再提） */
+  private skyHinted = false; private skyHintT = 0;
+  /** 此刻在外头、是晴夜（点天、提那一句的前提） */
+  private starNight(): boolean {
+    const a = this.atmos;
+    // （题名页那幅俯瞰、画还在雾里的时候不算）
+    return !this.act && !this.over && this.veil < 0.5 && a.night > 0.5 && a.w.rain + a.w.snow + a.w.mist < 0.4 && this.nav.place.indoor < 0.5;
+  }
+  /**
+   * 夜里在外头点了天上这个方向（世界里的单位向量）：月、五星、星、星官的连线、天汉——点着了就把那一处点亮，请界面出一张星笺，返回那张笺；
+   * 没点着（或不是晴夜、在屋里、正做着事）返回 null。tol 是点按的容差（弧度，约二十几个像素）。
+   */
+  skyTap(w: THREE.Vector3, tol = 0.035): SkyCard | null {
+    if (!this.starNight()) return null;
+    const card = pickSky(this, w.clone().normalize(), tol);
+    if (!card) { this.skyClose(); return null; }
+    this.skyOpen = { x: this.player.pos.x, z: this.player.pos.z, t: 0 };
+    this.events.skyCard?.(card);
+    return card;
+  }
+  /** 收起星笺：天上点亮的那一处熄掉 */
+  skyClose() {
+    if (!this.skyOpen) return;
+    this.skyOpen = null;
+    clearSky(this.atmos.sky, 0);
+    this.events.skyCard?.(null);
+  }
+  /** 「疾」：锁住跑 / 放开 */
+  setRun(on: boolean) { this.runLock = on; this.syncRun(); }
+  private syncRun() {
+    const on = this.runLock || this.keys.has('shift');
+    if (on !== this.player.run) { this.player.run = on; this.events.run?.(on); }
+  }
   hourFor(mode: TimeMode | number): number {
     if (typeof mode === 'number') return mode;
     if (mode === 'now') { const d = new Date(); return d.getHours() + d.getMinutes() / 60; }
@@ -241,6 +348,8 @@ export class Anlewo {
   setSeason(s: Season) {
     this.season = s; this.atmos.setSeason(s);
     this.land.setSeason(s); this.flora?.setSeason(s); this.life?.setSeason(s); this.fx?.setSeason(s); this.far?.setSeason(s);
+    this.safe('build', () => this.build?.setSeason?.(s));
+    if (this.kiln) this.kiln.on = s !== 'winter';
     for (const a of Object.values(this.acts)) (a as Act & { setSeason?(s: Season): void }).setSeason?.(s);
     if (typeof this.timeMode !== 'number' && this.timeMode !== 'now') this.atmos.setHour(this.hourFor(this.timeMode));
   }
@@ -354,6 +463,8 @@ export class Anlewo {
     const hr = a.hour, schoolOn = hr > 7 && hr < 11 && a.w.rain < 0.5 ? 1 : 0, workOn = a.night < 0.3 && a.w.rain < 0.5 ? 1 : 0;
     return {
       place: pl.id, focus: this.focus, hour: hr, night: a.night, dawn: a.dawn, dusk: a.dusk, season: this.season, rain: a.w.rain, snow: a.w.snow, mist: a.w.mist, wind: a.wind, indoor: pl.indoor,
+      // 地上积了多少雪：踩雪的脚步、雪后的静跟画面上的一样
+      cover: a.snowCover,
       near: {
         stream: k(st.d - st.w, 1, 26), pond: k(Math.hypot(p.x - P.x, p.z - P.z) - P.rx, 0, 16), river: k(rv.d - rv.w, 5, 120),
         bamboo: k(Math.hypot(p.x, p.z + 38), 8, 40), pines: k(Math.hypot(p.x - SITE.pines[0].x, p.z - SITE.pines[0].z), 2, 16),
@@ -396,7 +507,7 @@ export class Anlewo {
       for (const kk of this.keys) { const m = MOVE[kk]; if (m) { x += m[0]; y += m[1]; } }
       const l = Math.hypot(x, y) || 1;
       this.keyMove.set(x / l, y / l);
-      this.player.fast = this.keys.has('shift');
+      this.syncRun();
       this.keyTurn = 0;
       for (const kk of this.keys) this.keyTurn += TURN[kk] ?? 0;
     };
@@ -405,9 +516,16 @@ export class Anlewo {
       const key = e.key.toLowerCase();
       // 走近了一件事时，E 是「做」；平时 E 是往右转镜头
       if ((key === 'f' || key === 'enter' || (key === 'e' && this.near)) && !e.repeat && !this.act) { this.use(); e.preventDefault(); return; }
+      if (key === 'shift' && !e.repeat) { this.shiftAt = performance.now(); this.shiftUsed = false; }
+      else if (this.keys.has('shift')) this.shiftUsed = true;
       if (MOVE[key] || TURN[key] || key === 'shift') { this.keys.add(key); sync(); if (key !== 'shift') e.preventDefault(); }
     });
-    window.addEventListener('keyup', (e) => { this.keys.delete(e.key.toLowerCase()); sync(); });
+    window.addEventListener('keyup', (e) => {
+      const key = e.key.toLowerCase();
+      // 点一下 Shift（没跟别的键一起按、不到四分之一秒）：锁住跑 / 放开。按住 Shift 是只在按着时跑
+      if (key === 'shift' && !this.shiftUsed && performance.now() - this.shiftAt < 260 && !this.act) this.runLock = !this.runLock;
+      this.keys.delete(key); sync();
+    });
     window.addEventListener('blur', () => { this.keys.clear(); sync(); });
     this.world.input = {
       down: (p, e) => { if (this.world.pointers.size === 2) this.pinch0 = this.pinchDist(); this.act?.input?.down?.(p, e); },
@@ -435,6 +553,8 @@ export class Anlewo {
     const ray = this.world.ray(p.nx, p.ny).ray;
     const g = this.player.pickGround(ray);
     if (!g) {
+      // 夜里点在天上：说那是什么（容差约二十四个像素）
+      if (ray.direction.y > 0.02 && this.skyTap(ray.direction, (24 * this.world.camera.fov * Math.PI) / 180 / (this.world.size.y || 700))) return;
       // 点在水上：荡一圈
       if (ray.direction.y < -0.02) for (let s = 2; s < 70; s += 0.5) {
         const x = ray.origin.x + ray.direction.x * s, z = ray.origin.z + ray.direction.z * s, y = ray.origin.y + ray.direction.y * s;
@@ -451,10 +571,36 @@ export class Anlewo {
   // —— 每帧 ——
   update(dt: number, t: number) {
     const w = this.world, a = this.atmos, p = this.player;
+    // 星笺：走开了、进屋了、做起事来、天亮了、开了好一会儿，就收起
+    if (this.skyOpen) {
+      const o = this.skyOpen; o.t += dt;
+      if (!this.starNight() || Math.hypot(p.pos.x - o.x, p.pos.z - o.z) > 2.5 || o.t > 40) this.skyClose();
+    }
+    // 头一个晴夜在外头：提一句可以抬头看、点一颗星（两秒看一次）
+    if (!this.skyHinted && (this.skyHintT += dt) > 2) {
+      this.skyHintT = 0;
+      if (this.starNight() && a.night > 0.8 && this.veil < 0.5 && !this.nav.busy) {
+        this.skyHinted = true;
+        if (!this.mem.get<{ hinted?: boolean }>('stars', {}).hinted) {
+          this.mem.patch('stars', { hinted: true });
+          this.note('夜里的星斗都是真的：往上拖，抬头看；点一颗星，看它是哪一官', 'stars');
+        }
+      }
+    }
     if (this.timeMode === 'now' && !a.transitioning && Math.floor(t) % 30 === 0 && Math.floor(t - dt) % 30 !== 0) a.setHour(this.hourFor('now'));
+    else if (this.flow > 0 && this.timeMode !== 'now' && !this.over && !this.nav.busy && !a.transitioning && this.veil < 0.5) {
+      // 时辰流转：一帧一帧往前推（不走「慢慢过渡」那条路），过了子夜就是新的一天
+      let h = a.hour + this.flow * Math.min(dt, 0.1);
+      if (h >= 24) { h -= 24; this.newDay(); }
+      a.setHour(h, true); this.timeMode = h;
+      this.clockT += dt;
+      if (this.clockT > 8) { this.clockT = 0; this.events.clock?.(h); }
+    }
     a.update(dt, t);
     // 行者与镜头
     p.input.copy(this.keyMove).add(this.stick).clampLength(0, 1);
+    // 快走只给摇杆推到头的时候；键盘走路是从容地散步（要快就 Shift 跑）
+    p.fast = this.stick.lengthSq() > 0.94 * 0.94;
     if (this.pending && p.input.lengthSq() > 0.0009) {                          // 自己走开了：那件事作罢
       this.pending = null;
       if (this.arrive) { this.arrive = null; p.locked = false; p.faceTo = null; }
@@ -474,6 +620,7 @@ export class Anlewo {
       if (indoor) { this.outPitch = n.pitch; this.outDist = n.dist; n.open = true; n.yaw = 0; n.pitch = 0.66; n.dist = 9.2; }
       else { n.open = false; n.pitch = this.outPitch; n.dist = this.outDist; }
       if (this.build) { this.build.hallRoof.visible = !indoor; this.build.hallFront.visible = !indoor; }
+      U.uRoofCut.value = indoor ? 1 : 0;
     }
     if (this.over) {
       const o = this.over; o.t += dt;
@@ -563,6 +710,28 @@ export class Anlewo {
   buzz(ms: number | number[] = 8) { this.events.buzz?.(ms); }
   start() { this.world.start(); }
   dispose() { this.world.dispose(); }
+}
+
+/**
+ * 屋顶遮着的地方（给画法：屋里不积雪、不打湿，雨雪落花不飘进来）。从屋舍报上来的占地里取：
+ *   草堂两块——墙围着的那块到墙头，连出檐的那一圈到檐口；观物亭、茶亭到檐口；各家、村塾、碓房、牛棚、窝棚到墙头。
+ */
+function roofsFrom(sol: SolidLike[]): Roof[] {
+  const out: Roof[] = [], H = SITE.hall;
+  const box = (s: SolidLike, y1: number, pad = 0, y0?: number) => out.push({ x: s.x, z: s.z, hw: (s.w ?? 0) / 2 + pad, hd: (s.d ?? 0) / 2 + pad, yaw: s.yaw ?? 0, y0: y0 ?? ground(s.x, s.z) - 0.6, y1 });
+  for (const s of sol) {
+    if (s.kind !== 'rect' || !s.w || !s.d) continue;
+    if (s.id === '草堂·檐口') {
+      box({ ...s, w: H.w, d: H.d }, YARD_Y + H.floor + H.wall + 0.08, 0, YARD_Y - 0.4);
+      box(s, (s.top ?? YARD_Y + 2.3) - 0.12, 0, YARD_Y - 0.4);
+    } else if (s.id === '观物亭·檐口') box(s, (s.top ?? YARD_Y + 2.4) - 0.1);
+    else if (s.id === '茶亭·台') box(s, (s.top ?? ground(s.x, s.z)) + 2.0, 0.25);
+    else if (/^邻家·|^村塾$|^碓房$|^牛棚$|^窝棚$/.test(s.id)) box(s, ground(s.x, s.z) + 2.25);
+    // 敞着的小棚（坯棚、晒药棚……）：屋舍在占地上直接写了檐口多高
+    else if (s.roof != null) box(s, s.roof);
+  }
+  if (out.length > 16) console.warn(`屋顶遮罩只放得下 16 处，多出 ${out.length - 16} 处没登记`);
+  return out.slice(0, 16);
 }
 
 /** 行者还没备好时的替身：一个着长衫的简单人形（会走，不会别的） */

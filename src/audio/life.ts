@@ -23,11 +23,15 @@ import type { Loop, PlayOpts } from './types';
 import { bubbleField, clamp, lerp, pick, rand } from './util';
 
 // ———————————————————————————— 村 ————————————————————————————
-type Animal = 'rooster' | 'hen' | 'chick' | 'duck' | 'dog' | 'ox' | 'sparrow' | 'bucket';
+type Animal = 'rooster' | 'hen' | 'chick' | 'duck' | 'dog' | 'ox' | 'sparrow' | 'bucket' | 'goat' | 'donkey' | 'peck' | 'clapper';
+/** 世界自己刚放过（而且听得见）这种声音多久之内，层里就不排同一种（更梆隔得久：更夫走一圈要一阵子） */
+const YIELD: Partial<Record<Animal, number>> = { rooster: 45, clapper: 240 };
 export class Village extends Base {
   private next: Record<Animal, number>;
   /** 外头那一声鸡鸣（世界里看得见的那只、玩家醒来时听见的那一声）已经应过的时刻 */
   private answered: number;
+  /** 观星时：远处的犬吠与更梆轮着来，下一回轮到哪一样 */
+  private quiet: number;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
     this.answered = e.heardAt('rooster');
@@ -35,14 +39,16 @@ export class Village extends Base {
     this.next = {
       rooster: t + (o ? rand(0.3, 1) : rand(2, 12)), hen: t + (o ? rand(1, 3) : rand(3, 15)), chick: t + (o ? rand(2, 4) : rand(6, 25)), duck: t + (o ? rand(3, 6) : rand(10, 40)),
       dog: t + (o ? rand(4, 7) : rand(20, 90)), ox: t + (o ? rand(5, 8) : rand(30, 120)), sparrow: t + (o ? rand(6, 9) : rand(15, 60)), bucket: t + (o ? rand(7, 10) : rand(30, 100)),
+      goat: t + (o ? rand(2, 6) : rand(20, 80)), donkey: t + (o ? rand(8, 14) : rand(60, 200)), peck: t + (o ? rand(1, 4) : rand(8, 30)), clapper: t + (o ? rand(3, 6) : rand(40, 160)),
     };
+    this.quiet = t + (o ? rand(2, 5) : rand(15, 40));
   }
   /** 轮到某一样了：到时候做 fn，它返回下一回隔多久 */
   private due(k: Animal, from: number, to: number, fn: (t: number) => number) {
     while (this.next[k] < to) {
       const t = Math.max(from, this.next[k]);
       // 世界自己刚放过这种声音（那只看得见的鸡、那条看得见的狗在叫），这里就让一让，过一阵再说
-      if (this.e.since(k) < (k === 'rooster' ? 45 : 30)) { this.next[k] = t + rand(10, 20); continue; }
+      if (this.e.since(k) < (YIELD[k] ?? 30)) { this.next[k] = t + rand(10, 20); continue; }
       this.next[k] = t + fn(t);
     }
   }
@@ -79,11 +85,40 @@ export class Village extends Base {
       if (v > 0.2 && day > 0.5 && s.season !== 'winter') this.say('duck', t, { vel: rand(0.3, 0.55), dist: clamp(0.8 - 0.6 * v + rand(0, 0.15)), pan: pan() });
       return rand(25, 70);
     });
+    // 观星：夜静下来，只偶尔远处一声犬吠、一阵更梆（两样轮着来，半分钟到一分多钟一回）
+    const stars = s.focus === 'stars' && s.night > 0.5;
+    while (stars && this.quiet < to) {
+      const t = Math.max(from, this.quiet);
+      if (Math.random() < 0.55) { if (this.e.since('dog') > 20) this.say('dog', t, { vel: rand(0.4, 0.6), dist: rand(0.82, 0.95), pan: pan(), variant: 'bark' }); }
+      else if (this.e.since('clapper') > 60) this.say('clapper', t, { vel: rand(0.5, 0.7), dist: rand(0.8, 0.93), pan: pan() });
+      this.quiet = t + rand(32, 75);
+    }
+    if (!stars && this.quiet < from) this.quiet = from + rand(10, 25);
     this.due('dog', from, to, (t) => {
       // 白天隔一两分钟远远两声；夜里隔很久才有一回，更远
       const night = s.night > 0.6;
-      if (s.rain < 0.6) this.say('dog', t, { vel: rand(0.4, 0.7), dist: night ? rand(0.75, 0.93) : clamp(far(0.12) + 0.1, 0.4, 0.93), pan: pan() });
+      if (s.rain < 0.6 && !stars) this.say('dog', t, { vel: rand(0.4, 0.7), dist: night ? rand(0.75, 0.93) : clamp(far(0.12) + 0.1, 0.4, 0.93), pan: pan() });
       return night ? rand(150, 400) : rand(70, 200);
+    });
+    this.due('clapper', from, to, (t) => {
+      // 夜里更夫打更：远远的一阵梆子（敲几下看是第几更），隔几分钟才过来一回
+      if (s.night > 0.75 && s.rain < 0.5 && !stars) this.say('clapper', t, { vel: rand(0.45, 0.7), dist: clamp(rand(0.72, 0.92) - 0.2 * v, 0.5, 0.93), pan: pan() });
+      return rand(180, 420);
+    });
+    this.due('goat', from, to, (t) => {
+      // 羊：白天在村边、田头，「咩——」一两声
+      if (Math.max(v, 0.6 * s.near.fields) > 0.2 && day > 0.6 && s.rain < 0.4) this.say('goat', t, { vel: rand(0.35, 0.6), dist: clamp(0.85 - 0.6 * Math.max(v, 0.6 * s.near.fields) + rand(-0.05, 0.1), 0.15, 0.92), pan: pan() });
+      return rand(50, 140);
+    });
+    this.due('donkey', from, to, (t) => {
+      // 驴：难得叫一回，一叫满村都听得见
+      if (day > 0.6 && s.rain < 0.3) this.say('donkey', t, { vel: rand(0.4, 0.6), dist: clamp(far(0.08) + 0.12, 0.35, 0.92), pan: pan() });
+      return rand(160, 420);
+    });
+    this.due('peck', from, to, (t) => {
+      // 母鸡在院里啄食：要走到邻家跟前才听得见
+      if (v > 0.6 && day > 0.6 && s.rain < 0.3) this.say('peck', t, { vel: rand(0.3, 0.5), dist: clamp(1.15 - v + rand(0, 0.1), 0.05, 0.6), pan: pan() });
+      return rand(12, 35);
     });
     this.due('ox', from, to, (t) => {
       const near = Math.max(v, s.near.fields);
@@ -96,7 +131,7 @@ export class Village extends Base {
     });
     this.due('bucket', from, to, (t) => {
       // 早晚有人到井上打水
-      if (v > 0.3 && day > 0.5 && Math.max(s.dawn, s.dusk) > 0.2 && s.rain < 0.3) this.say('bucket', t, { vel: rand(0.35, 0.55), dist: clamp(0.75 - 0.55 * v + rand(0, 0.1)), pan: pan() });
+      if (v > 0.3 && day > 0.5 && Math.max(s.dawn, s.dusk) > 0.2 && s.rain < 0.3) this.say('bucket', t, { vel: rand(0.35, 0.55), dist: clamp(0.75 - 0.55 * v + rand(0, 0.1)), pan: pan(), variant: 'well' });
       return rand(60, 150);
     });
   }
@@ -267,7 +302,7 @@ export class Kettle extends Base {
 export class Repeat extends Base {
   private next: number;
   private push = true;
-  constructor(e: Engine, bus: LayerBus, t: number, private kind: Exclude<Loop, 'kettle'>) {
+  constructor(e: Engine, bus: LayerBus, t: number, private kind: Extract<Loop, 'inkstone' | 'saw' | 'plough'>) {
     super(e, bus);
     this.next = t + 0.02;
   }

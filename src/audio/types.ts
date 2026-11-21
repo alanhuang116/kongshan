@@ -10,17 +10,31 @@ export type Shot =
   | 'hammer' | 'saw' | 'plane' | 'hoe' | 'plough' | 'bucket' | 'pound' | 'millThump' | 'rattle' | 'swing' | 'oar' | 'net'
   // 村里后来添的小声音，与两个别名（cluck＝hen、quack＝duck）
   | 'flap' | 'chirp' | 'tumble' | 'thresh' | 'laugh' | 'cluck' | 'quack'
+  // 农事（farm.ts）
+  | 'sickle' | 'sheaf' | 'flail' | 'winnow' | 'millstone' | 'sow' | 'dig' | 'pluck' | 'grain' | 'windlass' | 'chop' | 'split' | 'loom' | 'pull' | 'pole' | 'rustle' | 'fruitFall' | 'scoop' | 'stir'
+  // 禽兽虫鱼（animals.ts）；cackle 是母鸡下蛋后那一串（＝hen 的 egg）
+  | 'frog' | 'oriole' | 'magpie' | 'crow' | 'geese' | 'deer' | 'goat' | 'donkey' | 'bee' | 'wings' | 'fishJump' | 'purr' | 'peck' | 'squirrel' | 'frogPlop' | 'cackle'
+  // 绵羊、羊羔、鹤、牛嚼草、狗撒娇
+  | 'sheep' | 'lamb' | 'crane' | 'munch' | 'dogWhine'
+  // 器物与游戏（things.ts）；chime 现在是檐下的风铃
+  | 'cast' | 'strike' | 'fishSplash' | 'flop' | 'reel' | 'bite' | 'kite' | 'shuttle' | 'arrowPot' | 'arrowMiss' | 'potRim' | 'potEar' | 'toss' | 'catch' | 'swish' | 'skip' | 'snowCrunch' | 'chime' | 'lantern'
+  // 观星、铺席卷席、船
+  | 'starTap' | 'starLight' | 'matUnroll' | 'matRoll' | 'boatBump'
+  // 纸鸢、堆雪人
+  | 'flutter' | 'kiteFall' | 'snap' | 'snowPat'
+  // 人（folk.ts）
+  | 'clapper' | 'gong' | 'wood' | 'murmur' | 'kidsLaugh' | 'greet' | 'whip'
   // 天上
-  | 'thunder' | 'gust'
+  | 'thunder' | 'gust' | 'meteor'
   // 脚步
   | 'foot' | 'step' | 'woodstep'
   // 界面
   | 'tick' | 'open' | 'close'
-  // 旧（空山留下来的寺里的声音，新的场景不用）
-  | 'bell' | 'qing' | 'chime' | 'muyu' | 'drum' | 'drumrim' | 'bead' | 'beadturn' | 'sticks' | 'stickfall' | 'windbell';
+  // 旧（空山留下来的寺里的声音，新的场景不用）；引磬原先叫 chime，现在叫 yinqing
+  | 'bell' | 'qing' | 'yinqing' | 'muyu' | 'drum' | 'drumrim' | 'bead' | 'beadturn' | 'sticks' | 'stickfall' | 'windbell';
 
-/** 脚下是什么：土路、草、石板（桥）、木板、屋里的夯土地、浅水 */
-export type Ground = 'earth' | 'grass' | 'stone' | 'plank' | 'floor' | 'water';
+/** 脚下是什么：土路、草、石板（桥）、木板、屋里的夯土地、浅水、积雪 */
+export type Ground = 'earth' | 'grass' | 'stone' | 'plank' | 'floor' | 'water' | 'snow';
 /** 抚琴的指法：散音、按音、泛音、撮（八度同弹）、滚（自高而低连拨）、拂（自低而高）、一个现编的小句 */
 export type QinTech = 'open' | 'press' | 'harmonic' | 'cuo' | 'gun' | 'fu' | 'phrase';
 
@@ -49,9 +63,11 @@ export interface PlayOpts {
   at?: readonly [number, number];
   /** 同一种声音里的哪一样（见 docs/AUDIO.md 各条） */
   variant?: string;
-  /** 脚步：踩在什么上；地有多湿（0…1，不给就看场景里的雨） */
+  /** 脚步：踩在什么上；地有多湿（0…1，不给就看场景里的雨）；是不是在跑、跑多快（米/秒） */
   ground?: Ground;
   wet?: number;
+  run?: boolean;
+  speed?: number;
   /** 琴：第几弦（1–7）、在这根弦上往上数几个五声音级、指法、吟（揉弦）、起音从下方（负）或上方滑入的音分、按音之后滑到相邻的音级（±1、±2） */
   string?: number;
   step?: number;
@@ -59,7 +75,7 @@ export interface PlayOpts {
   vib?: boolean;
   slide?: number;
   glide?: number;
-  /** 书声：这一句几个字（4–7）、几个孩子（3–5） */
+  /** 书声：这一句几个字（4–7）、几个孩子（3–5）。梆子、更锣：敲几下（不给按此刻是第几更） */
   n?: number;
   voices?: number;
 }
@@ -69,15 +85,18 @@ export interface PlayOpts {
 export type Bed =
   | 'air' | 'pines' | 'bamboo' | 'leaves' | 'fieldwind'
   | 'brook' | 'pond' | 'river' | 'waterfall'
-  | 'birds' | 'swallows' | 'cicadas' | 'frogs' | 'crickets' | 'geese'
+  | 'birds' | 'swallows' | 'cicadas' | 'frogs' | 'crickets' | 'geese' | 'wild'
   | 'rain' | 'drips' | 'snow' | 'night'
   | 'village' | 'school' | 'work' | 'mill';
 
 /** 用户能调的几组（界面上的滑块）：每一组是乘在场景算出来的量上的一个 0…1 */
 export type Group = 'wind' | 'water' | 'birds' | 'insects' | 'weather' | 'village';
 
-/** 一直响着、由一个开关管的声音（煮水、研墨、拉锯、犁地）：setLoop(name, level) */
-export type Loop = 'kettle' | 'inkstone' | 'saw' | 'plough';
+/**
+ * 一直响着、由一个开关管的声音：setLoop(name, level)。
+ * 煮水、研墨、拉锯、犁地；推磨、辘轳、一片蛙鸣、蜂箱边的蜂、纸鸢的线、远处几个人说话、钓线吃劲、船底下的水、推着雪球滚
+ */
+export type Loop = 'kettle' | 'inkstone' | 'saw' | 'plough' | 'millstone' | 'windlass' | 'frog' | 'bee' | 'kite' | 'murmur' | 'line' | 'boatWater' | 'snowRoll';
 
 /**
  * 旧的九层的名字。界面上的声音面板（还没改）仍然按这九个名字调 setLayer：
@@ -140,8 +159,11 @@ export interface Scene {
   /**
    * 正凝神听什么（观物亭里「听蝉鸣」「听雨」）：'cicada' 蝉、'rain' 雨；也认 'stream' 'birds' 'frogs' 'crickets' 'bamboo' 'pines' 'river' 'recite'。
    * 给了它，那一层在三秒里提上来（约 +7 分贝），别的环境声退下去；回到 null 再三秒里还原。
+   * 'stars'（观星）不一样：不提哪一层，是整个夜更静——风更轻、虫声更细，偶尔远处一声犬吠、一阵更梆。
    */
   focus?: string | null;
+  /** 地上的积雪 0…1（Atmos.snowCover）。不给就由引擎自己按下雪多久估（与 Atmos 的涨落一样快慢）：踩雪的脚步、雪后的静跟着它 */
+  cover?: number;
   /** 旧：天气（没给 rain / snow / mist 时才看它） */
   weather?: Weather;
   /** 旧：离水多近（没给 near 时当作 near.stream） */
@@ -172,6 +194,8 @@ export interface SceneState {
   focus: string | null;
   /** 雨后还湿着几成（引擎自己记着：下雨时涨，雨停后一两分钟慢慢干） */
   wet: number;
+  /** 地上的积雪几成（世界给的，或引擎按下雪多久估的） */
+  cover: number;
 }
 
 /** 旧：诵经层的选项 */
@@ -187,24 +211,28 @@ export interface ChantOpts {
 }
 
 // ———————————————————————————— 名字的清单 ————————————————————————————
-/** 试听台上分的四组，外加界面与旧的 */
-export const SHOT_GROUPS: Record<'study' | 'village' | 'sky' | 'steps' | 'ui' | 'legacy', Shot[]> = {
+/** 试听台上分的几组，外加界面与旧的 */
+export const SHOT_GROUPS: Record<'study' | 'village' | 'farm' | 'animals' | 'things' | 'folk' | 'sky' | 'steps' | 'ui' | 'legacy', Shot[]> = {
   study: ['qin', 'page', 'paper', 'brush', 'inkstone', 'pour', 'kettle', 'fan', 'cup', 'bowl', 'stone', 'lamp', 'ignite', 'ash', 'broom', 'water', 'gate', 'door', 'knock', 'dew', 'drip', 'plop', 'ripple'],
   village: ['rooster', 'hen', 'chick', 'duck', 'goose', 'dog', 'cat', 'ox', 'recite', 'flute', 'sparrow', 'cuckoo', 'hammer', 'saw', 'plane', 'hoe', 'plough', 'bucket', 'pound', 'millThump', 'rattle', 'swing', 'oar', 'net', 'flap', 'chirp', 'tumble', 'thresh', 'laugh', 'cluck', 'quack'],
-  sky: ['thunder', 'gust'],
+  farm: ['sickle', 'sheaf', 'flail', 'winnow', 'millstone', 'sow', 'dig', 'pluck', 'grain', 'windlass', 'chop', 'split', 'loom', 'pull', 'pole', 'rustle', 'fruitFall', 'scoop', 'stir'],
+  animals: ['frog', 'oriole', 'magpie', 'crow', 'geese', 'deer', 'goat', 'donkey', 'bee', 'wings', 'fishJump', 'purr', 'peck', 'squirrel', 'frogPlop', 'cackle', 'sheep', 'lamb', 'crane', 'munch', 'dogWhine'],
+  things: ['cast', 'strike', 'fishSplash', 'flop', 'reel', 'bite', 'kite', 'shuttle', 'arrowPot', 'arrowMiss', 'potRim', 'potEar', 'toss', 'catch', 'swish', 'skip', 'snowCrunch', 'chime', 'lantern', 'starTap', 'starLight', 'matUnroll', 'matRoll', 'boatBump', 'flutter', 'kiteFall', 'snap', 'snowPat'],
+  folk: ['clapper', 'gong', 'wood', 'murmur', 'kidsLaugh', 'greet', 'whip'],
+  sky: ['thunder', 'gust', 'meteor'],
   steps: ['foot', 'step', 'woodstep'],
   ui: ['tick', 'open', 'close'],
-  legacy: ['bell', 'qing', 'chime', 'muyu', 'drum', 'drumrim', 'bead', 'beadturn', 'sticks', 'stickfall', 'windbell'],
+  legacy: ['bell', 'qing', 'yinqing', 'muyu', 'drum', 'drumrim', 'bead', 'beadturn', 'sticks', 'stickfall', 'windbell'],
 };
 export const SHOT_NAMES: Shot[] = Object.values(SHOT_GROUPS).flat();
 
 export const BED_NAMES: Bed[] = [
   'air', 'pines', 'bamboo', 'leaves', 'fieldwind', 'brook', 'pond', 'river', 'waterfall',
-  'birds', 'swallows', 'cicadas', 'frogs', 'crickets', 'geese', 'rain', 'drips', 'snow', 'night', 'village', 'school', 'work', 'mill',
+  'birds', 'swallows', 'cicadas', 'frogs', 'crickets', 'geese', 'wild', 'rain', 'drips', 'snow', 'night', 'village', 'school', 'work', 'mill',
 ];
 export const GROUP_NAMES: Group[] = ['wind', 'water', 'birds', 'insects', 'weather', 'village'];
-export const LOOP_NAMES: Loop[] = ['kettle', 'inkstone', 'saw', 'plough'];
-export const GROUND_NAMES: Ground[] = ['earth', 'grass', 'stone', 'plank', 'floor', 'water'];
+export const LOOP_NAMES: Loop[] = ['kettle', 'inkstone', 'saw', 'plough', 'millstone', 'windlass', 'frog', 'bee', 'kite', 'murmur', 'line', 'boatWater', 'snowRoll'];
+export const GROUND_NAMES: Ground[] = ['earth', 'grass', 'stone', 'plank', 'floor', 'water', 'snow'];
 export const NEAR_KEYS: NearKey[] = ['stream', 'pond', 'river', 'waterfall', 'bamboo', 'pines', 'grove', 'fields', 'village', 'school', 'work', 'mill'];
 /** 旧的九层（界面上的声音面板在用） */
 export const LAYER_NAMES: Layer[] = ['wind', 'birds', 'stream', 'rain', 'insects', 'chant', 'qin', 'bellfar', 'eaves'];
@@ -214,7 +242,7 @@ export const EXTRA_NAMES: Extra[] = ['chant', 'qin', 'bellfar', 'eaves'];
 export const GROUP_OF: Record<Bed, Group> = {
   air: 'wind', pines: 'wind', bamboo: 'wind', leaves: 'wind', fieldwind: 'wind', night: 'wind',
   brook: 'water', pond: 'water', river: 'water', waterfall: 'water',
-  birds: 'birds', swallows: 'birds', geese: 'birds',
+  birds: 'birds', swallows: 'birds', geese: 'birds', wild: 'birds',
   cicadas: 'insects', frogs: 'insects', crickets: 'insects',
   rain: 'weather', drips: 'weather', snow: 'weather',
   village: 'village', school: 'village', work: 'village', mill: 'village',
@@ -233,7 +261,20 @@ export const DEFAULT_SCENE: Scene = { place: 'grove', hour: 9, season: 'spring',
 /** 各样声音能传多远（米）：到这么远就是 dist = 1。给了 at（世界里的位置）的按它算；把远近折进力度里传来的（vel < 0.25）也按它倒推 */
 export const RANGE: Partial<Record<Shot, number>> = {
   rooster: 160, dog: 240, goose: 160, cuckoo: 300, flute: 320, thunder: 4000, ox: 140, recite: 110, hammer: 100, millThump: 130, pound: 110, rattle: 130, saw: 70, plane: 50,
-  hen: 45, cluck: 45, chick: 25, duck: 60, quack: 60, thresh: 80, laugh: 60, chirp: 40, cat: 40, sparrow: 40, hoe: 70, plough: 80, bucket: 70, swing: 35, oar: 120, net: 110, knock: 60, gate: 50, door: 40, gust: 120, stone: 14, bowl: 12,
+  hen: 45, cluck: 45, chick: 25, duck: 60, quack: 60, thresh: 80, laugh: 60, chirp: 40, cat: 40, sparrow: 40, hoe: 70, plough: 80, bucket: 50, swing: 35, oar: 120, net: 110, knock: 60, gate: 50, door: 40, gust: 120, stone: 14, bowl: 12,
+  // 农事
+  sickle: 30, sheaf: 18, flail: 90, winnow: 50, millstone: 45, sow: 18, dig: 55, pluck: 20, grain: 25, windlass: 60, water: 30, chop: 110, split: 25, loom: 40, pull: 18, pole: 20, rustle: 60, fruitFall: 25, scoop: 30, stir: 18,
+  // 禽兽虫鱼：鹿、驴、雁、寒鸦叫得远；猫的呼噜、蜂、鸡啄食要凑近了才有
+  frog: 120, oriole: 130, magpie: 130, crow: 220, geese: 900, deer: 500, goat: 90, donkey: 320, bee: 9, wings: 60, fishJump: 55, purr: 3.5, peck: 12, squirrel: 45, frogPlop: 30, cackle: 70,
+  // 绵羊一群在河滩上，传得不如山羊远；鹤唳能传一两里；牛嚼草、狗撒娇要凑近了才有
+  sheep: 80, lamb: 55, crane: 1500, munch: 9, dogWhine: 14,
+  // 器物与游戏
+  cast: 30, strike: 25, fishSplash: 55, flop: 14, reel: 14, bite: 12, kite: 40, shuttle: 30, arrowPot: 40, arrowMiss: 30, potRim: 45, potEar: 40, toss: 16, catch: 16, swish: 12, skip: 70, snowCrunch: 22, chime: 45, lantern: 14, matUnroll: 18, matRoll: 18, boatBump: 60, flutter: 40, kiteFall: 30, snap: 30, snowPat: 14, windbell: 50,
+  // 人：更梆、更锣是要传遍全村的
+  clapper: 700, gong: 900, wood: 60, murmur: 70, kidsLaugh: 90, greet: 16, whip: 260,
+  // 说书人的书鼓（旧的 drum 现在是它）
+  drum: 110, drumrim: 70,
+  meteor: 100000,
 };
 /** 没列在上面的声音能传多远 */
 export const RANGE_DEFAULT = 36;

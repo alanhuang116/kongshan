@@ -4,11 +4,14 @@
  */
 import * as THREE from 'three';
 import type { Quality } from '../core/World';
+import type { Season } from '../env/atmos';
 import { Builder, merge, type Geo } from '../core/geo';
-import { FX_LAYER, FX_PARS, INK_PARS, U, wash } from '../ink/ink';
+import { FX_LAYER, FX_PARS, INK_PARS, U, dabMat, dabMesh, wash, type Dab } from '../ink/ink';
+import { TILES, atlas as brushAtlas } from '../ink/brush';
+import { PETAL } from '../env/flora/tiles2';
 import { SITE } from '../site';
 import { makeAtlas } from './atlas';
-import { GLOW_PAPER, GLOW_ROOM, makeMats, type Ctx, type Mats, type Solid } from './kit';
+import { GLOW_PAPER, GLOW_ROOM, SEASONS, makeMats, type Ctx, type Mats, type Solid } from './kit';
 import { buildHall } from './hall';
 import { buildYard } from './yard';
 import { buildWaterside } from './waterside';
@@ -16,8 +19,11 @@ import { buildPavilion } from './pavilion';
 import { buildVillage } from './village';
 import { buildFields } from './fields';
 import { buildMore } from './more';
+import { buildHomes } from './homes';
+import { buildTraces } from './traces';
+import { buildSeasons } from './seasons';
 
-export interface BuildOpts { q: Quality }
+export interface BuildOpts { q: Quality; /** 开场是哪一季（随季节换的东西先显这一季；不给就是春） */ season?: Season }
 export interface Buildings {
   group: THREE.Group;
   /** 草堂的屋顶、南墙（连门窗）：人进了屋要隐去，好看见屋里——所以各自是独立的一组 */
@@ -28,12 +34,14 @@ export interface Buildings {
   parts: Record<string, THREE.Object3D>;
   /** 灯火亮几成（0…1）：窗纸透出的暖光、屋里的一盏灯 */
   setLamp(k: number): void;
+  /** 换季：屋里的火盆竹席、瓶里的花、匾里晒的东西、门上的桃符跟着换（一下子换过去：是屋里的人换的，不是慢慢长出来的） */
+  setSeason(s: Season): void;
   update(dt: number, t: number): void;
 }
 
 /** 各件的名字（台子上单看时用） */
-export type Piece = 'hall' | 'yard' | 'waterside' | 'pavilion' | 'village' | 'fields' | 'more';
-const PIECES: Record<Piece, (c: Ctx, sub?: string[]) => void> = { hall: buildHall, yard: buildYard, waterside: buildWaterside, pavilion: buildPavilion, village: buildVillage, fields: buildFields, more: buildMore };
+export type Piece = 'hall' | 'yard' | 'waterside' | 'pavilion' | 'village' | 'fields' | 'more' | 'homes' | 'traces' | 'seasons';
+const PIECES: Record<Piece, (c: Ctx, sub?: string[]) => void> = { hall: buildHall, yard: buildYard, waterside: buildWaterside, pavilion: buildPavilion, village: buildVillage, fields: buildFields, more: buildMore, homes: buildHomes, traces: buildTraces, seasons: buildSeasons };
 
 /** 灯晕：画在勾完线之后的一团暖光（朝着看画人的一张片），自己比深度——墙挡着就看不见，开着的门里看得见 */
 function haloMesh(): THREE.Mesh {
@@ -75,8 +83,11 @@ export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Pr
   const anchorRoot = new THREE.Group();
   anchorRoot.name = 'anchors';
   group.add(anchorRoot);
+  const perSeason = <T>(f: () => T) => Object.fromEntries(SEASONS.map((s) => [s, f()])) as Record<Season, T>;
+  const seasonB = perSeason(() => new Builder()), dryB = perSeason(() => new Builder()), dabs = perSeason((): Dab[] => []);
   const c: Ctx = {
     q, low: q.tier === 'low', mats, rect: atlas.rect, blank: atlas.blank, ...B, anchors, parts, solids, root: group, frontRoot: hallFront,
+    season: seasonB, dry: dryB, dabs,
     anchor(name, x, y, z, yaw = 0) {
       const a = new THREE.Object3D();
       a.name = `anchor:${name}`;
@@ -100,7 +111,22 @@ export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Pr
   group.add(B.home.build(M, { name: 'home' }), B.village.build(M, { name: 'village' }), B.far.build(M, { name: 'far' }));
   hallRoof.add(B.roof.build(M, { name: 'hallRoof' }));
   hallFront.add(B.front.build(M, { name: 'hallFront' }));
-  for (const m of [group, hallRoof, hallFront]) m.traverse((x) => { x.castShadow = false; x.receiveShadow = false; if ((x as THREE.Mesh).isMesh) (x as THREE.Mesh).geometry.computeBoundingSphere(); });
+  // 随季节换的：各季一组（当季的显出来）；晒着的另成一组（下雨、入夜收起）；瓶里的花是笔
+  const vaseA = brushAtlas([TILES.blossom, TILES.bloom, PETAL.tiles[PETAL.idx.lian0], PETAL.tiles[PETAL.idx.lianBud], PETAL.tiles[PETAL.idx.ju0], PETAL.tiles[PETAL.idx.juSide]], 3, Math.round(128 * q.tex), 61);
+  const vaseMat = dabMat({ ...vaseA, pig: [1, 1, 1], accent: [0.64, 0.46, 0.4], dens: 1, shade: 1.3, body: 0.78, snow: 0, sway: 0 });
+  const seasonG = perSeason(() => new THREE.Group()), dryG = perSeason(() => new THREE.Group());
+  for (const s of SEASONS) {
+    seasonG[s].name = `season:${s}`; dryG[s].name = `dry:${s}`;
+    seasonG[s].add(seasonB[s].build(M, { name: `season:${s}` }));
+    dryG[s].add(dryB[s].build(M, { name: `dry:${s}` }));
+    if (dabs[s].length) { const m = dabMesh(dabs[s], vaseMat); m.name = `vase:${s}`; seasonG[s].add(m); }
+    group.add(seasonG[s], dryG[s]);
+  }
+  // （点上去的笔自己带着范围：别拿那张单位方片重算，不然会被当成在原点、看不见）
+  for (const m of [group, hallRoof, hallFront]) m.traverse((x) => { x.castShadow = false; x.receiveShadow = false; const g = (x as THREE.Mesh).geometry as THREE.InstancedBufferGeometry | undefined; if ((x as THREE.Mesh).isMesh && g && !g.isInstancedBufferGeometry) g.computeBoundingSphere(); });
+  let season: Season = o.season ?? 'spring', dryOn = true;
+  const showSeason = () => { for (const s of SEASONS) { seasonG[s].visible = s === season; dryG[s].visible = s === season && dryOn; } };
+  showSeason();
 
   // —— 灯：案上那一盏的火苗与灯晕；窗纸、屋里的墙面跟着亮 ——
   const lampAt = anchors.lamp, halo = haloMesh();
@@ -126,8 +152,12 @@ export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Pr
   return {
     group, hallRoof, hallFront, anchors, parts,
     setLamp(k: number) { lamp = Math.max(0, Math.min(1, k)); apply(1); },
+    setSeason(s: Season) { if (s !== season) { season = s; showSeason(); } },
     update(dt: number, t: number) {
       for (const f of c.tick) f(dt, t);
+      // 晒的东西：下雨、天黑了收进去，天晴、天亮了再摊出来（看画里的雨与夜，不另记天时）
+      const want = dryOn ? U.uWet.value < 0.35 && U.uNight.value < 0.6 : U.uWet.value < 0.2 && U.uNight.value < 0.45;
+      if (want !== dryOn) { dryOn = want; showSeason(); }
       if (lamp <= 0.02) return;
       // 灯火轻轻地跳
       apply(1 + 0.05 * Math.sin(t * 7.3) + 0.035 * Math.sin(t * 12.7 + 1.3) + 0.025 * Math.sin(t * 23.1 + 0.4));

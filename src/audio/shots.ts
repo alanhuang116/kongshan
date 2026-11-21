@@ -1,25 +1,33 @@
 /**
  * 一击的声音的总表。每个函数把节点接到 v.out，返回这一击大约多久之后可以拆线（秒）。
  *
- *   书房与院里 —— study.ts（纸笔墨、茶酒、门、露水、落水……）、qin.ts（抚琴）
- *   村里       —— village.ts（鸡犬牛鸭鹅猫、锤锯刨锄犁、辘轳橹网、捣衣水碓、拨浪鼓秋千）、recite.ts（书声）、flute.ts（牧笛）
- *   天上       —— sky.ts（远雷、一阵风）
+ *   书房与院里 —— study.ts（纸笔墨、茶酒、门、叩门环、露水、落水……）、qin.ts（抚琴）
+ *   村里       —— village.ts（鸡犬牛鸭鹅猫、锤锯刨锄犁、桶与辘轳、橹网、捣衣水碓、拨浪鼓秋千）、recite.ts（书声）、flute.ts（牧笛）
+ *   农事       —— farm.ts（割麦捆麦、连枷扬场、推磨、撒种翻土、摘果倒粮、辘轳绞绳）
+ *   禽兽虫鱼   —— animals.ts（蛙、黄鹂喜鹊寒鸦雁阵、鹿羊驴、蜂、惊飞、鱼跃、猫的呼噜、鸡啄食、松鼠、青蛙跳水）
+ *   器物与游戏 —— things.ts（钓鱼、纸鸢、毽子、投壶、打水漂、踩雪、风铃、点灯笼）
+ *   人         —— folk.ts（梆子更锣、醒木、远处的人声、孩子笑闹、一声「嗯」）
+ *   天上       —— sky.ts（远雷、一阵风、流星）
  *   脚步       —— steps.ts
  *   界面       —— 这里（tick / open / close）
- *   旧         —— 这里：空山留下来的寺里的声音（钟、磬、木鱼、鼓、念珠、签、风铎）。新的场景不用它们；
- *                 界面那一层迁完之前还有地方会调到（入山那一声钟），所以留着。
+ *   旧         —— 这里：空山留下来的寺里的声音（钟、磬、引磬、木鱼、鼓、念珠、签、风铎）。新的场景不用它们；
+ *                 界面那一层迁完之前还有地方会调到（入山那一声钟），所以留着。引磬原先叫 chime，现在 chime 是檐下的风铃。
  *
  * 搭声音用的零件在 kit.ts。
  */
 import type { Voice } from './engine';
+import { ANIMAL_SHOTS } from './animals';
 import { EXTRA_SHOTS } from './extra';
+import { FARM_SHOTS } from './farm';
 import { fluteShot } from './flute';
+import { FOLK_SHOTS } from './folk';
 import { burst, glide, mode, partials, reson, tap } from './kit';
 import { qinShot } from './qin';
 import { reciteShot } from './recite';
 import { SKY_SHOTS } from './sky';
 import { STEP_SHOTS } from './steps';
 import { STUDY_SHOTS } from './study';
+import { THING_SHOTS } from './things';
 import type { Shot } from './types';
 import { pick, rand } from './util';
 import { VILLAGE_SHOTS } from './village';
@@ -56,7 +64,7 @@ const WINDBELL = [1567.98, 1760, 1975.53, 2349.32, 2637.02];
  *   木与竹（木鱼、签、珠）＝ 槌头的一下激起几个高 Q 的共鸣，几十毫秒就没了；
  *   皮（鼓）＝ 下滑的基模加几个不成整数倍的膜模，再加鼓腔里的一团低噪声。
  */
-const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'chime' | 'muyu' | 'drum' | 'drumrim' | 'bead' | 'beadturn' | 'sticks' | 'stickfall' | 'windbell'> = {
+const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'yinqing' | 'muyu' | 'drum' | 'drumrim' | 'bead' | 'beadturn' | 'sticks' | 'stickfall' | 'windbell'> = {
   /**
    * 大铜钟。嗡音 98Hz（G2），分音取梵钟一类「2.0、2.8、3.4、4.1、5.4…」的非谐结构（不是西洋钟的小三度）；
    * 前六个分音各是一对，差 0.55–3Hz，拍出起伏；撞木是木头，起音软：低通噪声的一闷 + 一个很低的「咚」。
@@ -95,8 +103,8 @@ const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'chime' | 'muyu' | 
     mode(v, 320 * v.pitch, 0.12 * vel, 0.05, 0.002);
     return 12.5;
   },
-  /** 引磬（手持小磬，铁签敲）。基音 1174.7Hz（D6），清亮，余音约四秒 */
-  chime(v) {
+  /** 引磬（手持小磬，铁签敲）。基音 1174.7Hz（D6），清亮，余音约四秒。原先叫 chime */
+  yinqing(v) {
     const f0 = 1174.66 * v.pitch, vel = v.vel;
     partials(v, f0, 0.48 * Math.pow(vel, 1.2), [
       [1.0, 1.0, 4.5, 1.4, 0.0015],
@@ -124,8 +132,20 @@ const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'chime' | 'muyu' | 
     glide(v, f1 * 1.22, f1, 0.018, 0.16 * a, 0.1 * k, 0.0015);
     return 0.5 * k;
   },
-  /** 大鼓。基模 66Hz 从高一点滑下来，膜模 1.59、2.14、2.30、2.92 倍；槌是低通噪声的一「嘭」，鼓腔里一团 210Hz 的余响 */
+  /**
+   * 鼓。不给 variant：说书人的书鼓（扁鼓）——一面绷紧的牛皮，竹签敲下去「嘣」的一声：基模 190–240Hz、零点两三秒就收，
+   * 几个膜模更短，竹签的一点「嗒」（说书的盲翁说之前先敲一通，世界叫的就是它）。'temple'：旧的寺里的大鼓——
+   * 基模 66Hz 从高一点滑下来，膜模 1.59、2.14、2.30、2.92 倍；槌是低通噪声的一「嘭」，鼓腔里一团 210Hz 的余响
+   */
   drum(v) {
+    if (v.raw.variant !== 'temple') {
+      const vel = v.vel, a = 0.55 * Math.pow(vel, 1.1) * rand(0.9, 1.1), f0 = rand(190, 240) * v.pitch;
+      glide(v, f0 * 1.15, f0, 0.03, a, 0.28, 0.002);
+      for (const [r, amp, t60] of [[1.59, 0.32, 0.16], [2.14, 0.24, 0.12], [2.3, 0.16, 0.1], [2.92, 0.12, 0.08]] as const) glide(v, f0 * r * 1.08, f0 * r, 0.025, a * amp, t60, 0.002);
+      burst(v, { dur: 0.012, f: 2600, q: 1, amp: 0.25 * vel, att: 0.0006 });
+      burst(v, { dur: 0.06, f: 420, q: 0.9, amp: 0.25 * vel, att: 0.002, noise: 'pink' });
+      return 0.6;
+    }
     const f0 = 66 * v.pitch, vel = v.vel, a = 1.1 * Math.pow(vel, 1.2);
     glide(v, f0 * 1.38, f0, 0.07, a, 1.5, 0.004);
     for (const [r, amp, t60] of [[1.59, 0.36, 0.6], [2.14, 0.28, 0.45], [2.3, 0.18, 0.36], [2.92, 0.16, 0.3], [3.6, 0.12, 0.24], [4.2, 0.09, 0.2], [5.1, 0.06, 0.16]] as const) {
@@ -136,14 +156,14 @@ const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'chime' | 'muyu' | 
     burst(v, { dur: 0.012, f: 2400, q: 1, amp: 0.09 * vel * vel, att: 0.001 });
     return 2.4;
   },
-  /** 鼓边：槌敲在木头鼓帮上，鼓面跟着轻轻一应 */
+  /** 鼓边：签子（槌）敲在木头鼓帮上，鼓面跟着轻轻一应（书鼓的鼓面在 200Hz 上下；'temple' 是旧的大鼓，66Hz） */
   drumrim(v) {
     const vel = v.vel, a = 7 * Math.pow(vel, 1.2), p = v.pitch * rand(0.98, 1.02);
     const ex = tap(v, v.t, 1.2, a, 0.3);
     reson(v, ex, 870 * p, 16, 1.6);
     reson(v, ex, 1730 * p, 18, 1.2);
     reson(v, ex, 2900 * p, 16, 0.6);
-    mode(v, 66 * v.pitch, 0.01 * a, 0.5, 0.004);
+    mode(v, (v.raw.variant === 'temple' ? 66 : 215) * v.pitch, 0.01 * a, v.raw.variant === 'temple' ? 0.5 : 0.18, 0.004);
     return 0.7;
   },
   /** 一颗念珠过指：小木珠相碰，极轻的「嗒」，每次不同 */
@@ -213,4 +233,7 @@ const LEGACY_SHOTS: Pick<Record<Shot, Fn>, 'bell' | 'qing' | 'chime' | 'muyu' | 
   },
 };
 
-export const SHOTS: Record<Shot, Fn> = { ...STUDY_SHOTS, ...VILLAGE_SHOTS, ...EXTRA_SHOTS, ...SKY_SHOTS, ...STEP_SHOTS, ...UI_SHOTS, ...LEGACY_SHOTS, qin: qinShot, recite: reciteShot, flute: fluteShot };
+export const SHOTS: Record<Shot, Fn> = {
+  ...STUDY_SHOTS, ...VILLAGE_SHOTS, ...EXTRA_SHOTS, ...FARM_SHOTS, ...ANIMAL_SHOTS, ...THING_SHOTS, ...FOLK_SHOTS, ...SKY_SHOTS, ...STEP_SHOTS, ...UI_SHOTS, ...LEGACY_SHOTS,
+  qin: qinShot, recite: reciteShot, flute: fluteShot,
+};

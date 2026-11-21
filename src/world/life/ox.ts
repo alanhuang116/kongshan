@@ -90,6 +90,8 @@ export class OxTeam {
   px = 0; pz = 0; pyaw = 0;
   /** 套着犁没有；在不在（冬天进了圈）；卧着几成；低头吃草几成 */
   hitched = false; present = true; lie = 0; graze = 0;
+  /** 有人添了草，正低头在槽里吃（0…1）：盖过 lie、graze（「添草」那件事设，别处不用管） */
+  eat = 0;
   /** 挡路的两个圆（前半身、后半身） */
   blockers = [{ x: 1e6, z: 1e6, r: 0 }, { x: 1e6, z: 1e6, r: 0 }];
   private k: { body: number; head: number; legs: number[]; tail: number; yoke: number; plough: number; ropes: number[] };
@@ -146,8 +148,9 @@ export class OxTeam {
     P.mesh.visible = this.present;
     const b = this.blockers;
     if (!this.present) { b[0].x = b[0].z = b[1].x = b[1].z = 1e6; b[0].r = b[1].r = 0; return; }
-    this.lieS += (this.lie - this.lieS) * Math.min(1, dt * 1.2);
-    this.grazeS += (this.graze - this.grazeS) * Math.min(1, dt * 1.0);
+    const eat = this.eat > 0.01;
+    this.lieS += ((eat ? 0 : this.lie) - this.lieS) * Math.min(1, dt * 1.2);
+    this.grazeS += ((eat ? Math.max(this.graze, 0.85 * this.eat) : this.graze) - this.grazeS) * Math.min(1, dt * 1.0);
     this.hitchS += ((this.hitched ? 1 : 0) - this.hitchS) * Math.min(1, dt * 4);
     const lie = this.lieS, walk = Math.min(1, this.speed / 0.3), ph = this.phase * Math.PI * 2, c = Math.cos(this.yaw), s = Math.sin(this.yaw);
     const gy = footY(this.x, this.z), drop = 0.6 * lie, bob = 0.012 * walk * Math.sin(ph * 2);
@@ -156,7 +159,7 @@ export class OxTeam {
     P.place(K.body, _b);
     // 头颈：拉犁时低着；吃草时探到地上；卧着时平抬，慢慢地嚼
     const pull = this.hitchS * 0.2 * walk, nod = 0.05 * walk * Math.sin(ph * 2 + 0.6) + 0.02 * Math.sin(t * 0.7);
-    const chew = lie * 0.03 * Math.sin(t * 3.1), down = 0.92 * this.grazeS * (1 - lie) * (0.85 + 0.15 * Math.sin(t * 0.9));
+    const chew = (lie + (eat ? 1 : 0)) * 0.03 * Math.sin(t * 3.1), down = 0.92 * this.grazeS * (1 - lie) * (0.85 + 0.15 * Math.sin(t * 0.9));
     P.place(K.head, child(_m, _b, 0, NECK.y, NECK.z, 0.12 * Math.sin(t * 0.23) * (1 - walk), 0.1 + pull + nod + down + chew - 0.12 * lie, 0));
     // 腿：对角的两条一起迈；卧下时收到身子底下
     const sw = 0.3 * walk;

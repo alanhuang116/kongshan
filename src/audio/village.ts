@@ -15,7 +15,7 @@ import { clamp, lerp, rand } from './util';
 
 // ———————————————————————————— 禽畜 ————————————————————————————
 /** 母鸡的一声「咯」；long 是下蛋之后那一声拖长的「哒——」 */
-function cluck(v: Voice, t: number, p: number, amp: number, long = false) {
+export function cluck(v: Voice, t: number, p: number, amp: number, long = false) {
   const d = long ? rand(0.3, 0.42) : rand(0.07, 0.1);
   voiced(v, {
     t,
@@ -320,12 +320,32 @@ export const VILLAGE_SHOTS: Pick<Record<Shot, Fn>, 'rooster' | 'hen' | 'chick' |
     return d + 0.2;
   },
   /**
-   * 井上打水。不给 variant：辘轳吱呀吱呀转三四下，然后桶落到井底的一声水响（三秒多）；
-   * 'creak' 只要辘轳；'splash' 只要桶落水（井筒里闷闷的一「嗵」，带一点回声）。
+   * 桶。不给 variant：木桶压进水里（溪边、池边）——「咕咚」一个低的大泡，水往桶里灌的几声咕嘟；停一停提起来：
+   * 桶底离水轻轻一「啵」，桶沿上的水哗地淌回去、越淌越细，末了几滴（两秒上下）。'dip' 只要压进去，'lift' 只要提起来。
+   * 井上的：'well' 辘轳吱呀吱呀转三四下，然后桶落到井底的一声水响（三秒多）；'creak' 只要辘轳；'splash' 只要桶落井水
+   *（井筒里闷闷的一「嗵」，带一点回声）。
    */
   bucket(v) {
-    const a = 0.5 + 0.7 * v.vel, c = v.ctx, kind = v.raw.variant;
+    const a = 0.5 + 0.7 * v.vel, c = v.ctx, kind = v.raw.variant, p = v.pitch * rand(0.94, 1.06);
     let t = v.t;
+    if (kind == null || kind === 'dip' || kind === 'lift') {
+      if (kind !== 'lift') {
+        // 桶口压进水里：一个低的大泡，水面被拍开，水往桶里灌——几声咕嘟、一阵翻腾
+        bubble(v, t, 160 * p, 380 * p, 0.12, 0.3 * a);
+        burst(v, { t, dur: 0.18, type: 'lowpass', f: 1200, f2: 500, q: 0.7, amp: 0.3 * a, att: 0.01 });
+        for (let i = 0, n = 3 + Math.floor(rand(0, 3)); i < n; i++) { const f = rand(220, 420) * p; bubble(v, t + 0.08 + i * rand(0.07, 0.12), f, f * 1.6, rand(0.05, 0.08), 0.14 * a * (1 - 0.15 * i)); }
+        hiss(v, { t: t + 0.05, dur: 0.5, noise: 'pink', f: 700, f2: 450, q: 1.2, curve: wobble(12, 0.09 * a, 0.15, 0.2) });
+        if (kind === 'dip') return 0.9;
+        t += rand(0.7, 0.9);
+      }
+      // 提起来：桶底离水一「啵」，桶沿上的水哗地淌回去，越淌越细，末了几滴
+      bubble(v, t, 300 * p, 650 * p, 0.05, 0.12 * a);
+      const d = rand(0.8, 1.0);
+      hiss(v, { t, dur: d, f: 2200, fMid: 1600, f2: 1100, q: 0.6, curve: wobble(16, 0.13 * a, 0.08, 0.15), dest: grain(v, t, d, 0.55, 0.45, 0.6) });
+      burst(v, { t: t + 0.02, dur: d * 0.6, type: 'lowpass', f: 600, q: 0.7, amp: 0.2 * a, att: 0.05, noise: 'pink' });
+      for (let i = 0, n = 3 + Math.floor(rand(0, 3)); i < n; i++) { const f = rand(900, 1600); bubble(v, t + d * 0.6 + i * rand(0.15, 0.3), f, f * 1.7, 0.03, 0.05 * a * (1 - 0.15 * i)); }
+      return t - v.t + d + 0.9;
+    }
     if (kind !== 'splash') {
       for (let i = 0, n = kind === 'creak' ? 2 + Math.floor(rand(0, 2)) : 3 + Math.floor(rand(0, 2)); i < n; i++) {
         const d = rand(0.35, 0.5), up = i % 2 === 0;
@@ -419,11 +439,17 @@ export const VILLAGE_SHOTS: Pick<Record<Shot, Fn>, 'rooster' | 'hen' | 'chick' |
     s.start(v.t);
     return d + 0.3;
   },
-  /** 秋千荡一个来回（dur，默认两秒半）：绳子与横枝吃住劲时「吱——」的一声，荡回来又是一声，低而慢 */
+  /**
+   * 秋千荡一个来回（dur，默认两秒半）：荡过最低处时绳子与横枝吃住劲「吱——」的一声，荡回来又是一声，低而慢；
+   * 也是荡得最快的时候——人与绳子穿过空气，一口低低的「呼」跟着
+   */
   swing(v) {
     const a = 0.5 + 0.7 * v.vel, d = clamp(v.dur ?? rand(2.4, 2.9), 1.4, 5), p = v.pitch * rand(0.92, 1.08), t = v.t;
-    creak(v, { t, dur: d * 0.3, rate: [rand(14, 18), rand(24, 30)], res: [[310 * p, 8, 1], [720 * p, 10, 0.6], [1350 * p, 9, 0.2]], amp: 0.22 * a, jitter: 220, scrape: 0.35 });
-    creak(v, { t: t + d * 0.5, dur: d * 0.26, rate: [rand(22, 28), rand(13, 17)], res: [[280 * p, 8, 1], [650 * p, 10, 0.55], [1250 * p, 9, 0.18]], amp: 0.17 * a, jitter: 220, scrape: 0.35 });
+    creak(v, { t: t + d * 0.1, dur: d * 0.3, rate: [rand(14, 18), rand(24, 30)], res: [[310 * p, 8, 1], [720 * p, 10, 0.6], [1350 * p, 9, 0.2]], amp: 0.22 * a, jitter: 220, scrape: 0.35 });
+    creak(v, { t: t + d * 0.6, dur: d * 0.26, rate: [rand(22, 28), rand(13, 17)], res: [[280 * p, 8, 1], [650 * p, 10, 0.55], [1250 * p, 9, 0.18]], amp: 0.17 * a, jitter: 220, scrape: 0.35 });
+    for (const [at, len, k] of [[0.08, 0.34, 1], [0.58, 0.32, 0.85]] as const) {
+      hiss(v, { t: t + d * at, dur: d * len, noise: 'pink', f: 360, fMid: rand(640, 760), f2: 420, q: 0.8, hp: 160, curve: wobble(12, 0.11 * a * k, 0.5, 0.06) });
+    }
     return d + 0.2;
   },
 };

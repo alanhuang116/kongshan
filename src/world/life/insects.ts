@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { mulberry32, type Rng } from '../core/rng';
 import type { Quality } from '../core/World';
 import { atlas, ink, stroke, type Tile } from '../ink/brush';
-import { dabMat, dabMesh, type Dab, type RGB } from '../ink/ink';
+import { FX_LAYER, FX_PARS, U, dabMat, dabMesh, type Dab, type RGB } from '../ink/ink';
 import { PATHS, PLOTS, SITE, STREAM, TREES, ground } from '../site';
 import type { Ctx } from './person';
 
@@ -56,7 +56,11 @@ class Swarm {
   show(a: number) { this.mesh.visible = a > 0.02; (this.mesh.material as THREE.ShaderMaterial).uniforms.uQ.value.z = a; }
 }
 
-export interface Insects { group: THREE.Group; update(c: Ctx): void }
+export interface Insects {
+  group: THREE.Group; update(c: Ctx): void;
+  /** 瓜架边一群蜂嗡嗡的声开到几成（没有瓜架就是 null） */
+  buzz: { level: number; x: number; z: number } | null;
+}
 
 export function makeInsects(q: Quality, more: { trellis?: { x: number; z: number } } = {}): Insects {
   const group = new THREE.Group(), R = mulberry32(404);
@@ -83,18 +87,38 @@ export function makeInsects(q: Quality, more: { trellis?: { x: number; z: number
   for (let i = 0; i < STREAM.length; i += 2) { const p = STREAM[i]; if (p.x > -46 && p.x < 44) fHomes.push([p.x + (R() - 0.5) * 3, p.y + 0.5 + R() * 0.9, p.z + (R() < 0.5 ? -1 : 1) * (p.w + 0.6 + R() * 2.4), 1.8]); }
   for (const t of TREES) if (t.kind === 'bamboo' && R() < 0.5) fHomes.push([t.x + (R() - 0.5) * 3, gy(t.x, t.z) + 0.5 + R() * 1.4, t.z + 1.5 + R() * 2, 2.2]);
   for (let i = 0; i < 5; i++) { const a = R() * 6.28; fHomes.push([Pd.x + Math.cos(a) * Pd.rx * 1.08, Pd.y + 0.4 + R() * 0.7, Pd.z + Math.sin(a) * Pd.rz * 1.08, 1.6]); }
-  const fires = new Swarm(fHomes, n(2), 0.075, dabMat({ ...A, pig: [0.92, 1, 0.55], dens: 0.7, flat: 1, body: 1, sway: 0 }), R);
+  // 溪边草里再添几处（萤火多的地方）
+  for (let i = 0; i < STREAM.length; i += 5) { const p = STREAM[i]; if (p.x > 44 && p.x < 80) fHomes.push([p.x + (R() - 0.5) * 4, p.y + 0.4 + R() * 0.6, p.z - (p.w + 1 + R() * 3), 2.4]); }
+  const fires = new Swarm(fHomes, n(3), 0.05, dabMat({ ...A, pig: [0.9, 1, 0.5], dens: 0.6, flat: 1, body: 1, sway: 0 }), R);
+  // 萤光：每一点外面一团软软的光（画在勾完线之后那一层，自己比深度：草木挡着就看不见），与萤用同一份位置
+  const halo = (() => {
+    const q = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+    g.index = q.index; g.setAttribute('position', q.attributes.position);
+    g.setAttribute('aPos', fires.mesh.geometry.attributes.aPos); g.instanceCount = fires.bugs.length;
+    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      uniforms: { tDepth: U.tDepth, uView: U.uView, uNight: U.uNight, uCol: { value: new THREE.Color(0.78, 1.0, 0.42) }, uA: { value: 0 } },
+      vertexShader: `attribute vec4 aPos; varying vec2 vP; varying float vZ; varying float vK;
+void main() { vec4 v = viewMatrix * vec4(aPos.xyz, 1.0); float k = clamp((aPos.w - 0.03) / 0.06, 0.0, 1.0); v.xy += position.xy * (0.35 + 0.95 * k); vZ = -v.z; vP = position.xy * 2.0; vK = k; gl_Position = projectionMatrix * v; }`,
+      fragmentShader: `${FX_PARS}
+uniform vec3 uCol; uniform float uNight; uniform float uA; varying vec2 vP; varying float vZ; varying float vK;
+void main() { float r2 = dot(vP, vP); float a = (exp(-r2 * 4.0) * 0.7 + exp(-r2 * 30.0) * 1.1) * (0.25 + 0.75 * vK) * uNight * uA * fxSeen(vZ - 0.05, 0.25); if (a < 0.004) discard; gl_FragColor = vec4(uCol, a); }`,
+      transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    m.layers.set(FX_LAYER); m.frustumCulled = false; m.name = 'fireflies:glow';
+    return m;
+  })();
   // —— 蜂：瓜架旁（夏天；瓜架在哪由总图给，没有就不放） ——
   const bees = more.trellis ? new Swarm([[more.trellis.x, gy(more.trellis.x, more.trellis.z) + 1.5, more.trellis.z, 1.5]], n(6), 0.05, dabMat({ ...A, pig: [0.95, 0.95, 0.9], accent: [0.62, 0.5, 0.3], dens: 1, shade: 1.1, body: 0.6, sway: 0 }), R) : null;
-  group.add(flies.mesh, dragons.mesh, fires.mesh);
+  group.add(flies.mesh, dragons.mesh, fires.mesh, halo);
   if (bees) group.add(bees.mesh);
   for (let i = 0; i < dragons.bugs.length; i++) dragons.D[i * 4 + 3] = 2;
   for (let i = 0; i < fires.bugs.length; i++) fires.D[i * 4 + 3] = 3;
   if (bees) for (let i = 0; i < bees.bugs.length; i++) bees.D[i * 4 + 3] = 4;
   dragons.commit(true); fires.commit(true); bees?.commit(true);
 
+  const buzz = bees && more.trellis ? { level: 0, x: more.trellis.x, z: more.trellis.z } : null;
   return {
-    group,
+    group, buzz,
     update(c) {
       const t = c.t, dt = c.dt, day = 1 - c.night, dry = c.rain < 0.4 && c.snow < 0.3 ? 1 : 0;
       // 蝶：绕着一处忽上忽下地飞；翅一开一合（换两格笔触）
@@ -124,16 +148,21 @@ export function makeInsects(q: Quality, more: { trellis?: { x: number; z: number
       // 萤：夏夜，慢慢地飘，一明一灭
       const dark = Math.max(0, (c.night - 0.55) / 0.45);
       fires.show(c.season === 'summer' ? dark * dry : 0);
+      halo.visible = fires.mesh.visible; (halo.material as THREE.ShaderMaterial).uniforms.uA.value = c.season === 'summer' ? dark * dry : 0;
       if (fires.mesh.visible) {
         fires.bugs.forEach((b, i) => {
           const u = t * 0.12 * b.sp + b.ph, o = i * 4, lit = Math.max(0, Math.sin(t * 0.8 * b.sp + b.ph * 3)) ** 2;
           fires.P[o] = b.hx + b.r * Math.sin(u); fires.P[o + 2] = b.hz + b.r * Math.sin(u * 0.7 + b.ph); fires.P[o + 1] = b.hy + 0.35 * Math.sin(u * 1.9);
-          fires.P[o + 3] = 0.03 + 0.07 * lit;
+          // 一闪一闪：亮一下（零点几秒）、暗一阵；各只快慢不同
+          const ph = (t * (0.45 + 0.25 * b.sp) + b.ph) % 1, flash = ph < 0.32 ? Math.sin((ph / 0.32) * Math.PI) : 0;
+          fires.P[o + 3] = 0.03 + 0.06 * Math.max(flash, 0.15 * lit);
         });
         fires.commit();
       }
       if (bees) {
         bees.show(c.season === 'summer' || c.season === 'spring' ? day * dry : 0);
+        // 嗡嗡声：天越亮越闹；下雨、天黑就歇了
+        if (buzz) buzz.level = bees.mesh.visible ? (c.season === 'summer' ? 0.5 : 0.4) * Math.max(0, (day - 0.4) / 0.6) : 0;
         if (bees.mesh.visible) { bees.bugs.forEach((b, i) => { const u = t * 1.1 * b.sp + b.ph, o = i * 4; bees.P[o] = b.hx + b.r * Math.sin(u) * Math.cos(u * 0.41); bees.P[o + 2] = b.hz + b.r * Math.sin(u * 0.77 + 2); bees.P[o + 1] = b.hy + 0.35 * Math.sin(u * 1.3) + 0.02 * Math.sin(t * 30); }); bees.commit(); }
       }
     },

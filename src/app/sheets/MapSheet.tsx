@@ -158,7 +158,7 @@ export default function MapSheet() {
       </svg>
       <div className="map-list" role="group" aria-label="去一处">
         {PLACES.map((s) => (
-          <button key={s.id} className={`opt${s.id === place ? ' is-on' : ''}`} onClick={() => go(s.id)} title={s.note} data-testid={`go-${s.id}`}>{s.name}</button>
+          <button key={s.id} className={s.id === place ? 'is-on' : ''} onClick={() => go(s.id)} title={s.note} aria-current={s.id === place ? 'location' : undefined} data-testid={`go-${s.id}`}>{s.name}</button>
         ))}
       </div>
       <p className="sheet-note">朱点是你，尖头是你面朝的方向。平时自己走着去；路远了，点一处，画淡成一片雾，人就到了。</p>
