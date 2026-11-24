@@ -46,11 +46,11 @@ node server/check.mjs                         # 另开一个窗口：ok … 进�
 
 消息的样子见 `core.mjs`（客户端那边 `src/world/net/wire.ts` 一一对应）。
 
-## 部署（还没部署；要用户当次明说再做）
+## 部署（2026-11-24 已上线，b7c4cd1；再部署要用户当次明说）
 
-服务器（与一念、时藏等同机）：用户 `kongshan`，代码在 `/opt/yiwen/kongshan-relay/<commit>/`，`current` 指着当前那一版；systemd `yiwen-kongshan-relay.service` 只听 `127.0.0.1:3820`；Caddy 在现有的 kongshan 站点那一块里把 `/ws*` 转过去。静态站那一半（`/opt/yiwen/kongshan/current`）不动。
+服务器（与一念、时藏等同机）：用户 `kongshan`，代码在 `/opt/yiwen/kongshan-relay/<commit>/`，`current` 指着当前那一版；systemd `yiwen-kongshan-relay.service` 只听 `127.0.0.1:3820`；Caddy 在现有的 kongshan 站点那一块里把 `/ws*` 转过去（加在 `encode` 那一行之后；加之前的原文件备份为 `/etc/caddy/Caddyfile.bak-20261124-135459`）。静态站那一半（`/opt/yiwen/kongshan/current`）照旧。服务器上的 node 是 22。
 
-第一次：
+第一次（2026-11-24 就是照这样做的）：
 
 ```bash
 # 本机（仓库根，提交之后）：只打 server/ 这一个目录
@@ -92,6 +92,6 @@ curl -s -o /dev/null -w "%{http_code}\n" https://kongshan.169-58-39-104.nip.io/ 
 
 ## 还没有的
 
-- 没有在真正的服务器上跑过（只在本机跑过，Node 20）；Caddy 2.6 转 WebSocket 时与 `encode` 同在一块里应当无妨，部署后用 `check.mjs` 核一遍。
+- 上线那天核过：Caddy 2.6.2 转 WebSocket 时与 `encode` 同在一块里无妨（真的 Chrome 握手时带着 Accept-Encoding，照样连得上）；一页在 GitHub Pages、一页在服务器上，两边互相看得见、走动跟得上、关了页面就不在了；别的来源 403。只用测试的几页试过，还没有很多真人同时在里头。
 - 没有「屏蔽某人」：线上没有自由写的字，最多是有人一直作揖——每 1.25 秒一回的上限挡着；以后要加，就在客户端记一张「不理会」的单子。
 - 一台进程：人多到几百人以上要分到几台、或按处分屋子，眼下用不着。
