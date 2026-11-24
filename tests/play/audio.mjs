@@ -9,6 +9,8 @@
 //   node tests/play/audio.mjs mix             十二个现成的场景整个混出来；雨来鸟收的渐变；最坏的组合削不削波
 //   node tests/play/audio.mjs live            实时跑一遍（解锁、换场景、把每种声音都点一遍、层拆不拆）
 //   node tests/play/audio.mjs rooster recite  只量名字里含这些字的
+//   node tests/play/audio.mjs shots 人声 组 墙 人声关着时书声换成翻书戒尺、组的音量也管世界里的声音、屋里听外头隔着墙
+//   node tests/play/audio.mjs beds birds      鸟没有拖长的纯音与慢慢滑的音、刚进门头一只鸟过了五秒才叫
 //   加 --png：把频谱图存到 shots/audio/（用眼睛看：鸡鸣是不是四段、书声的字是不是一个个的）
 //   加 --md：把量出来的表另存一份 shots/audio/measure.md（贴进 docs/AUDIO.md 用）
 //
@@ -60,6 +62,41 @@ async function png(file, title, spec) {
 }
 /** 一击单独渲染的规格（与试听台里的一样：场景只供取参数，不带环境声） */
 const shotSpec = (name, opts = {}, seconds) => ({ seconds, auto: false, shots: [{ name, at: 0.05, opts }], scene: { indoor: 0 } });
+/**
+ * 鸟叫里的纯音（在页面里离线渲染、做短时傅里叶）：一帧（1024 点）里 300Hz–9kHz 的力气九成以上挤在最强那一格左右，就算纯音；
+ * 接连的纯音帧、音高每一跳不过 0.12 个八度，连成一条。返回：纯音占的力气、拖到 0.25 秒以上的几条、0.15 秒以上又滑过三个半音以上的几条、头一声在第几秒
+ */
+const tonal = (spec) => page.evaluate(async (spec) => {
+  const { renderOffline } = await import('/src/audio/offline.ts');
+  const buf = await renderOffline(spec), sr = buf.sampleRate, n = buf.length, x = new Float32Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i]; }
+  const N = 1024, hop = 256, b0 = Math.floor((300 * N) / sr), b1 = Math.ceil((9000 * N) / sr), re = new Float64Array(N), im = new Float64Array(N), fr = [];
+  const fft = () => {
+    for (let i = 1, j = 0; i < N; i++) { let bit = N >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { let a = re[i]; re[i] = re[j]; re[j] = a; a = im[i]; im[i] = im[j]; im[j] = a; } }
+    for (let len = 2; len <= N; len <<= 1) { const ang = (-2 * Math.PI) / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1; for (let i = 0; i < N; i += len) { let cr = 1, ci = 0; for (let k = 0; k < h; k++) { const p = i + k, q = p + h, vr = re[q] * cr - im[q] * ci, vi = re[q] * ci + im[q] * cr; re[q] = re[p] - vr; im[q] = im[p] - vi; re[p] += vr; im[p] += vi; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } } }
+  };
+  for (let a = 0; a + N <= n; a += hop) {
+    for (let i = 0; i < N; i++) { re[i] = x[a + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1))); im[i] = 0; }
+    fft();
+    let pb = 0, km = b0, pm = 0;
+    for (let k = b0; k <= b1; k++) { const p = re[k] * re[k] + im[k] * im[k]; pb += p; if (p > pm) { pm = p; km = k; } }
+    let pk = 0; for (let k = km - 3; k <= km + 3; k++) pk += re[k] * re[k] + im[k] * im[k];
+    fr.push({ t: a / sr, pb, f: (km * sr) / N, ton: pb > 0 ? pk / pb : 0 });
+  }
+  let top = 1e-30; for (const f of fr) top = Math.max(top, f.pb);
+  const fl = top * 3e-5, tracks = [];
+  let cur = null, bandE = 1e-30, pureE = 0, first = null;
+  for (const f of fr) {
+    if (f.pb > fl) { bandE += f.pb; if (first == null && f.pb > top * 1e-3) first = f.t; }
+    const tonal = f.pb > fl && f.ton > 0.9;
+    if (tonal) pureE += f.pb;
+    if (tonal && cur && Math.abs(Math.log2(f.f / cur.last)) < 0.12) { cur.n++; cur.last = f.f; cur.lo = Math.min(cur.lo, f.f); cur.hi = Math.max(cur.hi, f.f); }
+    else { if (cur) tracks.push(cur); cur = tonal ? { n: 1, last: f.f, lo: f.f, hi: f.f } : null; }
+  }
+  if (cur) tracks.push(cur);
+  const T = tracks.map((k) => ({ dur: (k.n * hop) / sr, st: 12 * Math.log2(k.hi / k.lo) }));
+  return { pure: +(pureE / bandE).toFixed(2), long: T.filter((k) => k.dur >= 0.25).length, glides: T.filter((k) => k.dur >= 0.15 && k.st >= 3).length, first: first == null ? null : +first.toFixed(2), longest: +Math.max(0, ...T.map((k) => k.dur)).toFixed(3) };
+}, spec);
 
 // ———————————————————————————— 一、混音的规矩 ————————————————————————————
 if (want('rules')) {
@@ -295,6 +332,35 @@ if (want('shots')) {
     const st = await call('__render', spec);
     R.ok('鸡鸣四段里末一段最长', st.bursts.length === 4 && st.bursts[3][1] - st.bursts[3][0] > st.bursts[0][1] - st.bursts[0][0], `四段长 ${st.bursts.map(([a, b]) => (b - a).toFixed(2)).join(' ')} 秒 (${sr}Hz)`);
   }
+  // 人声：界面上默认关着（试玩的人说书声瘆人）。关着时村塾那里不出人声，只有翻书、戒尺；开着时还是孩子们在念（重心在一千赫兹以下）
+  const KID = [97, 2.8], lessonShots = Array.from({ length: 12 }, (_, i) => ({ name: 'recite', at: 0.5 + i * 2.5132, opts: { vel: 0.7, at: KID } }));
+  const door = { place: 'village', hour: 9.2, season: 'spring', indoor: 0, near: { village: 0.95, school: 0.99 } };
+  if (match('人声')) {
+    await seed(611); const on = await call('__render', { seconds: 30, auto: false, scene: door, listener: [99, 7.6, 0, -1], shots: lessonShots, voiceLevel: 1 });
+    await seed(611); const off = await call('__render', { seconds: 30, auto: false, scene: door, listener: [99, 7.6, 0, -1], shots: lessonShots, voiceLevel: 0 });
+    R.ok('人声开着：村塾门口听得见孩子们念书', on.rms > 0.004 && on.centroid < 1000, `均方根 ${on.rms}，重心 ${on.centroid}Hz`);
+    R.ok('人声关着：不出人声，只有偶尔的翻书、戒尺（轻得多、没有嗓子的低处）', off.rms < on.rms * 0.2 && off.peak > 0.002 && off.centroid > 1500, `均方根 ${off.rms}（开着时 ${on.rms}），峰值 ${off.peak}，重心 ${off.centroid}Hz`);
+    // 草堂里（离村塾九十多米）：原先书声和屋里的整个环境声一样响，现在听不见
+    await seed(612); const hall = await call('__render', { seconds: 20, auto: false, scene: { place: 'hall', hour: 9.2, season: 'spring', indoor: 1 }, listener: [0, 1.2, 0, -1], shots: lessonShots.slice(0, 8), voiceLevel: 1 });
+    R.ok('草堂里听不见九十多米外的村塾（书声传 55 米）', hall.peak < 1e-4, `峰值 ${hall.peak}`);
+  }
+  // 组的音量也管世界里出的声音：「村」关了，二十米外那只鸡不叫了；自己手上的活计（没给位置的割麦）照样有声
+  if (match('组')) {
+    const yard = { place: 'village', hour: 9, season: 'spring', indoor: 0 }, crow = [{ name: 'rooster', at: 0.1, opts: { vel: 0.7, at: [20, 0] } }];
+    await seed(613); const a = await call('__render', { seconds: 3.5, auto: false, scene: yard, listener: [0, 0, 0, -1], shots: crow });
+    await seed(613); const b = await call('__render', { seconds: 3.5, auto: false, scene: yard, listener: [0, 0, 0, -1], shots: crow, groups: { village: 0 } });
+    await seed(614); const c = await call('__render', { seconds: 1.2, auto: false, scene: yard, shots: [{ name: 'sickle', at: 0.05, opts: { vel: 0.6 } }], groups: { village: 0 } });
+    await seed(615); const d = await call('__render', { seconds: 3.5, auto: false, scene: yard, listener: [0, 0, 0, -1], shots: [{ name: 'rooster', at: 0.1, opts: { vel: 0.7, at: [2, 0] } }], groups: { village: 0 } });
+    R.ok('「村」关了：世界里二十米外的鸡鸣不出', a.peak > 0.02 && b.peak < 1e-4, `开着 ${a.peak} → 关了 ${b.peak}`);
+    R.ok('「村」关了：自己手上的活计、摸到跟前（两米）的那只照常有声', c.peak > 0.01 && d.peak > 0.02, `割麦 ${c.peak}，跟前的鸡 ${d.peak}`);
+  }
+  // 屋里听外头：一击给了位置、在屋外，与外头的环境声一样隔着墙（闷一些、轻一些）
+  if (match('墙')) {
+    const crow = [{ name: 'rooster', at: 0.1, opts: { vel: 0.7, at: [25, 0] } }];
+    await seed(616); const out = await call('__render', { seconds: 3.5, auto: false, scene: { place: 'yard', hour: 9, season: 'spring', indoor: 0 }, listener: [0, 0, 0, -1], shots: crow });
+    await seed(616); const ind = await call('__render', { seconds: 3.5, auto: false, scene: { place: 'hall', hour: 9, season: 'spring', indoor: 1 }, listener: [0, 0, 0, -1], shots: crow });
+    R.ok('屋里听墙外的鸡鸣：闷一些、轻一些', ind.rms < out.rms * 0.75 && ind.centroid < out.centroid * 0.95, `屋外 均方根 ${out.rms} 重心 ${out.centroid}Hz → 屋里 ${ind.rms} ${ind.centroid}Hz`);
+  }
 }
 
 // ———————————————————————————— 三、脚步 ————————————————————————————
@@ -356,7 +422,8 @@ if (want('steps')) {
 const BEDS = [
   ['air', 20, [0.002, 0.012]], ['pines', 20, [0.005, 0.03]], ['bamboo', 20, [0.004, 0.03]], ['leaves', 20, [0.003, 0.02]], ['fieldwind', 20, [0.004, 0.025]],
   ['brook', 16, [0.008, 0.03]], ['pond', 30, [0.0006, 0.008]], ['river', 20, [0.006, 0.025]], ['waterfall', 20, [0.006, 0.025]],
-  ['birds', 30, [0.002, 0.02]], ['swallows', 30, [0.0005, 0.01]], ['cicadas', 30, [0.004, 0.02]], ['frogs', 30, [0.002, 0.02]], ['crickets', 30, [0.002, 0.012]], ['geese', 16, [0.0004, 0.01]], ['wild', 30, [0.0004, 0.02]],
+  // 鸟、燕改成很短的音素（song.ts）、更疏更远之后，同样的黎明三十秒均方根落了五分贝上下（原先 0.0039 / 0.0009）：下限跟着放低
+  ['birds', 30, [0.001, 0.02]], ['swallows', 30, [0.0003, 0.01]], ['cicadas', 30, [0.004, 0.02]], ['frogs', 30, [0.002, 0.02]], ['crickets', 30, [0.002, 0.012]], ['geese', 16, [0.0004, 0.01]], ['wild', 30, [0.0004, 0.02]],
   ['rain', 16, [0.012, 0.045]], ['drips', 16, [0.001, 0.012]], ['snow', 16, [0.001, 0.008]], ['night', 16, [0.001, 0.008]],
   ['village', 30, [0.001, 0.03]], ['school', 30, [0.006, 0.03]], ['work', 30, [0.0015, 0.04]], ['mill', 20, [0.005, 0.03]],
 ];
@@ -392,6 +459,17 @@ if (want('beds')) {
     await seed(8);
     const outd = await call('__renderBed', 'rain', 10, { indoor: 0, place: 'grove' }), ind = await call('__renderBed', 'rain', 10, { indoor: 1, place: 'hall' });
     R.ok('雨：在屋里是闷的', ind.centroid < outd.centroid * 0.6 && ind.rms < outd.rms, `屋外重心 ${outd.centroid}Hz 均方根 ${outd.rms}，屋里 ${ind.centroid}Hz ${ind.rms}`);
+  }
+  if (match('birds')) {
+    // 鸟：一声是几个很短的音素（song.ts），不是一个振荡器一路唱下去——试玩的人说开场的鸟叫瘆人：原先七成是纯音、一分钟里五六处拖长的哨音
+    await seed(141);
+    const all = { stream: 1, pond: 1, river: 1, waterfall: 1, bamboo: 1, pines: 1, grove: 1, fields: 1, village: 1, school: 1, work: 1, mill: 1 };
+    const t = await tonal({ seconds: 60, auto: false, beds: { birds: 1 }, scene: { place: 'grove', hour: 6.2, season: 'spring', indoor: 0, near: all } });
+    R.ok('鸟：没有拖长的纯音、没有慢慢滑过去的音，纯音不到一半', t.long === 0 && t.glides <= 1 && t.pure < 0.5, `纯音占 ${t.pure}，0.25 秒以上的 ${t.long} 条，滑过去的 ${t.glides} 条，最长一条 ${t.longest} 秒`);
+    // 刚进门的头一分钟：头一只鸟隔几秒才叫（桃林入口，春天上午，只听鸟那一组）
+    await seed(142);
+    const o = await tonal({ seconds: 25, scene: { place: 'grove', hour: 9.2, season: 'spring', indoor: 0, wind: 0.126, near: { grove: 0.956, stream: 0.02 } }, groups: { wind: 0, water: 0, insects: 0, weather: 0, village: 0 }, opening: true });
+    R.ok('刚进门：头一只鸟过了五秒才叫', o.first == null || o.first > 5, `头一声在第 ${o.first} 秒`);
   }
   if (match('cicadas')) {
     // 蝉要有起有落：四十段里最响与最轻差得出来

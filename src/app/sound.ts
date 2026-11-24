@@ -43,21 +43,45 @@ export function loadSound(): Promise<boolean> {
   })();
   return loading;
 }
-/** 能调的几样环境声：新的是六组（风、水、禽、虫、雨雪、村），旧的只有五层；外加可以开的「远琴」 */
+/** 能调的几样环境声：新的是六组（风、水、禽、虫、雨雪、村）与人声，旧的只有五层；外加可以开的「远琴」 */
 export function channels(): string[] {
   if (!au) return [];
   const groups = list('GROUP_NAMES'), out: string[] = [];
   if (has('setGroup') && groups?.length) out.push(...groups);
   else if (has('setLayer')) out.push(...Object.keys(LEGACY));
+  if (has('setVoices')) out.push('people');
   if (has('setExtra') || has('setLayer')) out.push('qin');
   return out;
 }
 /** 旧接口里各组叫什么 */
 const LEGACY: Record<string, string> = { wind: 'wind', water: 'stream', birds: 'birds', insects: 'insects', weather: 'rain' };
-/** 每一样默认的音量：各组 1（按场景算出来的原样），远琴不开 */
-export const defaultLevel = (id: string) => (id === 'qin' ? 0 : 1);
+/**
+ * 每一样默认的音量：各组 1（按场景算出来的原样）；远琴不开；人声（书声、说话、孩子笑）不开——
+ * 合成的人声最容易听着不像、听着瘆人（试玩的人说过书声瘆人），没有人用耳朵听过之前宁可不出。关着时村塾那里只有翻书、戒尺。
+ */
+export const defaultLevel = (id: string) => (id === 'qin' || id === 'people' ? 0 : 1);
+
+/**
+ * 几套现成的（声音册上头那一排）：各样的大小一齐换过去。选了哪一套不另记——各样的大小本来就存着（saved.sound），
+ * 此刻的大小正好是哪一套，那一套就亮着（presetOf）；自己再调过哪一样，就哪一套都不亮。
+ */
+export interface Preset { id: string; name: string; note: string; levels: Record<string, number> }
+export const PRESETS: readonly Preset[] = [
+  { id: 'shanju', name: '山居', note: '平常的样子：风、水、鸟、虫与村里的鸡犬活计，跟着时辰天气自己起落；不出人声。', levels: { wind: 1, water: 1, birds: 1, insects: 1, weather: 1, village: 1, people: 0, qin: 0 } },
+  { id: 'ziran', name: '纯自然', note: '只有风、水、鸟、虫、雨雪。村里的动静、人声、琴笛都不出。', levels: { wind: 1, water: 1, birds: 1, insects: 1, weather: 1, village: 0, people: 0, qin: 0 } },
+  { id: 'mingxiang', name: '冥想', note: '很轻：水声在，风小一些，鸟只剩零星几声，偶尔远远的几下琴（多是泛音）。', levels: { wind: 0.5, water: 0.75, birds: 0.25, insects: 0.25, weather: 0.75, village: 0, people: 0, qin: 0.5 } },
+  { id: 'renjian', name: '人间', note: '村里的人声也出来：村塾的书声、远处说话、孩子笑；风水往后退一些。人声是现算的，听着不像就换回去。', levels: { wind: 0.75, water: 0.75, birds: 0.75, insects: 0.5, weather: 0.75, village: 1, people: 1, qin: 0 } },
+  { id: 'jing', name: '静', note: '几乎无声：只留一点风声水声，和你自己走路、做事的声音。', levels: { wind: 0.25, water: 0.25, birds: 0, insects: 0, weather: 0.25, village: 0, people: 0, qin: 0 } },
+];
+/** 此刻这几样（ids）的大小正好是哪一套；都不是就 null */
+export function presetOf(levels: Record<string, number>, ids: readonly string[]): Preset | null {
+  if (!ids.length) return null;
+  return PRESETS.find((p) => ids.every((id) => Math.abs((levels[id] ?? defaultLevel(id)) - (p.levels[id] ?? defaultLevel(id))) < 0.01)) ?? null;
+}
 
 function open(p: SoundPrefs) {
+  // 先把各样的大小交过去（还没解锁也记得住），解锁时各层就按它建起来——人声不会先出一声再关掉
+  for (const id of channels()) setLevel(id, p.levels[id] ?? defaultLevel(id), 0);
   const after = () => {
     setMaster(p.master); setMuted(p.muted);
     for (const id of channels()) setLevel(id, p.levels[id] ?? defaultLevel(id), 3);
@@ -158,9 +182,10 @@ export function setScene(scene: Bag, legacy: Bag) {
 export function setListener(x: number, z: number, fx: number, fz: number) { call('setListener', x, z, fx, fz); }
 export function setMaster(v: number) { call('setMaster', v); }
 export function setMuted(m: boolean) { call('setMuted', m); }
-/** 一样环境声的音量（0 关 … 1 原样） */
+/** 一样环境声的音量（0 关 … 1 原样）；people 是人声 */
 export function setLevel(id: string, v: number, fade = 1.2) {
   if (id === 'qin') { if (has('setExtra')) call('setExtra', 'qin', v, fade); else call('setLayer', 'qin', v, fade); return; }
+  if (id === 'people') { call('setVoices', v, fade); return; }
   if (has('setGroup')) call('setGroup', id, v, fade);
   else if (LEGACY[id]) call('setLayer', LEGACY[id], v, fade);
 }

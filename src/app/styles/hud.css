@@ -24,11 +24,19 @@
 /* —— 右上：第几日、此刻的时辰与它的卦；简册 —— */
 .corner { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px)); display: grid; justify-items: end; gap: 10px; transition: opacity 0.7s; }
 .corner-bar { display: flex; height: 46px; border-radius: 2px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); }
-.when { display: flex; align-items: center; gap: 10px; padding: 0 13px 0 14px; color: var(--ink); border-radius: 3px 0 0 3px; transition: color 0.25s, background-color 0.25s; }
-.when-day { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.12em; color: var(--ink-2); white-space: nowrap; padding-right: 10px; border-right: 1px solid var(--rule-2); line-height: 18px; }
+.when { display: flex; align-items: center; gap: 10px; padding: 0 13px 0 11px; color: var(--ink); transition: color 0.25s, background-color 0.25s; }
+/* 「第几日」：单独一格（点它看「今日」），右边一道短竖线与时辰隔开 */
+.when-day { position: relative; display: flex; align-items: center; padding: 0 11px 0 14px; font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.12em; color: var(--ink-2); white-space: nowrap; line-height: 18px; border-radius: 2px 0 0 2px; transition: color 0.25s, background-color 0.25s; }
+.when-day::after { content: ''; position: absolute; right: 0; top: 50%; height: 18px; margin-top: -9px; border-right: 1px solid var(--rule-2); }
 .when span { font-family: var(--kai); font-size: 15px; letter-spacing: 0.16em; white-space: nowrap; }
 .when span i { margin: 0 0.22em; color: var(--ink-2); }
 .when .gua { width: 19px; }
+/* 时辰牌底下那道一天的线：白天实、夜里点；朱点是此刻（夜里换作一圈金，像月） */
+.when { position: relative; }
+.when-line { position: absolute; left: 12px; right: 12px; bottom: 5px; height: 5px; pointer-events: none; }
+.when-line::before { content: ''; position: absolute; left: 0; right: 0; top: 2px; height: 1px; opacity: 0.85; background: linear-gradient(to right, transparent calc(var(--rise) * 100%), var(--ink-3) calc(var(--rise) * 100%), var(--ink-3) calc(var(--set) * 100%), transparent calc(var(--set) * 100%)), repeating-linear-gradient(to right, var(--rule) 0 2px, transparent 2px 5px); }
+.when-line::after { content: ''; position: absolute; top: 0; left: calc(var(--at) * 100%); width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--mark); }
+.when-line.is-night::after { background: transparent; box-shadow: inset 0 0 0 1.3px var(--mark); }
 .menu-key { position: relative; isolation: isolate; width: 46px; border-left: 1px solid var(--rule-2); font-family: var(--brush); font-size: 19px; color: var(--ink); border-radius: 0 2px 2px 0; transition: background-color 0.25s, color 0.25s; }
 /* 「册」字底下一圈淡淡的墨环：这是翻册子的地方 */
 .menu-key::before { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; z-index: -1; background: var(--ink-3); opacity: 0.55; -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: transform 0.5s var(--out), opacity 0.3s, background-color 0.3s; pointer-events: none; }
@@ -36,10 +44,10 @@
 .menu-key.is-on { background: var(--wash-ink); }
 .menu-key.is-on::before { opacity: 1; background: var(--ink); transform: rotate(-25deg); }
 @media (hover: hover) {
-  .when:hover, .menu-key:hover { color: var(--ink-max); background: var(--wash-ink); }
+  .when:hover, .when-day:hover, .menu-key:hover { color: var(--ink-max); background: var(--wash-ink); }
   .menu-key:hover::before { opacity: 0.9; transform: rotate(-14deg) scale(1.04); }
 }
-.when:active, .menu-key:active { background: var(--wash-ink); }
+.when:active, .when-day:active, .menu-key:active { background: var(--wash-ink); }
 
 /* 简册：竹简并排，自右而左；两道细线是编绳。两卷：屏窄放不下时第二卷落到下一行 */
 .menu-back { position: fixed; inset: 0; }
@@ -114,6 +122,9 @@
 .run-key.is-on::before { transform: rotate(-30deg); background: var(--ink); }
 .run-key.is-on::after { transform: none; opacity: 1; }
 .run-key:active { transform: scale(0.95); }
+/* 环下一行小字：这一枚是做什么的（跑 / 慢下）；写在画上，身后一团纸色 */
+.run-key small { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px; font-family: var(--kai); font-size: 11.5px; line-height: 1; letter-spacing: 0.24em; text-indent: 0.24em; white-space: nowrap; color: var(--ink-2); text-shadow: 0 0 3px var(--wash), 0 0 7px var(--wash), 0 0 12px var(--wash); pointer-events: none; }
+.run-key.is-on small { color: var(--ink); }
 /* 一方印：印文是那件事的名字（昼是朱砂，夜是金） */
 /* 一方朱印（夜里是金）：印文是那件事的名字；盖下来的那一下（落印）。印本身不动（好按），身后一圈印泥色的晕一息一息地散开，招人去按 */
 .act-key { position: absolute; isolation: isolate; right: calc(var(--sar) + clamp(20px, 5.4vw, 46px)); bottom: calc(var(--sab) + clamp(34px, 8vh, 70px)); min-width: 64px; min-height: 64px; padding: 12px 11px; display: grid; place-items: center; border: 0; border-radius: 2px; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; color: var(--zhu-ink); box-shadow: none; animation: seal-down 0.55s var(--out) backwards; transition: transform 0.2s var(--out), opacity 0.5s, filter 0.2s; }
@@ -164,10 +175,18 @@
   100% { opacity: 0; transform: translateY(-6px); }
 }
 
+/* 窄屏（手机竖着）：两卷竹简排成一行、矮一些，只占右上一条，不把画面当中盖住；每枚的宽按屏宽分 */
 @media (max-width: 560px) {
-  .when { gap: 8px; padding: 0 11px 0 12px; }
+  .menu { flex-wrap: nowrap; gap: 6px; }
+  .slip { width: clamp(33px, calc((100vw - var(--sal) - var(--sar) - 34px) / 10), 46px); min-height: 100px; padding: 18px 0; }
+  .slip span { font-size: 15px; letter-spacing: 0.22em; }
+  .roll::before { top: 9px; }
+  .roll::after { bottom: 9px; }
+}
+@media (max-width: 560px) {
+  .when { gap: 8px; padding: 0 11px 0 9px; }
   .when span { font-size: 14.5px; }
-  .when-day { padding-right: 8px; font-size: 12px; }
+  .when-day { padding: 0 9px 0 12px; font-size: 12px; }
   .walk-hint { font-size: 13.5px; gap: 3px 16px; padding: 10px 14px; }
 }
 @media (max-height: 460px) {

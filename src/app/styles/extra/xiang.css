@@ -1,0 +1,65 @@
+/* 象卡（GuaCard：观象时的面板里、观象册里）。
+   层次：卦画与卦名最重；古人的话（卦辞、大象）用楷字，正常大小，各自后面一行出处靠右；
+   本应用自己的话（白话、所见、说明）用宋体、小一号，与上面隔一道细线，前面一个小小的楷字标签。
+   放不下就在面板（或册页）里滚，不截断。这一份排在 acts.css、sheets.css 之后，同样的选择器以它为准。 */
+.xiang { display: grid; gap: 14px; }
+.xiang blockquote, .xiang dl, .xiang dd, .xiang figure { margin: 0; padding: 0; }
+
+/* —— 古人的话 —— */
+.xiang-jing { display: grid; gap: 12px; }
+.xiang-quote { display: grid; gap: 1px; font: inherit; }
+.xiang-quote p { font-family: var(--kai); font-size: 16.5px; line-height: 1.85; letter-spacing: 0.08em; color: var(--ink); text-wrap: pretty; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.xiang-quote figcaption { font-family: var(--kai); font-size: 13px; line-height: 1.6; letter-spacing: 0.06em; color: var(--ink-2); text-align: right; }
+/* 「象曰」：一方小朱印（边不齐，同 .seal） */
+.xiang-image p i { display: inline-block; font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.1em; text-indent: 0.1em; color: var(--zhu-ink); background: var(--zhu); border: 0; border-radius: 2px; padding: 2px 5px 3px; margin-right: 10px; line-height: 1.3; vertical-align: 0.14em; -webkit-mask: var(--m-seal) 0 0 / 100% 100% no-repeat; mask: var(--m-seal) 0 0 / 100% 100% no-repeat; }
+
+/* —— 本应用自己的话 —— */
+.xiang-ours { display: grid; gap: 9px; padding-top: 13px; border-top: 1px solid var(--rule-2); }
+.xiang-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 12px; align-items: baseline; }
+.xiang-row dt { font-family: var(--kai); font-size: 12.5px; line-height: 1.9; letter-spacing: 0.12em; color: var(--ink-2); white-space: nowrap; }
+.xiang-row dd { font-size: 14px; line-height: 1.95; letter-spacing: 0.04em; color: var(--ink-2); text-align: justify; text-wrap: pretty; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+/* 所见：此刻眼前的景，比白话实一点 */
+.xiang-row.is-view dd { color: var(--ink); }
+.xiang-row.is-note dd { font-size: 13px; line-height: 1.9; }
+
+/* 观象时：卦画一爻一爻写出来，字随后浮起 */
+.xiang.is-draw .xiang-jing { animation: rise 0.7s 0.3s var(--out) backwards; }
+.xiang.is-draw .xiang-ours { animation: rise 0.7s 0.6s var(--out) backwards; }
+
+/* 观象册里：卡在方图下面，宽一些 */
+.xiang.is-full .xiang-quote p { font-size: 17px; }
+/* 方图的格子在手机上窄（八列挤一行，不到 40px）：点得着的那一圈往左右各撑出 4px，手指点得中 */
+@media (pointer: coarse) { .cell { position: relative; } .cell::after { content: ''; position: absolute; top: -2px; bottom: -2px; left: -4px; right: -4px; } }
+
+/* 竖屏（面板在下）：卦画、卦名小一点，把地方让给字 */
+@media (max-width: 599.98px), not all and (min-aspect-ratio: 23/20) {
+  .panel .xiang { gap: 12px; }
+  .panel .xiang-top { gap: 18px; }
+  .panel .xiang-top .gua { width: 54px; }
+  .panel .xiang-name { gap: 6px; }
+  .panel .xiang-name h4 { font-size: 36px; }
+  .panel .xiang-name h4.is-kai { font-size: 31px; }
+  .panel .xiang-jing { gap: 10px; }
+}
+/* 很窄的手机（SE 一类） */
+@media (max-width: 380px) {
+  .xiang-quote p { font-size: 15.5px; letter-spacing: 0.06em; }
+  .xiang.is-full .xiang-quote p { font-size: 16px; }
+  .xiang-row { gap: 0 10px; }
+  .xiang-row dd { font-size: 13.5px; line-height: 1.9; }
+  .xiang-row.is-note dd { font-size: 13px; }
+}
+/* 很矮的屏（横着的手机）：再紧一些 */
+@media (max-height: 460px) {
+  .xiang { gap: 9px; }
+  .xiang-top .gua { width: 46px; }
+  .xiang-name h4 { font-size: 30px; }
+  .xiang-name h4.is-kai { font-size: 27px; }
+  .xiang-name p { font-size: 13px; }
+  .xiang-jing { gap: 7px; }
+  .xiang-quote p, .xiang.is-full .xiang-quote p { font-size: 15px; line-height: 1.7; }
+  .xiang-quote figcaption { font-size: 12.5px; line-height: 1.5; }
+  .xiang-ours { gap: 6px; padding-top: 9px; }
+  .xiang-row dt { font-size: 12px; line-height: 1.75; }
+  .xiang-row dd { font-size: 13px; line-height: 1.75; }
+}

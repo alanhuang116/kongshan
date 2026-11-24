@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import type { World } from './core/World';
 import type { Player } from './player';
 import { PLACES as SITE_PLACES, SITE } from './site';
-import { boom, groundAt, placeAt, type Place, type Zone } from './walk';
+import { boom, groundAt, placeAt, type Place, type Zone, blocked } from './walk';
 
 /** 跟随时的视角（度）、俯仰（弧度）、远近（米） */
 export const FOLLOW_FOV = 42, FOLLOW_PITCH = 0.14, FOLLOW_DIST = 8;
@@ -28,7 +28,11 @@ export interface PlaceDef {
 export const PLACES: PlaceDef[] = SITE_PLACES.map((p) => ({ id: p.id, name: p.name, sub: p.note, spawn: p.spawn }));
 export const PLACE = new Map(PLACES.map((p) => [p.id, p]));
 
-export interface Pose { pos: THREE.Vector3; look: THREE.Vector3; fov?: number; yaw?: number; up?: number; down?: number }
+/**
+ * 活动的机位。yaw / up / down：拖动时能往左右、上下张望几度。
+ * orbit（度）：给了就不是在原地张望，而是绕着看的那一点转（左右最多转这么多度、上下按 up / down），被墙挡着就收近一些——摸狗这样的近景用它。
+ */
+export interface Pose { pos: THREE.Vector3; look: THREE.Vector3; fov?: number; yaw?: number; up?: number; down?: number; orbit?: number }
 
 const ease5 = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -59,6 +63,8 @@ export class Nav {
   private pose: Pose | null = null; private poseK = 1; private poseDur = 1.2; private poseOut = false;
   private from = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: FOLLOW_FOV };
   private offYaw = 0; private offPitch = 0; private offYawG = 0; private offPitchG = 0; private zoom = 0; private zoomG = 0;
+  /** 绕着看时镜头离看的那一点多远（被墙挡着收近，收得快、放得慢） */
+  private orbitD = 0; private orbitP = new THREE.Vector3();
   private pos = new THREE.Vector3(); private look = new THREE.Vector3(); private fov = FOLLOW_FOV;
   private fpos = new THREE.Vector3(); private flook = new THREE.Vector3();
   private tmp = new THREE.Vector3();
@@ -99,6 +105,7 @@ export class Nav {
       return;
     }
     this.pose = p; this.poseOut = false; this.poseK = 0; this.poseDur = dur;
+    this.orbitD = p.pos.distanceTo(p.look);
   }
 
   /** 拖动：平时绕着人转；做事时在机位附近张望 */
@@ -106,6 +113,14 @@ export class Nav {
     if (this.busy) return;
     if (this.pose && !this.poseOut) {
       const k = (this.fov / FOLLOW_FOV) * 0.11, p = this.pose;
+      if (p.orbit) {
+        // 绕着转：手往右拖，镜头往左绕（景跟着手走）；往上拖，镜头低下去、往上看
+        // 转到有墙、有屋、有柱子挡着的那一面就停住（不往东西里挤）
+        const next = Math.max(-p.orbit, Math.min(p.orbit, this.offYawG - dx * 0.32));
+        if (this.orbitClear(p, next)) this.offYawG = next;
+        this.offPitchG = Math.max(-(p.down ?? 10), Math.min(p.up ?? 25, this.offPitchG + dy * 0.2));
+        return;
+      }
       this.offYawG = Math.max(-(p.yaw ?? 12), Math.min(p.yaw ?? 12, this.offYawG + dx * k));
       this.offPitchG = Math.max(-(p.down ?? 8), Math.min(p.up ?? 8, this.offPitchG + dy * k));
       return;
@@ -214,7 +229,7 @@ export class Nav {
     if (this.pose) {
       this.poseK = Math.min(1, this.poseK + dt / this.poseDur);
       const k = ease5(this.poseK);
-      const tp = this.poseOut ? this.fpos : this.pose.pos, tl = this.poseOut ? this.flook : this.pose.look;
+      const tp = this.poseOut ? this.fpos : this.pose.orbit ? this.orbitPos(this.pose, dt) : this.pose.pos, tl = this.poseOut ? this.flook : this.pose.look;
       this.pos.lerpVectors(this.from.pos, tp, k); this.look.lerpVectors(this.from.look, tl, k);
       this.fov = this.from.fov + ((this.poseOut ? FOLLOW_FOV : this.pose.fov ?? 40) - this.from.fov) * k;
       if (this.poseOut && this.poseK >= 1) { this.pose = null; this.poseOut = false; }
@@ -233,7 +248,7 @@ export class Nav {
     cam.lookAt(this.look);
     if (this.pose && !this.poseOut) {
       cam.position.y += Math.sin(t * 0.7) * 0.004;
-      if (this.offYaw || this.offPitch) { cam.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), (this.offYaw * Math.PI) / 180); cam.rotateX((this.offPitch * Math.PI) / 180); }
+      if (!this.pose.orbit && (this.offYaw || this.offPitch)) { cam.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), (this.offYaw * Math.PI) / 180); cam.rotateX((this.offPitch * Math.PI) / 180); }
     }
     // 竖屏：横向会窄，把竖直视角放大一些，别把景裁没了
     const a = cam.aspect, base = (this.fov * (1 - 0.3 * this.zoom) * Math.PI) / 180;
@@ -250,6 +265,28 @@ export class Nav {
       cam.rotateX(-this.frameS.y * v);
     }
     cam.updateMatrixWorld();
+  }
+
+  /** 绕到 offYaw（度）那一面时，镜头与看的那一点之间是不是空的（高墙、屋、柱、篱笆都算） */
+  private orbitClear(p: Pose, offYaw: number): boolean {
+    const L = p.look, vx = p.pos.x - L.x, vz = p.pos.z - L.z, r = Math.hypot(vx, vz) || 1;
+    const yaw = Math.atan2(vx, vz) + (offYaw * Math.PI) / 180, ex = L.x + Math.sin(yaw) * r, ez = L.z + Math.cos(yaw) * r;
+    if (boom(L.x, L.z, ex, ez, this.player.zone) < 0.92) return false;
+    for (let t = 0.35; t <= 1.001; t += 0.13) if (blocked(L.x + (ex - L.x) * t, L.z + (ez - L.z) * t, this.player.zone, 0.06)) return false;
+    return true;
+  }
+  /** 绕着看的机位：把原来的机位绕看的那一点转过 offYaw、抬高 offPitch；被墙挡着就收近（不进墙、不钻地） */
+  private orbitPos(p: Pose, dt: number): THREE.Vector3 {
+    const L = p.look, vx = p.pos.x - L.x, vy = p.pos.y - L.y, vz = p.pos.z - L.z, r = Math.hypot(vx, vy, vz) || 1;
+    const yaw = Math.atan2(vx, vz) + (this.offYaw * Math.PI) / 180;
+    const el = Math.max(-0.12, Math.min(1.25, Math.asin(Math.max(-1, Math.min(1, vy / r))) + (this.offPitch * Math.PI) / 180));
+    const ch = Math.cos(el), want = boom(L.x, L.z, L.x + Math.sin(yaw) * ch * r, L.z + Math.cos(yaw) * ch * r, this.player.zone);
+    const d = want < 0.999 ? Math.max(0.8, r * want - 0.3) : r;
+    this.orbitD += (d - this.orbitD) * Math.min(1, dt * (d < this.orbitD ? 14 : 2.5));
+    const o = this.orbitP.set(L.x + Math.sin(yaw) * ch * this.orbitD, L.y + Math.sin(el) * this.orbitD, L.z + Math.cos(yaw) * ch * this.orbitD);
+    const g = groundAt(o.x, o.z, this.player.zone);
+    if (g != null && o.y < g + 0.3) o.y = g + 0.3;
+    return o;
   }
 
   /** 世界里的一点落在屏幕的哪里（像素）；在镜头后面或画面外则 visible 为假 */

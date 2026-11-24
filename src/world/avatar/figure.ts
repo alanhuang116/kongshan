@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import type { Quality } from '../core/World';
 import { wash } from '../ink/ink';
 import { LoftGeo } from './loft';
-import { ATLAS, HEAD_UP, TEX, bodyV, buildBack, buildFoot, buildHand, buildHead, paintAtlas, resolveLook, tones } from './parts';
+import { ATLAS, CAPE, HEAD_UP, RAIN_HAT, TEX, bodyV, buildBack, buildFoot, buildHand, buildHead, buildRainCape, buildRainHat, buildWrist, paintAtlas, resolveLook, tones } from './parts';
 import type { Avatar, GestureName, HandsName, Look, PoseName, ReachOpts, Seat, Side } from './types';
 
 export type { Seat } from './types';
@@ -103,6 +103,8 @@ const FOOT_BALL = [[0, 0.03, -0.035, 0.045], [0, 0.026, 0.045, 0.042], [0, 0.018
 const BALL_STEP = 0.05, MAX_BALL = 64;
 /** 垂着、摆着的手离衣身至少多远：掌心、指尖（往指尖方向多远算指尖） */
 const HAND_GAP = 0.04, TIP_GAP = 0.022, TIP_LEN = 0.065;
+/** 攥着一根杆时，掌心离杆的中线多远（掌厚一半加杆的粗细） */
+const GRIP_OFF = 0.026;
 /** 落脚点正压在台阶的棱上时，往前或往后挪开多少（依次试） */
 const EDGE_TRY = [0.06, -0.06, 0.12, -0.12, 0.18, -0.18];
 const HEM_N = 8;                  // 沿下摆量几个点的地面（只在台阶、坡上量）
@@ -186,6 +188,7 @@ const newFoot = (s: number): Foot => ({ s, x: s * FOOT_X, y: 0, z: 0, lift: 0, p
 interface Arm {
   s: number;                       // +1 左（+x），−1 右
   reach: THREE.Vector3 | null; rDir: THREE.Vector3 | null; rPalm: THREE.Vector3 | null; rate: number; rw: number; rpos: THREE.Vector3; rd: THREE.Vector3; rn: THREE.Vector3;
+  /** 攥着的那根杆的方向（世界；见 ReachOpts.grip） */ rGrip: THREE.Vector3 | null;
   S: THREE.Vector3; E: THREE.Vector3; W: THREE.Vector3; P: THREE.Vector3; D: THREE.Vector3; prevW: THREE.Vector3;
   bagU: THREE.Vector3; bagF: THREE.Vector3; init: boolean;
   joint: THREE.Object3D;
@@ -205,6 +208,8 @@ export class Figure implements Avatar {
   readonly look: Look;
   joints: Avatar['joints'];
   bow = 0;
+  /** 上身另外扭多少（弧度，正是往左转；外面给目标值，这里带一点缓冲） */
+  twist = 0; private twistS = 0;
   onStep: ((foot: Side) => void) | null = null;
   /** 三角数、绘制次数 */
   stats = { triangles: 0, draws: 0 };
@@ -235,7 +240,7 @@ export class Figure implements Avatar {
   /** 闲时的小动作：哪一个、做了多久、偏哪只手、收没收；整体的分量 */
   private gst: { name: GestureName; t: number; side: 1 | -1; out: boolean } | null = null; private gW = 0;
   /** 小动作在这一刻给的：头的俯仰与左右、胸往后仰、上身扭；两手要不要负到身后、按小动作给的去处（胸的坐标：x 左、y 上、z 前，原点胸心） */
-  private gO = { headP: 0, headY: 0, arch: 0, twist: 0, lift: 0, backL: 0, backR: 0, wL: 0, wR: 0, pL: V(), dL: V(), nL: V(), pR: V(), dR: V(), nR: V() };
+  private gO = { headP: 0, headY: 0, arch: 0, twist: 0, lift: 0, backL: 0, backR: 0, wL: 0, wR: 0, pL: V(), dL: V(), nL: V(), pR: V(), dR: V(), nR: V(), brimL: 0, brimR: 0 };
   private lastPos = V(); private hasLast = false; private vel = V(); private vLoc = V();
   private iq = new THREE.Quaternion();
   private hatSwing = 0; private hatV = 0;
@@ -246,6 +251,17 @@ export class Figure implements Avatar {
   private mats: THREE.Material[] = []; private texs: THREE.Texture[] = [];
   /** 衣长、摆张开几成、袖子的肥瘦、是不是露着小腿、背上有没有东西 */
   private hem: number; private flare: number; private sleeveK: number; private bare: boolean; private hasBack = false;
+  /** 两腕那两块在几何里排第几（左、右挨着） */
+  private chWrist = 0;
+  /**
+   * 雨具（斗笠、蓑衣）：gear 是外面要的成数（0…1，下雨下雪在外头给 1），gearS 是此刻穿戴到几成（约一秒穿好、卸下）。
+   * 斗笠、蓑衣各是几何里的一块（本来就戴着斗笠、披着蓑衣的人不另加：chHat / chCape 为 −1）；hatFromBack：斗笠本来背在背上（樵夫、放羊的），
+   * 戴的时候就是把背上那顶翻上头。hatM：斗笠此刻摆在哪（小人的坐标）；donW：右手扶着笠沿跟过去的分量
+   */
+  gear = 0; private gearS = 0; private chHat = -1; private chCape = -1; private hatFromBack = false;
+  private hatOn = false; private capeOn = false; private hatM = new THREE.Matrix4(); private donW = 0; private gearLast = 0;
+  /** 斗笠戴在头上（颈的坐标）、背在背上（胸的坐标）时的摆法 */
+  private hatHead = new THREE.Matrix4(); private hatBack = new THREE.Matrix4();
 
   // 圈与表
   private segs: number; private nlow: number; private srs: SRing[]; private segS: number; private segK: number;
@@ -321,8 +337,21 @@ export class Figure implements Avatar {
     const backG = buildBack(lk, low), footG = buildFoot(lk, low);
     const rigid = [buildHead(lk, low), buildHand(lk, low, 1), buildHand(lk, low, -1), footG, footG];
     if (backG) { rigid.push(backG); this.hasBack = true; }
+    // 两腕（顺着小臂摆的那一截）：排在后头，前面几块的次序不变（tests/play/clip.js 按次序找手、脚）
+    const wristG = buildWrist(lk, low);
+    this.chWrist = rigid.length; rigid.push(wristG, wristG);
+    // 雨具：本来戴着斗笠的不另加斗笠，本来披着蓑衣的不另加蓑衣
+    if (!(lk.hat === 'li' && lk.hatWorn)) { this.chHat = rigid.length; rigid.push(buildRainHat(low)); this.hatFromBack = lk.hat === 'li'; }
+    if (!lk.cape) { this.chCape = rigid.length; rigid.push(buildRainCape(low)); }
+    // 戴着：沿压到眉上一点、略往后仰，露出脸来（髻、巾顶都在笠里）；背着：笠面朝后贴着背，与背斗笠的人那一顶一样
+    this.hatHead.makeScale(lk.head, lk.head, lk.head).multiply(new THREE.Matrix4().makeTranslation(0, HEAD_UP, 0.008))
+      .multiply(new THREE.Matrix4().compose(new THREE.Vector3(0, 0.034, -0.014), new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0, 0)), new THREE.Vector3(1, 1, 1)));
+    this.hatBack.compose(new THREE.Vector3(0.012, -0.03, -0.15), new THREE.Quaternion().setFromEuler(new THREE.Euler(-(Math.PI / 2 - 0.2), 0.06, 0.14, 'YXZ')), new THREE.Vector3(0.86, 0.86, 0.86));
     const L = (this.loft = new LoftGeo([{ rings: bodyRings, segs: S }, { rings: slRings, segs: SS }, { rings: slRings, segs: SS }, { rings: 4, segs: SK }, { rings: 4, segs: SK }], rigid));
     for (const g of new Set(rigid)) g.dispose();
+    // 雨具平时收着（收成一点，看不见）
+    if (this.chHat >= 0) L.place(this.chHat, null);
+    if (this.chCape >= 0) L.place(this.chCape, null);
     // 里子（下摆、袖口、领口往里折的那几圈）压成深色：衣里是暗的，人才有分量
     const dark = [0.26, 0.275, 0.3], RU = ATLAS.robeU;
     for (let r = 0; r < bodyRings; r++) {
@@ -369,7 +398,7 @@ export class Figure implements Avatar {
     this.root.add(hips, chest, neck, handL, handR, footL, footR);
     this.head = neck; this.hat = back; this.feet = { L: footL, R: footR };
     this.joints = { hips, chest, head: headJ, handL, handR };
-    const arm = (s: number, joint: THREE.Object3D): Arm => ({ s, reach: null, rDir: null, rPalm: null, rate: 10, rw: 0, rpos: V(), rd: new THREE.Vector3(0, -1, 0), rn: new THREE.Vector3(-s, 0, 0), S: V(), E: V(), W: V(), P: V(), D: new THREE.Vector3(0, -1, 0), prevW: V(), bagU: new THREE.Vector3(0, -0.2, -1).normalize(), bagF: new THREE.Vector3(0, -0.2, -1).normalize(), init: false, joint });
+    const arm = (s: number, joint: THREE.Object3D): Arm => ({ s, reach: null, rDir: null, rPalm: null, rGrip: null, rate: 10, rw: 0, rpos: V(), rd: new THREE.Vector3(0, -1, 0), rn: new THREE.Vector3(-s, 0, 0), S: V(), E: V(), W: V(), P: V(), D: new THREE.Vector3(0, -1, 0), prevW: V(), bagU: new THREE.Vector3(0, -0.2, -1).normalize(), bagF: new THREE.Vector3(0, -0.2, -1).normalize(), init: false, joint });
     this.arms = { L: arm(1, handL), R: arm(-1, handR) };
     this.stats.triangles = Math.round(L.triangles);
     this.stats.draws = 1;
@@ -408,17 +437,24 @@ export class Figure implements Avatar {
   setGround(fn: GroundFn | null) { this.ground = fn; this.fL.has = this.fR.has = false; }
   reach(side: Side, target: THREE.Vector3 | null, o: ReachOpts = {}) {
     const a = this.arms[side];
-    if (!target) { a.reach = null; a.rDir = null; a.rPalm = null; return; }
+    if (!target) { a.reach = null; a.rDir = null; a.rPalm = null; a.rGrip = null; return; }
     if (!a.reach) { a.reach = V(); if (a.rw < 0.02) { a.rpos.copy(a.P); a.rd.copy(a.D); } }
     a.reach.copy(target);
     a.rDir = o.dir ? (a.rDir ?? V()).copy(o.dir) : null;
     a.rPalm = o.palm ? (a.rPalm ?? V()).copy(o.palm) : null;
+    a.rGrip = o.grip && o.grip.lengthSq() > 1e-8 ? (a.rGrip ?? V()).copy(o.grip).normalize() : null;
     a.rate = o.rate ?? 10;
   }
   lookAt(p: THREE.Vector3 | null) { this.lookT = p ? (this.lookT ?? V()).copy(p) : null; }
   setVisible(v: boolean) { this.root.visible = v; }
   /** 此刻（要换成的）手的摆法 */
   get hands(): HandsName { return this.hands1; }
+  /** 雨具：要戴几成（0…1）；instant 为真就直接戴好、卸下（没人看着、刚换了处的时候不演那一下） */
+  setGear(v: number, instant = false) { this.gear = clamp(v || 0, 0, 1); if (instant) this.gearS = this.gear; }
+  /** 此刻雨具穿戴到几成（0…1） */
+  get gearK(): number { return this.gearS; }
+  /** 头上有没有斗笠（本来戴着的，或雨天戴上了大半的） */
+  private get hatted(): boolean { return (this.look.hat === 'li' && this.look.hatWorn) || (this.chHat >= 0 && this.gearS > 0.6); }
   /** 闲时的一个小动作（见 types.ts 的 GestureName）。被占着时不做；null 收住（shade 只有这样才放下） */
   gesture(name: GestureName | null, side?: 1 | -1) {
     if (!name) { if (this.gst) this.gst.out = true; return; }
@@ -607,11 +643,14 @@ export class Figure implements Avatar {
     // —— 脊：自胯往上各站的位置、前倾、扭转 ——
     const C = this.stC, SP = this.stP, ST = this.stT;
     const baseP = lean + bHip, Wl = W.lie;
+    // 外面要的上身扭转（扫地时腰带着帚走）：带一点缓冲
+    this.twistS += (clamp(this.twist || 0, -0.6, 0.6) - this.twistS) * Math.min(1, dt * 9);
+    const tw = this.twistS * (1 - Wl);
     for (let k = 0; k < NUP; k++) {
       const y = UP[k][0];
       // （躺着整条脊一样平；别的姿态腰以下弯得少）
       SP[k] = baseP * lerp(0.3 + 0.7 * smooth(0.8, 0.955, y), 1, Wl) + (bSp + G.arch) * smooth(0.985, 1.215, y);
-      ST[k] = lerp(yawP, yawS, smooth(0.82, 1.25, y)) + 0.28 * lkY * (1 - Wl) * smooth(1.0, 1.25, y) + G.twist * smooth(0.9, 1.25, y);
+      ST[k] = lerp(yawP, yawS, smooth(0.82, 1.25, y)) + 0.28 * lkY * (1 - Wl) * smooth(1.0, 1.25, y) + G.twist * smooth(0.9, 1.25, y) + tw * smooth(0.86, 1.22, y);
     }
     // 第一站在骨盆心往下（躺平时是往脚那边）四厘米
     C[0] = px; C[1] = py - 0.04 * (1 - Wl); C[2] = pz + 0.04 * Wl;
@@ -655,6 +694,9 @@ export class Figure implements Avatar {
       this.head.quaternion.slerp(q, Wl);
     }
 
+    // —— 雨具：成数往要的那边走；斗笠此刻摆在哪（右手空着就扶着笠沿跟过去） ——
+    this.gearStep(dt, W);
+
     // —— 两臂（左臂随右腿摆）。走：跟着对侧那只脚的前后；跑：按步态的相位匀匀地摆（左臂在右脚落地时最前） ——
     const sw = 1 / Math.max(0.2, reachF), pr = 2 * Math.PI * (ph - 0.04);
     this.solveArm(this.arms.L, dt, A, lerp((FR.z + back) * sw, -Math.cos(pr), run), run, b);
@@ -679,10 +721,11 @@ export class Figure implements Avatar {
    */
   private gestureStep(dt: number, t: number) {
     const o = this.gO, g = this.gst;
-    o.headP = o.headY = o.arch = o.twist = o.lift = 0; o.backL = o.backR = o.wL = o.wR = 0;
+    o.headP = o.headY = o.arch = o.twist = o.lift = 0; o.backL = o.backR = o.wL = o.wR = 0; o.brimL = o.brimR = 0;
     if (!g) { this.gW = 0; return; }
     g.t += dt;
-    const walking = g.name === 'look' || g.name === 'shade', dur = G_DUR[g.name];
+    // （头上有斗笠时，shade 是扶一扶笠沿：做一会儿就放下）
+    const walking = g.name === 'look' || g.name === 'shade', dur = g.name === 'shade' && this.hatted ? 2.6 : G_DUR[g.name];
     const stop = g.out || g.t >= dur || this.engaged || (!walking && this.amp > 0.2) || (g.name === 'shade' && this.ga > RUN_A);
     this.gW = stop ? Math.max(0, this.gW - dt / 0.4) : Math.min(1, this.gW + dt / 0.35);
     if (stop && this.gW <= 0) { this.gst = null; return; }
@@ -758,6 +801,13 @@ export class Figure implements Avatar {
         break;
       }
       case 'shade': {
+        if (this.hatted) {
+          // 头上有斗笠：一只手抬起来扶一扶笠沿（往下压一压，雨大风斜时那样），头略低，一会儿就放下
+          const e = env(0.6, 0.7) * W;
+          if (s > 0) o.brimL = e; else o.brimR = e;
+          o.headP = 0.1 * e;
+          break;
+        }
         // 抬袖遮雨：一只小臂斜横在额前略高处，大袖垂下来挡着头脸；头低一点
         const e = env(0.6, 0.5) * W;
         hand(true, e, -0.03, 0.42, 0.21, -1, 0.28, 0.22, 0, -1, 0.25);
@@ -789,9 +839,114 @@ export class Figure implements Avatar {
     this.head.updateMatrix(); L.place(CH.head, this.head.matrix);
     a.L.joint.updateMatrix(); L.place(CH.handL, a.L.joint.matrix);
     a.R.joint.updateMatrix(); L.place(CH.handR, a.R.joint.matrix);
+    this.placeWrist(this.chWrist, a.L); this.placeWrist(this.chWrist + 1, a.R);
     f.L.updateMatrix(); L.place(CH.footL, f.L.visible ? f.L.matrix : null);
     f.R.updateMatrix(); L.place(CH.footR, f.R.visible ? f.R.matrix : null);
-    if (this.hasBack) { const c = this.joints.chest; c.updateMatrix(); this.hat.updateMatrix(); L.place(CH.back, this.m1.multiplyMatrices(c.matrix, this.hat.matrix)); }
+    // 背上的东西（背着的斗笠、蓑衣）；背着的那顶斗笠被翻上头去了（雨天），背上就空了
+    if (this.hasBack) {
+      if (this.hatFromBack && this.gearS > 0.001) L.place(CH.back, null);
+      else { const c = this.joints.chest; c.updateMatrix(); this.hat.updateMatrix(); L.place(CH.back, this.m1.multiplyMatrices(c.matrix, this.hat.matrix)); }
+    }
+    // 雨具：斗笠（gearStep 里摆好的那一处）、蓑衣；不戴时收成一点（收过了就不再每帧去收）
+    if (this.chHat >= 0) {
+      if (this.gearS > 0.001) { L.place(this.chHat, this.hatM); this.hatOn = true; }
+      else if (this.hatOn) { L.place(this.chHat, null); this.hatOn = false; }
+    }
+    this.placeCape();
+  }
+
+  /**
+   * 雨具走一帧：成数往 gear 走（穿约一秒、卸略快一点）；斗笠此刻在哪——背上那一处与头上那一处之间，中途往上、往后让开头，
+   * 像是从背后翻上来（本来不背斗笠的人，头一成里斗笠在背后由小长到原样）。右手空着、站着时，戴与摘的那一下扶着笠沿。
+   */
+  private gearStep(dt: number, W: W4) {
+    const want = clamp(this.gear || 0, 0, 1), g0 = this.gearS;
+    if (g0 !== want) this.gearS = want > g0 ? Math.min(want, g0 + dt / 1.05) : Math.max(want, g0 - dt / 0.85);
+    const moving = this.gearS !== this.gearLast;
+    this.gearLast = this.gearS;
+    if (this.chHat >= 0 && this.gearS > 0.001) {
+      const e = ease3(clamp(this.gearS, 0, 1));
+      this.head.updateMatrix();
+      _hm1.multiplyMatrices(this.head.matrix, this.hatHead).decompose(_hp1, _hq1, _hs1);
+      const c = this.joints.chest; c.updateMatrix(); this.hat.updateMatrix();
+      _hm0.multiplyMatrices(c.matrix, this.hat.matrix).multiply(this.hatBack).decompose(_hp0, _hq0, _hs0);
+      const arc = Math.sin(Math.PI * e);
+      _hp.lerpVectors(_hp0, _hp1, e); _hp.y += 0.12 * arc; _hp.addScaledVector(this.cF, -0.06 * arc);
+      _hq.slerpQuaternions(_hq0, _hq1, e);
+      const s = lerp(_hs0.x, _hs1.x, e) * (this.hatFromBack ? 1 : smooth(0, 0.16, this.gearS));
+      this.hatM.compose(_hp, _hq, _hs.set(s, s, s));
+    }
+    const R = this.arms.R, free = !R.reach && R.rw < 0.05 && R.joint.children.length === 0 && this.gW < 0.05 && W.stand > 0.9;
+    const w = this.chHat >= 0 && moving && free ? Math.pow(Math.sin(Math.PI * clamp(this.gearS, 0, 1)), 0.6) : 0;
+    this.donW += (w - this.donW) * Math.min(1, dt * 9);
+  }
+  /**
+   * 笠沿上偏 s 那一侧（1 左、−1 右）前方的一点，与扶着它的手：掌心在沿下略靠外、朝里朝上托着，手指顺着沿往前。
+   * 头上有斗笠才有（雨天戴上的那顶，或本来就戴着的）；没有返回 false
+   */
+  private brimPoint(s: number, P: THREE.Vector3, D: THREE.Vector3, N: THREE.Vector3): boolean {
+    let m: THREE.Matrix4, r: number;
+    if (this.chHat >= 0 && this.gearS > 0.001) { m = this.hatM; r = RAIN_HAT.r; }
+    else if (this.look.hat === 'li' && this.look.hatWorn) {
+      this.head.updateMatrix();
+      m = _hm0.multiplyMatrices(this.head.matrix, _hm1.makeScale(this.look.head, this.look.head, this.look.head)).multiply(_hm2.makeTranslation(0, HEAD_UP, 0.008)).multiply(_hm2.compose(_hp.set(0, 0.018, -0.012), _hq.setFromEuler(this.e1.set(-0.13, 0, 0.03)), _hs.set(1, 1, 1)));
+      r = 0.262;
+    } else return false;
+    const a = 0.75, sx = s * Math.sin(a), cz = Math.cos(a);
+    P.set(sx * (r + 0.012), -0.022, cz * (r + 0.012)).applyMatrix4(m);
+    _hq.setFromRotationMatrix(_hm2.extractRotation(m));
+    D.set(-s * cz, 0.1, Math.abs(sx)).normalize().applyQuaternion(_hq);
+    N.set(-sx * 0.6, 0.8, -cz * 0.6).normalize().applyQuaternion(_hq);
+    return true;
+  }
+  /**
+   * 蓑衣：自领口往下披（穿的时候一成成落下来、张开），跟着胸走；袖子（臂）顶到哪里，那一片就撑出去盖在袖子上，
+   * 不让臂、袖从草里穿出来（量的是肩 → 肘 → 袖口两段，按袖子的肥瘦当一根胶囊）。
+   */
+  private placeCape() {
+    const L = this.loft, ci = this.chCape;
+    if (ci < 0) return;
+    if (this.gearS <= 0.001) { if (this.capeOn) { L.place(ci, null); this.capeOn = false; } return; }
+    this.capeOn = true;
+    const ch = L.chunks[ci], P = L.pos, N = L.nor, S = ch.src, SN = ch.srcN;
+    // （坐着、跪着、蹲着时下沿收上去一截：不插进铺在地上的衣摆里）
+    const e = ease3(clamp(this.gearS / 0.9, 0, 1)), drop = lerp(0.1, 1, e) * (1 - 0.38 * (1 - this.w.stand)), sc = lerp(0.6, 1, e), y0 = CAPE.top;
+    const c = this.joints.chest; c.updateMatrix();
+    const m = c.matrix.elements, aL = this.arms.L, aR = this.arms.R, full = this.sleeveK;
+    for (let i = 0, q = 0, o = ch.off * 3; i < ch.n; i++, q += 3, o += 3) {
+      const lx = S[q] * sc, ly = y0 + (S[q + 1] - y0) * drop, lz = S[q + 2] * sc;
+      _cp.set(m[0] * lx + m[4] * ly + m[8] * lz + m[12], m[1] * lx + m[5] * ly + m[9] * lz + m[13], m[2] * lx + m[6] * ly + m[10] * lz + m[14]);
+      for (const a of [aL, aR]) { this.pushOff(_cp, a.S, a.E, 0, full); this.pushOff(_cp, a.E, a.W, 0.5, full); }
+      P[o] = _cp.x; P[o + 1] = _cp.y; P[o + 2] = _cp.z;
+      const nx = SN[q], ny = SN[q + 1], nz = SN[q + 2];
+      N[o] = m[0] * nx + m[4] * ny + m[8] * nz; N[o + 1] = m[1] * nx + m[5] * ny + m[9] * nz; N[o + 2] = m[2] * nx + m[6] * ny + m[10] * nz;
+    }
+  }
+  /** 把点 p 推到 a→b 这一段（袖子）外头：袖子在臂上 s0 起（0 肩、0.5 肘），越近袖口越肥 */
+  private pushOff(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, s0: number, full: number) {
+    const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z, l2 = abx * abx + aby * aby + abz * abz;
+    if (l2 < 1e-8) return;
+    const t = clamp(((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / l2, 0, 1);
+    const cx = a.x + abx * t, cy = a.y + aby * t, cz = a.z + abz * t;
+    let dx = p.x - cx, dy = p.y - cy, dz = p.z - cz;
+    const r = lerp(0.055, 0.068 + 0.075 * (s0 + 0.5 * t), full) + 0.014, d = Math.hypot(dx, dy, dz);
+    if (d >= r) return;
+    if (d < 1e-5) { dx = cx - this.stC[0]; dy = 0; dz = cz - this.stC[2]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; p.set(cx + dx * r, cy, cz + dz * r); return; }
+    const k = r / d;
+    p.set(cx + dx * k, cy + dy * k, cz + dz * k);
+  }
+
+  /** 腕那一截：原点在腕上，+y 顺着小臂（肘 → 腕）；手心那一面跟着手 */
+  private placeWrist(ch: number, a: Arm) {
+    const y = _wy.subVectors(a.W, a.E);
+    if (y.lengthSq() < 1e-8) y.copy(a.D);
+    y.normalize();
+    const z = _wz.set(0, 0, 1).applyQuaternion(a.joint.quaternion);
+    z.addScaledVector(y, -z.dot(y));
+    if (z.lengthSq() < 1e-6) z.set(1, 0, 0).addScaledVector(y, -y.x);
+    z.normalize();
+    this.m1.makeBasis(_wx.crossVectors(y, z), y, z).setPosition(a.W);
+    this.loft.place(ch, this.m1);
   }
 
   /** 一只脚走一帧。pf：这只脚自己的相位（0 是脚跟着地）；zLand：落脚时在身前多远 */
@@ -967,16 +1122,37 @@ export class Figure implements Avatar {
       _n0.set(0, 0, 0).addScaledVector(X, gn.x).addScaledVector(U, gn.y).addScaledVector(F, gn.z);
       P.lerp(_p0, gw); D.lerp(_d0, gw); N.lerp(_n0, gw);
     }
+    // 戴、摘斗笠的那一下（右手），扶笠（shade，头上有笠时）：手扶着笠沿前侧那一点
+    const bw = Math.max(s < 0 ? this.donW : 0, s > 0 ? G.brimL : G.brimR);
+    if (bw > 0.001 && this.brimPoint(s, _p0, _d0, _n0)) { P.lerp(_p0, bw); D.lerp(_d0, bw); N.lerp(_n0, bw); }
     D.normalize();
     // 被 reach 占着：伸向世界里的那一点
     a.rw += ((a.reach ? 1 : 0) - a.rw) * (a.init ? Math.min(1, dt * (a.reach ? 7 : 4.5)) : 1);
     if (a.reach) {
       const k = a.init ? 1 - Math.exp(-a.rate * dt) : 1;
-      a.rpos.lerp(this.root.worldToLocal(_p.copy(a.reach)), k);
-      if (a.rDir) a.rd.lerp(_p.copy(a.rDir).applyQuaternion(this.iq).normalize(), k).normalize();
-      else a.rd.lerp(_p.subVectors(a.rpos, a.S).normalize(), k).normalize();
-      if (a.rPalm) a.rn.lerp(_p.copy(a.rPalm).applyQuaternion(this.iq), k);
-      else a.rn.lerp(_p.set(-s * 0.6, -0.8, 0), k);
+      if (a.rGrip) {
+        // 满把攥着一根杆：手指是小臂的接续（上一帧肘 → 腕、垂直于杆的那一份；刚伸过去时取肩 → 杆），绕过杆往掌心蜷一点；
+        // 掌心朝着杆，掌心落在杆靠小臂的那一侧（杆横在掌心前，不穿过手）——腕不折，从袖口里出来的是手，不是一截歪着的腕
+        const ax = _ga.copy(a.rGrip).applyQuaternion(this.iq).normalize();
+        const tgt = this.root.worldToLocal(_gt.copy(a.reach));
+        const fa = _gf.subVectors(a.W, a.E);
+        if (!a.init || a.rw < 0.3 || fa.lengthSq() < 1e-6) fa.subVectors(tgt, a.S);
+        fa.addScaledVector(ax, -fa.dot(ax));
+        if (fa.lengthSq() < 1e-8) fa.set(0, -1, 0).addScaledVector(ax, ax.y);
+        fa.normalize();
+        const n = _gn.crossVectors(ax, fa).normalize();
+        if (a.rPalm) { if (n.dot(_p.copy(a.rPalm).applyQuaternion(this.iq)) < 0) n.negate(); } else if (n.y > 0) n.negate();
+        // （只蜷一点：蜷多了，手里那截腕就从袖子的另一边戳出来）
+        fa.addScaledVector(n, 0.12).normalize();
+        a.rpos.lerp(tgt.addScaledVector(n, -GRIP_OFF), k);
+        a.rd.lerp(fa, k).normalize(); a.rn.lerp(n, k);
+      } else {
+        a.rpos.lerp(this.root.worldToLocal(_p.copy(a.reach)), k);
+        if (a.rDir) a.rd.lerp(_p.copy(a.rDir).applyQuaternion(this.iq).normalize(), k).normalize();
+        else a.rd.lerp(_p.subVectors(a.rpos, a.S).normalize(), k).normalize();
+        if (a.rPalm) a.rn.lerp(_p.copy(a.rPalm).applyQuaternion(this.iq), k);
+        else a.rn.lerp(_p.set(-s * 0.6, -0.8, 0), k);
+      }
     }
     if (a.rw > 0.001) { P.lerp(a.rpos, a.rw); D.lerp(a.rd, a.rw).normalize(); N.lerp(a.rn, a.rw); }
     a.D.copy(D);
@@ -1539,4 +1715,7 @@ export class Figure implements Avatar {
   }
 }
 const _p = V(), _q = V(), _fp = V(), _fd = V(), _fn = V(), _p0 = V(), _d0 = V(), _n0 = V(), _w = V(), _pole = V(), _z = V(), _x = V(), _wv = V(), _t = V(), _bc = V(), _cb = V();
+const _ga = V(), _gt = V(), _gf = V(), _gn = V(), _wx = V(), _wy = V(), _wz = V();
+const _hm0 = new THREE.Matrix4(), _hm1 = new THREE.Matrix4(), _hm2 = new THREE.Matrix4(), _hp = V(), _hp0 = V(), _hp1 = V(), _hs = V(), _hs0 = V(), _hs1 = V(), _cp = V();
+const _hq = new THREE.Quaternion(), _hq0 = new THREE.Quaternion(), _hq1 = new THREE.Quaternion();
 const _ax = new THREE.Vector3(1, 0, 0), _ay = new THREE.Vector3(0, 1, 0), _az = new THREE.Vector3(0, 0, 1), _q3 = new THREE.Quaternion();

@@ -61,7 +61,7 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
   await ctx.close();
 }
 
-// —— 二、送东西、托事 ——
+// —— 二、送东西、托事（东西真的过手：等他接住了再看） ——
 {
   const { page, ctx, logs } = await open(browser, { s: 'village', t: '9.5', ui: '0', flow: '0' }, { wait: 1500 });
   await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
@@ -69,18 +69,28 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
     const k = window.__ks, wait = (ms) => new Promise((res) => setTimeout(res, ms)), out = {};
     const talk = async (who) => { const a = k.acts[`talk:${who}`]; if (!a || a.on?.() === false) return false; k.exitAct(); await wait(200); k.enterAct(`talk:${who}`, true); await wait(400); return k.act?.id === `talk:${who}`; };
     const has = (id) => (k.act?.state.choices ?? []).some((c) => c.id === id);
+    /** 东西递完、接完（最多等 12 秒） */
+    const settle = async () => { for (let i = 0; i < 120 && k.act?.ex?.busy; i++) await wait(100); await wait(150); };
     // 送东西：给李公一捧枣（他喜欢）
     k.bag.add('jujube', 1, { quiet: true });
+    k.bag.add('water', 1, { quiet: true });
     out.elderHere = await talk('elder');
     if (out.elderHere) {
       out.giftChoice = has('gift');
       k.cmd('gift'); await wait(100);
       out.items = (k.act?.state.items ?? []).map((x) => x.id);
-      k.cmd('item', 'jujube'); await wait(100);
+      out.water = (k.act?.state.items ?? []).some((x) => x.id === 'water' || x.id === 'coin');
+      const t0 = String(k.act?.state.text ?? '');
+      k.cmd('item', 'jujube'); await wait(120);
+      // 还没递到：行囊里还在，话不变，签先收着
+      out.during = { left: k.bag.count('jujube'), same: String(k.act?.state.text ?? '') === t0, choices: (k.act?.state.choices ?? []).length, holder: k.act?.ex?.holder ?? null };
+      await settle();
       out.giftText = String(k.act?.state.text ?? '');
       out.jujubeLeft = k.bag.count('jujube');
       out.gave = k.mem.get('folk', { p: {} }).p.elder?.gift?.jujube ?? 0;
       out.know = k.mem.get('folk', { p: {} }).p.elder?.know ?? [];
+      // 他放下的东西留在身边（放在腿上的，说完了挪到凳边）
+      out.inLap = !!k.world.scene.getObjectByName('gift:jujube');
       // 托事：热茶
       out.offer = (k.act?.state.choices ?? []).find((c) => c.id.startsWith('fv:tea'))?.id ?? null;
       if (out.offer) {
@@ -90,17 +100,21 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
         out.teaOn = k.mem.get('folk', { f: {} }).f.tea?.s;
         k.bag.add('tea', 1, { quiet: true }); k.cmd('menu'); await wait(80);
         out.hand = has('fv:tea:hand');
-        k.cmd('fv:tea:hand'); await wait(80);
+        k.cmd('fv:tea:hand'); await wait(100);
+        out.teaBefore = k.mem.get('folk', { f: {} }).f.tea?.s;       // 还在递：还没算交到
+        await settle();
         out.thanks = String(k.act?.state.text ?? '');
         out.teaDone = k.mem.get('folk', { f: {} }).f.tea?.s;
         out.jujube = k.bag.count('jujube');
         out.bond = k.mem.get('folk', { p: {} }).p.elder?.v ?? 0;
       }
       k.cmd('bye'); await wait(300);
+      const kept = k.world.scene.getObjectByName('gift:jujube'), q = k.life.npcs.elder.pos;
+      if (kept) { const w = kept.getWorldPosition(kept.position.clone()); out.kept = +Math.hypot(w.x - q.x, w.z - q.z).toFixed(2); }
     }
-    // 托事：替孙嫂念信（当场办成）
+    // 托事：替孙嫂念信（当场办成；回礼的豆腐递过来）
     out.tofuHere = await talk('tofu');
-    if (out.tofuHere && has('fv:letter:ask')) { k.cmd('fv:letter:ask'); await wait(60); k.cmd('fv:letter:yes'); await wait(60); out.letter = k.mem.get('folk', { f: {} }).f.letter?.s; out.tofu = k.bag.count('tofu'); k.cmd('bye'); await wait(300); }
+    if (out.tofuHere && has('fv:letter:ask')) { k.cmd('fv:letter:ask'); await wait(60); k.cmd('fv:letter:yes'); await wait(60); out.letter = k.mem.get('folk', { f: {} }).f.letter?.s; await settle(); out.tofu = k.bag.count('tofu'); k.cmd('bye'); await wait(300); }
     // 托事：煮茶那件事做完，行囊里添一碗茶（草堂那边还没给的话）
     const before = k.bag.count('tea');
     if (k.acts.tea) {
@@ -112,10 +126,11 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
     out.notes = window.__ui?.ui?.get?.().notes?.length ?? null;
     return out;
   });
-  R.ok('送东西：签上有「带了样东西」，挑得出行囊里的那一样', r.elderHere && r.giftChoice && r.items.includes('jujube'), JSON.stringify(r.items ?? []));
-  R.ok('送东西：东西送出去了，他记下了、知道了他喜欢', r.jujubeLeft === 0 && r.gave === 1 && r.know?.includes('jujube'), `「${(r.giftText ?? '').slice(0, 20)}」`);
+  R.ok('送东西：签上有「带了样东西」，挑得出行囊里的那一样；水、铜钱不在里头', r.elderHere && r.giftChoice && r.items.includes('jujube') && !r.water, JSON.stringify(r.items ?? []));
+  R.ok('送东西：递着的那一会儿，东西还在先生手上、话不变、签收着', r.during?.left === 1 && r.during?.same && r.during?.choices === 0 && r.during?.holder === 'me', JSON.stringify(r.during ?? {}));
+  R.ok('送东西：他接住了才交出——行囊里少了、他记下了、知道他喜欢，东西留在他身边', r.jujubeLeft === 0 && r.gave === 1 && r.know?.includes('jujube') && r.inLap && r.kept != null && r.kept < 1.6, `「${(r.giftText ?? '').slice(0, 20)}」 东西离他 ${r.kept}`);
   R.ok('托事（热茶）：他开口求、先生接下', !!r.offer && r.askText?.length > 4 && r.teaOn === 'on', r.offer ?? '没提');
-  R.ok('托事（热茶）：带着茶去交，办成了，回礼进了行囊，情分加深', r.hand && r.teaDone === 'done' && r.jujube >= 1 && r.bond >= 6, `「${(r.thanks ?? '').slice(0, 18)}」 情分底子 ${r.bond}`);
+  R.ok('托事（热茶）：茶递到他手里才算办成，回礼递过来进了行囊，情分加深', r.hand && r.teaBefore === 'on' && r.teaDone === 'done' && r.jujube >= 1 && r.bond >= 6, `「${(r.thanks ?? '').slice(0, 18)}」 情分底子 ${r.bond}`);
   R.ok('托事（念信）：当场办成，回礼进了行囊', !r.tofuHere || (r.letter === 'done' && r.tofu === 1), r.tofuHere ? '' : '孙嫂此刻不在外头（跳过）');
   R.ok('煮茶做完：行囊里有一碗茶', r.teaAdded === undefined || r.teaAdded >= 1, String(r.teaAdded));
   R.ok('送东西、托事：没有报错', errsOf(logs).length === 0, errsOf(logs).slice(0, 2).join(' | '));
@@ -129,6 +144,7 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
   const r = await page.evaluate(async () => {
     const k = window.__ks, wait = (ms) => new Promise((res) => setTimeout(res, ms)), out = {};
     const talk = async (who) => { const a = k.acts[`talk:${who}`]; if (!a || a.on?.() === false) return false; k.exitAct(); await wait(200); k.enterAct(`talk:${who}`, true); await wait(400); return k.act?.id === `talk:${who}`; };
+    const settle = async () => { for (let i = 0; i < 120 && k.act?.ex?.busy; i++) await wait(100); await wait(150); };
     const pick = (pre) => (k.act?.state.choices ?? []).find((c) => c.id.startsWith(pre))?.id;
     out.c1 = await talk('carpenter1');
     if (!out.c1) return out;
@@ -137,10 +153,11 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
     if (!ask) return out;
     k.cmd(ask); await wait(60); k.cmd('fv:wood:yes'); await wait(60); k.cmd('bye'); await wait(300);
     out.w = await talk('woodcutter');
-    if (out.w) { out.fetch = !!pick('fv:wood:fetch'); k.cmd('fv:wood:fetch'); await wait(60); out.wood = k.bag.count('firewood'); k.cmd('bye'); await wait(300); }
+    if (out.w) { out.fetch = !!pick('fv:wood:fetch'); k.cmd('fv:wood:fetch'); await wait(60); await settle(); out.wood = k.bag.count('firewood'); k.cmd('bye'); await wait(300); }
     await talk('carpenter1');
     out.hand = !!pick('fv:wood:hand');
     k.cmd('fv:wood:hand'); await wait(60);
+    await settle();
     out.done = k.mem.get('folk', { f: {} }).f.wood?.s; out.whistle = k.bag.count('whistle');
     k.cmd('bye'); await wait(300);
     return out;
@@ -150,6 +167,93 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
     R.ok('托事（讨柴）：交给赵大，办成了，得一支竹哨', !r.w || (r.hand && r.done === 'done' && r.whistle === 1));
   } else R.ok('托事（讨柴）：赵大在外头、会托这件事', false, JSON.stringify(r));
   R.ok('讨柴：没有报错', errsOf(logs).length === 0, errsOf(logs).slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+// —— 三之二、东西过手与话对得上：站着的、坐着的、不肯收的、回赠的，一帧一帧量 ——
+// 看：先生取出来时东西在先生手里（离他的手 15 厘米内）；他那句话出来的那一刻，东西已经到了他手上（离他的手 15 厘米内）；
+//     话出来之前东西一直在先生那边、行囊没少；不肯收的东西回到先生袖里、行囊里还在；回赠的东西递到先生手上那一刻才浮「得……」。
+{
+  const { page, ctx, logs } = await open(browser, { s: 'village', t: '10', ui: '0', flow: '0' }, { wait: 1500 });
+  await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
+  const cases = [['neighbor', 'egg', '站着的（扫地的李二嫂，一手拿帚）'], ['basketman', 'egg', '坐着的（凳上破篾的陈篾匠）'], ['lunch', 'wine', '不肯收的（孩子不收酒）']];
+  for (const [who, item, label] of cases) {
+    const r = await page.evaluate(async ([who, item]) => {
+      const k = window.__ks, W = window.__walk, wait = (ms) => new Promise((res) => setTimeout(res, ms));
+      const npc = k.life.npcs[who];
+      if (!npc?.present || !k.acts[`talk:${who}`]) return { here: false };
+      // 从五步外走过去（与点他的名字一样）
+      const q = npc.pos;
+      let sx = q.x + 4, sz = q.z + 4;
+      for (let i = 0; i < 40; i++) { const a = i * 0.7, x = q.x + Math.cos(a) * 4.5, z = q.z + Math.sin(a) * 4.5; if (W.standable(x, z) != null && W.findPath(x, z, W.groundAt(x, z), q.x, q.z)) { sx = x; sz = z; break; } }
+      k.exitAct(); await wait(200);
+      k.player.teleport(sx, sz, Math.atan2(q.x - sx, q.z - sz)); k.nav.snapBehind();
+      k.bag.add(item, 4, { quiet: true });
+      await wait(400);
+      k.enterAct(`talk:${who}`);
+      for (let i = 0; i < 80 && k.act?.id !== `talk:${who}`; i++) await wait(100);
+      if (k.act?.id !== `talk:${who}`) return { here: true, started: false };
+      await wait(1200);
+      const V = k.player.pos.constructor, jw = (o) => { o.updateWorldMatrix(true, false); return new V().setFromMatrixPosition(o.matrixWorld); };
+      k.cmd('gift'); await wait(150);
+      const before = k.bag.count(item), t0 = String(k.act.state.text ?? '');     // 挑东西那一屏的话（他问「是什么？」）
+      k.cmd('item', item);
+      const rows = [];
+      let ended = false;
+      const tick = () => {
+        const ex = k.act?.ex, pr = ex?.prop?.obj;
+        const pp = pr ? jw(pr).add(new V(0, ex.prop.h, 0)) : null;
+        const me = [jw(k.player.av.joints.handL), jw(k.player.av.joints.handR)], him = [jw(npc.avatar.joints.handL), jw(npc.avatar.joints.handR)];
+        const dm = pp ? Math.min(...me.map((h) => h.distanceTo(pp))) : null, dh = pp ? Math.min(...him.map((h) => h.distanceTo(pp))) : null;
+        rows.push({ holder: ex?.holder ?? null, dm, dh, text: String(k.act?.state.text ?? ''), bag: k.bag.count(item) });
+        if (!ended) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      for (let i = 0; i < 140 && (k.act?.ex?.busy ?? false); i++) await wait(100);
+      ended = true; await wait(50);
+      const said = rows.findIndex((x) => x.text !== t0);
+      const first = rows.find((x) => x.holder === 'me' && x.dm != null && x.dm < 1);
+      const at = said >= 0 ? rows[said] : null;
+      const pre = said > 0 ? rows.slice(0, said) : rows;
+      return {
+        here: true, started: true, n: rows.length, before, after: k.bag.count(item),
+        firstDm: first ? +first.dm.toFixed(3) : null,
+        saidHolder: at?.holder ?? null, saidDh: at?.dh != null ? +at.dh.toFixed(3) : null,
+        preAllMine: pre.every((x) => x.holder !== 'him'), preBag: pre.every((x) => x.bag === before),
+        text: at?.text.slice(0, 18) ?? '',
+      };
+    }, [who, item]);
+    await page.screenshot({ path: join(SHOTS, `handover-${who}.png`) });
+    if (!r.here || !r.started) { R.ok(`过手（${label}）：他在外头、说得上话`, false, JSON.stringify(r)); continue; }
+    if (item === 'wine') {
+      R.ok(`过手（${label}）：递过去，他推辞——东西一直在先生这边，回到袖里，行囊里还在`, r.preAllMine && r.saidHolder !== 'him' && r.after === r.before && r.firstDm != null && r.firstDm < 0.15, `「${r.text}」 先生手离东西 ${r.firstDm}`);
+      continue;
+    }
+    R.ok(`过手（${label}）：取出来时东西在先生手里`, r.firstDm != null && r.firstDm < 0.15, `离先生的手 ${r.firstDm} 米`);
+    R.ok(`过手（${label}）：话出来的那一刻东西到了他手上；之前一直在先生那边、行囊没少`, r.saidHolder === 'him' && r.saidDh != null && r.saidDh < 0.15 && r.preAllMine && r.preBag, `离他的手 ${r.saidDh} 米 · 「${r.text}」`);
+    R.ok(`过手（${label}）：交出了一回送的那么多`, r.before - r.after === 4, `${r.before}→${r.after}`);
+  }
+  // 回赠：熟了的李公收了茶，回一捧枣——递到先生手上那一刻才浮「得枣一捧」
+  const rb = await page.evaluate(async () => {
+    const k = window.__ks, wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    if (!k.life.npcs.elder?.present) return { here: false };
+    const { folkOf } = await import('/src/world/acts/favor.ts');
+    const F = folkOf(k); F.meet('elder'); F.addV('elder', 6);
+    k.exitAct(); await wait(200);
+    k.bag.add('tea', 1, { quiet: true });
+    const notes = [];
+    const on0 = k.bag.onNote; k.bag.onNote = (t) => { notes.push({ t, holder: k.act?.ex?.holder ?? null, item: k.act?.ex?.prop?.item ?? null }); on0?.(t); };
+    k.enterAct('talk:elder', true); await wait(1500);
+    for (let i = 0; i < 100 && (k.act?.ex?.busy ?? false); i++) await wait(100);     // 见面塞的那一样先递完
+    const r0 = Math.random; Math.random = () => 0.1;
+    k.cmd('gift'); await wait(120); k.cmd('item', 'tea');
+    for (let i = 0; i < 160 && (k.act?.ex?.busy ?? false); i++) await wait(100);
+    Math.random = r0; k.bag.onNote = on0;
+    const got = notes.find((n) => n.t.startsWith('得枣'));
+    return { here: true, jujube: k.bag.count('jujube'), got, text: String(k.act?.state.text ?? '') };
+  });
+  R.ok('回赠：他递过来，先生接到手的那一刻才浮「得枣一捧」，他递的时候接一句', !rb.here || (rb.jujube >= 1 && rb.got?.holder === 'me' && rb.got?.item === 'jujube' && rb.text.split('\n').length >= 2), JSON.stringify(rb.got ?? {}) + ` 「${String(rb.text ?? '').replace(/\n/g, '／').slice(0, 30)}」`);
+  R.ok('过手：没有报错', errsOf(logs).length === 0, errsOf(logs).slice(0, 2).join(' | '));
   await ctx.close();
 }
 
@@ -163,16 +267,37 @@ for (const [name, o] of [['desk', { w: 1280, h: 760 }], ['phone', { w: 393, h: 7
   await page.goto(`${PAGE}?auto=1&s=village&t=10&flow=0&q=mid`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 120000 });
   await page.waitForTimeout(1200);
-  // 李公：头一句、问早年（话长、签多），再看送东西那一屏（行囊里放几样）
+  // 李公：头一句、问早年（话长、签多），再看送东西那一屏（行囊里放几样），送出去以后那一屏（先生说的那句与他接的话）
+  // 递东西的半途、他接住的那一刻也各截一张（handover-<尺寸>-*.png）
   const res = [];
-  for (const step of ['greet', 'ask', 'gift']) {
+  for (const step of ['greet', 'ask', 'gift', 'given']) {
     await page.evaluate(async (step) => {
       const k = window.__ks, wait = (ms) => new Promise((r) => setTimeout(r, ms));
-      if (step === 'greet') { for (const [i, n] of [['egg', 2], ['tea', 1], ['candy', 3], ['wine', 1], ['flower', 1], ['poem', 1]]) k.bag.add(i, n, { quiet: true }); k.enterAct('talk:elder', true); }
+      if (step === 'greet') { for (const [i, n] of [['egg', 6], ['tea', 1], ['candy', 3], ['wine', 1], ['flower', 1], ['poem', 1]]) k.bag.add(i, n, { quiet: true }); k.enterAct('talk:elder', true); }
       if (step === 'ask') k.cmd('ask');
       if (step === 'gift') k.cmd('gift');
+      if (step === 'given') {
+        k.cmd('item', 'egg');
+        for (let i = 0; i < 18 && k.act?.ex?.holder !== 'him'; i++) await wait(100);
+        for (let i = 0; i < 120 && k.act?.ex?.busy; i++) await wait(100);
+      }
       await wait(900);
     }, step);
+    if (step === 'gift') {
+      // 递东西的半途（先生捧着递过去）、他接住的那一刻
+      await page.evaluate(() => window.__ks.cmd('item', 'egg'));
+      await page.waitForFunction(() => { const ex = window.__ks.act?.ex; return !ex || ex.holder === 'me'; }, null, { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      await page.screenshot({ path: join(SHOTS, `handover-${name}-1-offer.png`) });
+      await page.waitForFunction(() => window.__ks.act?.ex?.holder === 'him' || !window.__ks.act?.ex?.busy, null, { timeout: 8000 }).catch(() => {});
+      await page.screenshot({ path: join(SHOTS, `handover-${name}-2-taken.png`) });
+      await page.waitForFunction(() => !window.__ks.act?.ex?.busy, null, { timeout: 12000 }).catch(() => {});
+      await page.screenshot({ path: join(SHOTS, `handover-${name}-3-after.png`) });
+      // 再挑一回（下一步「送出去以后」看面板）：李公收过了，签上没有「带了样东西」，就用托事以外的路——直接把送东西那一屏再摆出来
+      await page.evaluate(() => { const k = window.__ks; k.exitAct(); });
+      await page.waitForTimeout(400);
+      await page.evaluate(async () => { const k = window.__ks, wait = (ms) => new Promise((r) => setTimeout(r, ms)); k.enterAct('talk:elder', true); await wait(1200); for (let i = 0; i < 100 && k.act?.ex?.busy; i++) await wait(100); k.cmd('gift'); await wait(600); });
+    }
     await page.screenshot({ path: join(SHOTS, `panel-${name}-${step}.png`) });
     res.push(await page.evaluate(() => {
       const p = document.querySelector('[data-testid="act-panel"]'), body = p?.querySelector('.panel-body');
@@ -186,7 +311,7 @@ for (const [name, o] of [['desk', { w: 1280, h: 760 }], ['phone', { w: 393, h: 7
       return { ok: inView && noX && inside && cut.length === 0, why: `面板 ${Math.round(r.width)}×${Math.round(r.height)} 在画里 ${inView} 不横溢 ${noX} 签在板内 ${inside} 截字 ${cut.join('/') || '无'}`, buttons: kids.length };
     }));
   }
-  for (const [i, step] of ['招呼', '问早年', '送东西'].entries()) R.ok(`面板（${name} ${o.w}×${o.h}）${step}：放得下`, res[i].ok, res[i].why);
+  for (const [i, step] of ['招呼', '问早年', '送东西', '送出去以后'].entries()) R.ok(`面板（${name} ${o.w}×${o.h}）${step}：放得下`, res[i].ok, res[i].why);
   R.ok(`面板（${name}）：没有报错`, errsOf(logs).length === 0, errsOf(logs).slice(0, 2).join(' | '));
   await ctx.close();
 }

@@ -27,6 +27,8 @@ const PLAN = [
   ['day', 'day.mjs', ['--no-shots'], { KS_URL: W }],
   ['flow-desk', 'flow.mjs', ['desk'], { KS_URL: APP }],
   ['flow-phone', 'flow.mjs', ['phone'], { KS_URL: APP }],
+  ['together', 'together.mjs', [], { KS_URL: APP }],
+  ['steer', 'steer.mjs', [], { KS_URL: APP }],
   ['ui', 'ui.mjs', ['all'], { KS_URL: APP }],
   ['audio', 'audio.mjs', [], { KS_AUDIO_URL: LAB }],
 ];

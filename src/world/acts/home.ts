@@ -2,19 +2,20 @@
  * 屋里屋外的几件事（都由行者去做）：
  *   读联 —— 站在柴门前，抬头看那一副联。
  *   书案 —— 在案前坐下：翻《周易》、翻《皇极经世》（读过几页，显出「天在山中，大畜」），或写两句诗（界面上照着写）。
- *   抚琴 —— 在琴几前的席上盘腿坐下，一声一声地弹；琴不常弹，弹几声就好（显出「雷出地奋，豫」）。
- *   煮茶 —— 蹲在茶炉前扇火候汤，汤滚了提壶注茶（显出「水在火上，既济」）。
+ *   抚琴 —— 在琴几北的蒲团上盘腿坐下，面朝院子，一声一声地弹；琴不常弹，弹几声就好（显出「雷出地奋，豫」）。
+ *   煮茶 —— 跪在茶炉北，面朝院子：扇火候汤，汤滚了攥着提梁提壶注进盏里、放回炉上，候一会儿，端起来品一口（显出「水在火上，既济」）。
  *   自斟 —— 瓮边舀酒，一杯、两杯，微醉即止（显出「云上于天，需」：饮食宴乐）。
  *   榻   —— 夜里在榻上安歇，一觉到天亮；白天小憩一会儿。
  *   先天图 —— 北墙上那一幅六十四卦方圆图，看一看，可翻开观象册。
  */
 import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
+import { wash } from '../ink/ink';
 import { HALL_Y } from '../walk';
 import type { Act } from './types';
 import { ease, hold, jpos, lift } from './util';
 import { anchor, before, behindSeat, deck, PAGES, POEMS, pairFor, part, poemOf, shot, sitDown, V, WORDS, yiWord } from './lib';
-import { reveal } from './xiang';
+import { inActNow, reveal } from './xiang';
 
 type Set = (p: Record<string, unknown>) => void;
 /** 一件事的骨架：state 的写法、退出时要还原的东西 */
@@ -145,17 +146,19 @@ function qin(k: Anlewo): Act | null {
   const pm = poemOf(['guqin', 'tingqin'], '琴');
   let n = 0, pluck = 0, step: 'play' | 'poem' | 'xiang' = 'play';
   const R = new THREE.Vector3(), L = new THREE.Vector3();
+  // 坐处朝南（朝着院子）：他的前、右（琴首在他的右手）
+  const fw = V(Math.sin(seat.rotation.y), 0, Math.cos(seat.rotation.y)), rt = V(-Math.cos(seat.rotation.y), 0, Math.sin(seat.rotation.y));
   const hint = () => set({ kind: 'qin', title: '抚琴', hint: '琴不常弹。轻点画面，一声一声地弹', count: n, choices: [{ id: 'done', label: '罢' }] });
   return {
     id: 'qin', name: '抚琴', anchor: strings.position.clone().add(V(0, 0.6, 0)), spot: behindSeat(seat, 0.42), radius: 2.0, state, noZoom: true,
     enter() {
       n = 0; step = 'play';
       const av = k.player.av;
-      // 席上盘腿坐，往琴前挪近一点（腿伸进琴几底下）
-      const s = seat.clone(); s.position.addScaledVector(V(Math.sin(seat.rotation.y), 0, Math.cos(seat.rotation.y)), 0.18);
-      sitDown(k, s, { ground: HALL_Y, mat: { h: Math.max(0.005, seat.position.y - HALL_Y), hx: 0.55, hz: 0.32 } });
+      // 坐到蒲团上盘腿（蒲团在琴几北边，腿伸进琴几底下），面朝南
+      sitDown(k, seat, { ground: HALL_Y, mat: { h: Math.max(0.005, seat.position.y - HALL_Y), r: 0.26 } });
       av.setHands('free'); av.lookAt(strings.position);
-      k.nav.setPose(shot(strings.position, 1.42, 2.1, 0.62, 0.12, 42, { yaw: 22, up: 10, down: 8 }), 1.8);
+      // 机位：屋里，人的左后方、略低——看得见他的背影、两手与琴，越过他是敞着的院子（菊圃、桃、柳）
+      k.nav.setPose(shot(strings.position.clone().addScaledVector(fw, -0.2), 2.6, 2.3, 0.8, 0.3, 46, { yaw: 22, up: 10, down: 8 }), 1.8);
       hint();
     },
     exit() { const av = k.player.av; av.reach('L', null); av.reach('R', null); av.lookAt(null); },
@@ -163,9 +166,9 @@ function qin(k: Anlewo): Act | null {
       if (step !== 'play') return;
       const av = k.player.av, q = QIN[n % QIN.length];
       pluck = Math.max(0, pluck - dt * 4);
-      // 右手在岳山那一头勾弦，左手在徽位上按、走
-      R.copy(strings.position).add(V(0.36, 0.035 + 0.02 * pluck, 0.04 - 0.03 * pluck));
-      L.copy(strings.position).add(V(-0.06 - q[0], 0.03, 0.02));
+      // 右手在岳山那一头（他的右手边）勾弦，左手在徽位上按、走（往琴尾那边）；弦在他身前，手略往怀里收一点
+      R.copy(strings.position).addScaledVector(rt, 0.36).addScaledVector(fw, -(0.04 - 0.03 * pluck)).add(V(0, 0.035 + 0.02 * pluck, 0));
+      L.copy(strings.position).addScaledVector(rt, -(0.06 + q[0])).addScaledVector(fw, -0.02).add(V(0, 0.03, 0));
       av.reach('R', R, { rate: 12 }); av.reach('L', L, { rate: 4 });
     },
     input: {
@@ -190,73 +193,228 @@ function qin(k: Anlewo): Act | null {
 }
 
 // —— 煮茶 ——
+/**
+ * 跪在炉北，面朝南（朝着院子）。一步一步：
+ *   扇火 —— 右手从膝边拿起蒲扇，点画面扇一扇（火着起来以后自己也慢慢热）；
+ *   注茶 —— 汤滚了，点画面：扇子放回去，右手从上头攥住提梁把壶提起来，挪到右手边茶床的盏上头，一倾注满，扶正，放回炉上；
+ *   候茶 —— 茶在盏里慢慢舒展开，盏上起一缕热气（等一会儿才能品：点画面或点「品」）；
+ *   品茶 —— 右手端起盏、左手托着盏底，送到嘴边品一口，再放回茶床上；
+ *   然后显出「水在火上，既济」，另盛一碗带着（李公要热茶）。
+ * 壶、盏、扇都由这里在世界里摆（不挂在手上：壶要一直正着，只在注的时候顺着提梁倾），手攥着提梁、端着盏跟过去（reach 的 grip）。
+ */
+const TEA_POUR = 0.62;          // 注茶时壶倾多少（弧度，绕提梁）
 function tea(k: Anlewo): Act | null {
-  const st = anchor(k, 'stove'), kettle = part(k, 'kettle');
+  const st = anchor(k, 'stove'), kettle = part(k, 'kettle'), cup = part(k, 'cup1'), fan = part(k, 'fan');
   if (!st) return null;
   const { state, set, undo, restore } = base(k);
-  let heat = 0, fan = 0, step: 'fan' | 'pour' | 'done' = 'fan', pt = 0, wisp: { amount: number; on: boolean; dispose(): void } | null = null, said = -1;
-  const kp = new THREE.Vector3();
+  type Step = 'fan' | 'pour' | 'steep' | 'drink' | 'done';
+  type Wisp = { amount: number; on: boolean; dispose(): void };
+  let heat = 0, wave = 0, step: Step = 'fan', t = 0, said = -1, ready = false, pick = 0, sipped = false;
+  let wisp: Wisp | null = null, cupWisp: Wisp | null = null, stream: THREE.Mesh | null = null;
+  // 跪处的朝向（面朝南）与他的前、右、上
+  const yaw0 = st.rotation.y + Math.PI, F = V(Math.sin(yaw0), 0, Math.cos(yaw0)), R = V(-Math.cos(yaw0), 0, Math.sin(yaw0)), U = V(0, 1, 0), DOWN = V(0, -1, 0), LEFT = R.clone().negate();
+  // 壶、盏、扇原来在哪（世界）
+  const N = () => new THREE.Vector3();
+  const kHome = N(), kQ = new THREE.Quaternion(), cHome = N(), fHome = N(), fQ = new THREE.Quaternion();
+  const kp = N(), bail = N(), spout = N(), cp = N(), tmp = N(), tmp2 = N(), head = N(), qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), m4 = new THREE.Matrix4();
+  const fy = N(), fz = N(), fx = N();
+  /** 注茶时壶（提梁顶）该在哪：壶嘴正对着盏，嘴尖比盏口高一掌 */
+  const pourAt = (out: THREE.Vector3) => {
+    const sp = kettle?.userData.spout as THREE.Vector3 | undefined, sx = sp?.x ?? 0.14, sy = sp?.y ?? -0.09;
+    const ox = sx * Math.cos(TEA_POUR) + sy * Math.sin(TEA_POUR), oy = -sx * Math.sin(TEA_POUR) + sy * Math.cos(TEA_POUR);
+    // 壶嘴朝 R（他的右手边）：提梁顶在盏的另一侧 ox 处、比嘴尖高 −oy
+    return out.copy(cHome).addScaledVector(R, -ox).setY(cHome.y + 0.04 + 0.075 - oy);
+  };
+  const stage = () => (heat < 0.34 ? 0 : heat < 0.67 ? 1 : heat < 1 ? 2 : 3);
   const show = () => {
-    const stage = heat < 0.34 ? 0 : heat < 0.67 ? 1 : heat < 1 ? 2 : 3;
-    if (stage === said && step === 'fan') { state.progress = heat; k.emitAct(); return; }
-    said = stage;
-    const words = ['炭红了，壶还是凉的。点画面扇一扇', '水响了，像风过松林', '起了细细的小泡', '滚了。点画面，提壶注茶'];
-    set({ kind: 'tea', title: '煮茶', hint: words[stage], progress: heat, choices: [{ id: 'done', label: '罢' }] });
+    const sg = stage();
+    if (sg === said && step === 'fan') { state.progress = heat; k.emitAct(); return; }
+    said = sg;
+    const words = ['炭红了，壶还是凉的。点画面扇一扇；煮好了盛一碗带着，可以送人', '水响了，像风过松林', '起了细细的小泡', '滚了。点画面，提壶注茶'];
+    set({ kind: 'tea', title: '煮茶', hint: words[sg], progress: heat, choices: [{ id: 'done', label: '罢' }] });
+  };
+  const setKettle = (p: THREE.Vector3, tilt: number) => {
+    if (!kettle) return;
+    kettle.position.copy(p);
+    kettle.quaternion.copy(kQ).multiply(qa.setFromAxisAngle(V3Z, -tilt));
+  };
+  const toPour = () => {
+    step = 'pour'; t = 0;
+    set({ kind: 'tea', title: '煮茶', hint: '提壶注茶', progress: 1, choices: [{ id: 'done', label: '罢' }] });
+  };
+  const toSteep = () => {
+    step = 'steep'; t = 0; ready = false;
+    k.events.loop?.('kettle', 0.15);
+    if (cup) cupWisp = k.fx?.smoke(cHome.clone().add(V(0, 0.06, 0)), { size: 0.12, rise: 0.22, amount: 0.7, warm: 0 }) ?? null;
+    set({ kind: 'tea', title: '候茶', hint: '茶在盏里慢慢舒展开', progress: 0, choices: [{ id: 'done', label: '罢' }] });
+  };
+  const toDrink = () => {
+    if (step !== 'steep' || !ready) return;
+    step = 'drink'; t = 0; sipped = false;
+    set({ kind: 'tea', title: '品茶', hint: '端起来，品一口', choices: [{ id: 'done', label: '罢' }] });
+  };
+  const toDone = () => {
+    step = 'done';
+    const av = k.player.av; av.reach('R', null); av.reach('L', null); av.lookAt(st.position); av.bow = 0;
+    if (cupWisp) cupWisp.amount = 0.25;
+    // 另盛一碗带着（李公要热茶）
+    k.bag.add('tea', 1);
+    const r = reveal(k, '既济');
+    set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '罢' }] });
   };
   return {
-    id: 'tea', name: '煮茶', anchor: st.position.clone().add(V(0, 0.5, 0)), spot: before(st, 0.62), radius: 2.0, state, noZoom: true,
+    id: 'tea', name: '煮茶', anchor: st.position.clone().add(V(0, 0.5, 0)), spot: before(st, 0.58), radius: 2.0, state, noZoom: true,
     enter() {
-      heat = 0; fan = 0; step = 'fan'; pt = 0; said = -1;
+      heat = 0; wave = 0; step = 'fan'; t = 0; said = -1; ready = false; pick = 0;
       const av = k.player.av;
-      av.setPose('crouch', 1.0); av.setHands('free'); av.lookAt(st.position);
-      { const to = Math.atan2(0 - st.position.x, 0 - st.position.z); k.nav.setPose(shot(st.position, to, 1.9, 0.85, 0.15, 44, { yaw: 22, up: 12, down: 8 }), 1.6); }
-      kp.copy(kettle ? kettle.getWorldPosition(new THREE.Vector3()) : st.position);
-      wisp = k.fx?.smoke(kp.clone().add(V(0, 0.14, 0)), { size: 0.35, rise: 0.5, amount: 0, warm: 0 }) ?? null;
+      av.setPose('kneel', 1.0); av.setHands('free'); av.lookAt(st.position);
+      // 机位：屋里，从西边看他的右侧——提壶、注茶、端盏都看得见；他面朝的南边（画面右手）是门外的院子
+      // （看的是人与炉之间：竖屏上人不落到边上）
+      k.nav.setPose(shot(st.position.clone().addScaledVector(F, -0.28), -1.6, 1.95, 0.95, 0.12, 46, { yaw: 22, up: 12, down: 8 }), 1.6);
+      // 壶、盏、扇拿到世界里来自己摆（退出时放回原处）
+      if (kettle) { kettle.getWorldPosition(kHome); kettle.getWorldQuaternion(kQ); undo.push(lift(k.world.scene, kettle)); }
+      if (cup) { cup.getWorldPosition(cHome); undo.push(lift(k.world.scene, cup)); }
+      if (fan) { fan.getWorldPosition(fHome); fan.getWorldQuaternion(fQ); undo.push(lift(k.world.scene, fan)); }
+      if (!kettle) kHome.copy(st.position).add(V(0, 0.2, 0));
+      wisp = k.fx?.smoke(kHome.clone().add(V(0, -0.06, 0)), { size: 0.35, rise: 0.5, amount: 0, warm: 0 }) ?? null;
       show();
     },
-    exit() { restore(); wisp?.dispose(); wisp = null; k.events.loop?.('kettle', 0); const av = k.player.av; av.reach('R', null); av.reach('L', null); av.lookAt(null); },
+    exit() {
+      restore(); wisp?.dispose(); wisp = null; cupWisp?.dispose(); cupWisp = null;
+      if (stream) stream.visible = false;
+      k.events.loop?.('kettle', 0);
+      const av = k.player.av; av.reach('R', null); av.reach('L', null); av.lookAt(null); av.bow = 0;
+    },
     update(dt) {
       const av = k.player.av;
-      fan = Math.max(0, fan - dt * 3);
+      t += dt;
+      wave = Math.max(0, wave - dt * 2.6);
       if (step === 'fan') {
         // 火着起来以后自己也会慢慢热
         heat = Math.min(1, heat + dt * (heat > 0.15 ? 0.045 : 0));
-        av.reach('R', st.position.clone().add(V(0.12 * Math.sin(fan * 6), -0.12, 0.2)), { rate: 10 });
         if (wisp) wisp.amount = Math.max(0, (heat - 0.25) * 1.3);
         k.events.loop?.('kettle', Math.max(0, heat - 0.1));
-        show();
-      } else if (step === 'pour' && kettle) {
-        // 提壶、倾、放回
-        pt = Math.min(1, pt + dt / 2.6);
-        const up = Math.sin(Math.PI * Math.min(1, pt * 1.15));
-        av.reach('R', kp.clone().add(V(0.05 - 0.25 * up, 0.08 + 0.22 * up, 0.12 * up)), { rate: 7 });
-        kettle.rotation.z = -0.9 * Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (pt - 0.25) / 0.5))));
-        if (pt >= 1) {
-          restore(); step = 'done'; av.reach('R', null); k.events.loop?.('kettle', 0.15);
-          // 盛一碗带着（李公要热茶）
-          k.bag.add('tea', 1);
-          const r = reveal(k, '既济');
-          set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '吃茶' }] });
+        // 右手拿起膝边的蒲扇（扇子先在地上，手探下去，扇子起来到手里），对着炉口一下一下地扇
+        pick = Math.min(1, pick + dt / 1.1);
+        if (fan) {
+          // 扇的时候：扇面对着炉口（炉北面那个风口）、离一掌，柄斜着朝右后上方到手里；扇一下，腕子一抖，扇面绕柄翻过去又回来
+          const sw = Math.sin(wave * Math.PI * 2.2) * wave;
+          const mouth = tmp.copy(st.position).addScaledVector(F, -0.146).setY(HALL_Y + 0.09);
+          const blade = tmp2.copy(mouth).addScaledVector(F, -0.15).addScaledVector(R, 0.05 * sw).addScaledVector(U, 0.05);
+          fy.copy(F).multiplyScalar(0.35).addScaledVector(U, -0.85).addScaledVector(R, -0.28).normalize();     // 柄 → 扇面
+          const g = cp.copy(blade).addScaledVector(fy, -Number((fan.userData.blade as THREE.Vector3 | undefined)?.y ?? 0.22));
+          // （扇面略朝他的右手边侧过来一点：从西边的机位看得见扇面，不是一条边）
+          fz.copy(F).multiplyScalar(0.8).addScaledVector(R, 0.6).addScaledVector(fy, -F.dot(fy) * 0.8 - R.dot(fy) * 0.6).normalize().applyAxisAngle(fy, 0.7 * sw);
+          fx.crossVectors(fy, fz);
+          qb.setFromRotationMatrix(m4.makeBasis(fx, fy, fz));
+          const e = smooth01((pick - 0.3) / 0.35);
+          fan.position.copy(fHome).lerp(g, e); fan.quaternion.copy(fQ).slerp(qb, e);
+          // 手：先探向扇子（够不到地，扇子迎上来），拿到了就攥着柄
+          if (pick < 0.45) av.reach('R', tmp.copy(fHome).addScaledVector(U, 0.22).lerp(fan.position, smooth01(pick / 0.45)), { rate: 8 });
+          else av.reach('R', fan.position, { grip: fy, palm: LEFT, rate: 22 });
+          av.bow = pick < 0.6 ? 0.35 : 0.22;
+        } else {
+          av.reach('R', st.position.clone().addScaledVector(F, -0.22).addScaledVector(U, -0.1).addScaledVector(R, 0.12 * Math.sin(wave * 6)), { rate: 10 });
         }
-      }
+        show();
+      } else if (step === 'pour') {
+        // 0–0.6 扇子放回去；0.6–1.2 右手攥住提梁；1.2–2.0 提起来挪到盏上；2.0–2.4 倾；2.4–3.6 注；3.6–3.95 扶正；3.95–4.85 挪回炉上放下；5.0 松手
+        if (fan) {
+          const e = smooth01(t / 0.6);
+          if (e < 1) { fan.position.lerp(fHome, Math.min(1, e * 1.4)); fan.quaternion.slerp(fQ, Math.min(1, e * 1.4)); av.reach('R', fan.position, { grip: fy, palm: LEFT, rate: 22 }); }
+          else { fan.position.copy(fHome); fan.quaternion.copy(fQ); }
+        }
+        const gp = pourAt(tmp2), up = tmp.copy(kHome).addScaledVector(U, 0.07);
+        if (t < 1.2) kp.copy(kHome);
+        else if (t < 1.5) kp.lerpVectors(kHome, up, smooth01((t - 1.2) / 0.3));
+        else if (t < 2.0) kp.lerpVectors(up, gp, smooth01((t - 1.5) / 0.5)).addScaledVector(U, 0.04 * Math.sin(Math.PI * (t - 1.5) / 0.5));
+        else if (t < 3.95) kp.copy(gp);
+        else if (t < 4.55) kp.lerpVectors(gp, up, smooth01((t - 3.95) / 0.6)).addScaledVector(U, 0.04 * Math.sin(Math.PI * (t - 3.95) / 0.6));
+        else if (t < 4.85) kp.lerpVectors(up, kHome, smooth01((t - 4.55) / 0.3));
+        else kp.copy(kHome);
+        const tilt = t < 2.0 ? 0 : t < 2.4 ? TEA_POUR * smooth01((t - 2.0) / 0.4) : t < 3.6 ? TEA_POUR + 0.05 * (t - 2.4) / 1.2 : t < 3.95 ? (TEA_POUR + 0.05) * (1 - smooth01((t - 3.6) / 0.35)) : 0;
+        setKettle(kp, tilt);
+        // 手攥着提梁（提梁顺着壶自己的 z 轴，横在掌心里；手背朝上）
+        if (t > 0.6 && t < 5.0) {
+          bail.set(0, 0, 1).applyQuaternion(kettle ? kettle.quaternion : kQ);
+          const kd = tmp.set(0, -1, 0).applyQuaternion(kettle ? kettle.quaternion : kQ);
+          av.reach('R', kp, { grip: bail, palm: kd, rate: t < 1.2 ? 9 : 26 });
+        } else if (t >= 5.0) av.reach('R', null);
+        av.bow = t < 1.4 ? 0.32 : t < 3.95 ? 0.14 : t < 4.9 ? 0.3 : 0.05;
+        av.lookAt(t > 1.6 && t < 4.0 ? cHome : st.position);
+        // 一道细细的水注：壶嘴到盏里
+        const flow = t > 2.25 && t < 3.75 ? Math.min(1, (t - 2.25) / 0.12, (3.75 - t) / 0.12) : 0;
+        if (flow > 0 && kettle && cup) {
+          if (!stream) stream = makeStream(k);
+          spout.copy((kettle.userData.spout as THREE.Vector3 | undefined) ?? V(0.14, -0.09, 0)).applyQuaternion(kettle.quaternion).add(kettle.position);
+          const bot = tmp.copy(cHome).addScaledVector(U, 0.02), top = spout;
+          stream.visible = true;
+          stream.position.copy(top);
+          stream.scale.set(1, Math.max(0.01, top.distanceTo(bot)) * flow, 1);
+          stream.quaternion.setFromUnitVectors(DOWN, tmp2.subVectors(bot, top).normalize());
+        } else if (stream) stream.visible = false;
+        if (t > 2.3 && t - dt <= 2.3) k.sfx('pour', { vel: 0.55 });
+        if (t > 5.3) toSteep();
+      } else if (step === 'steep') {
+        // 候一会儿：盏上起一缕热气；够了就能品
+        const need = 2.6;
+        if (!ready && t >= need) {
+          ready = true;
+          set({ kind: 'tea', title: '候茶', hint: '茶好了。点画面，或点「品」', progress: 1, choices: [{ id: 'sip', label: '品', main: true }, { id: 'done', label: '罢' }] });
+        } else if (!ready && Math.floor(t * 4) !== Math.floor((t - dt) * 4)) { state.progress = Math.min(1, t / need); k.emitAct(); }
+        av.lookAt(cHome); av.bow = 0.08;
+      } else if (step === 'drink' && cup) {
+        // 0–0.8 右手端住盏；0.8–1.6 端到胸前，左手托住盏底；1.6–2.3 送到嘴边；2.3–3.5 品；3.5–4.2 放回胸前；4.2–5.0 放回茶床；5.4 松手
+        jpos(av.joints.head, head);
+        const chest = tmp.copy(head).addScaledVector(F, 0.26).addScaledVector(U, -0.36);
+        const mouth = tmp2.copy(head).addScaledVector(F, 0.115).addScaledVector(U, -0.075);
+        if (t < 0.8) cp.copy(cHome);
+        else if (t < 1.6) cp.lerpVectors(cHome, chest, smooth01((t - 0.8) / 0.8));
+        else if (t < 2.3) cp.lerpVectors(chest, mouth, smooth01((t - 1.6) / 0.7));
+        else if (t < 3.5) cp.copy(mouth);
+        else if (t < 4.2) cp.lerpVectors(mouth, chest, smooth01((t - 3.5) / 0.7));
+        else if (t < 5.0) cp.lerpVectors(chest, cHome, smooth01((t - 4.2) / 0.8));
+        else cp.copy(cHome);
+        // 品的时候盏口朝嘴边倾一点
+        const tip = t > 2.1 && t < 3.6 ? 0.42 * Math.sin(Math.PI * Math.min(1, (t - 2.1) / 1.5)) : 0;
+        cup.position.copy(cp); cup.quaternion.setFromAxisAngle(R, tip);
+        if (cupWisp) cupWisp.amount = t < 0.8 ? 0.7 : 0;
+        // 右手捏着盏的右侧（手心朝盏），左手在盏底托着（手心朝上）
+        if (t < 5.3) av.reach('R', tmp.copy(cp).addScaledVector(R, 0.056).addScaledVector(U, 0.022), { dir: tmp2.copy(F).multiplyScalar(0.85).addScaledVector(U, 0.35).normalize(), palm: LEFT, rate: t < 0.8 ? 9 : 28 });
+        else av.reach('R', null);
+        if (t > 0.9 && t < 4.4) av.reach('L', tmp.copy(cp).addScaledVector(U, -0.02).addScaledVector(R, -0.012), { dir: R, palm: U, rate: 12 });
+        else av.reach('L', null);
+        av.bow = t < 0.9 || (t > 4.1 && t < 5.2) ? 0.3 : 0.05;
+        av.lookAt(t > 1.8 && t < 3.5 ? head.clone().addScaledVector(F, 1).addScaledVector(U, 0.12) : cp);
+        if (!sipped && t > 2.6) { sipped = true; k.sfx('cup', { vel: 0.25 }); }
+        if (t > 5.5) toDone();
+      } else if (step === 'drink') toDone();
     },
     input: {
       tap() {
         if (step === 'fan') {
-          if (heat < 1) { heat = Math.min(1, heat + 0.12); fan = 1; k.sfx('fan', { vel: 0.4 }); }
-          else {
-            step = 'pour'; pt = 0;
-            if (kettle) undo.push(hold(kettle, k.player.av.joints.handR, [0, 0.02, 0.05], [0, 0, 0]));
-            k.sfx('pour', { vel: 0.6 });
-            set({ kind: 'tea', title: '煮茶', hint: '注茶', progress: 1 });
-            if (!kettle) { step = 'done'; k.bag.add('tea', 1); const r = reveal(k, '既济'); set({ kind: 'xiang', title: '煮茶', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '吃茶' }] }); }
-          }
-        }
+          if (heat < 1) { heat = Math.min(1, heat + 0.12); wave = 1; k.sfx('fan', { vel: 0.4 }); }
+          else toPour();
+        } else if (step === 'steep') toDrink();
         return true;
       },
     },
-    cmd(c) { if (c === 'done') { if (step === 'done') k.log({ kind: 'tea' }); k.exitAct(); } },
+    cmd(c) {
+      if (c === 'sip') toDrink();
+      else if (c === 'done') { if (step === 'done') k.log({ kind: 'tea' }); k.exitAct(); }
+    },
   };
+}
+const V3Z = new THREE.Vector3(0, 0, 1);
+const smooth01 = (x: number) => ease(x);
+/** 注茶时那一道细细的水注（竖着的一根细筒，顶在壶嘴、底在盏里；长短由 scale.y 给） */
+function makeStream(k: Anlewo): THREE.Mesh {
+  const g = new THREE.CylinderGeometry(0.0032, 0.0042, 1, 6, 1, true).translate(0, -0.5, 0);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+  const m = new THREE.Mesh(g, wash({ pig: [0.86, 0.9, 0.93], dens: 0.7, body: 1, shade: 1.1, line: 0 }));
+  m.name = 'tea:stream'; m.frustumCulled = false; m.visible = false;
+  k.world.scene.add(m);
+  return m;
 }
 
 // —— 自斟 ——
@@ -302,7 +460,9 @@ function wine(k: Anlewo): Act | null {
           phase = 'idle'; cups++;
           if (cups === 1) idle({ lines: p4?.lines ?? [], source: p4 ? `${p4.author}《${p4.title}》　${p4.source}` : undefined });
           else if (cups === 2) { sway = 1; idle({ lines: pHalf ? [pHalf.a, pHalf.b] : [], source: pHalf?.src }); }
-          else { const r = reveal(k, '需'); k.log({ kind: 'wine', n: cups }); set({ kind: 'xiang', title: '微醉即止', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '罢' }] }); }
+          // 第三杯：点了灯以后（文档写「夜间，灯火亮时」）才显「需」；白天只是微醺，不显卦
+          else if (inActNow(k, '需')) { const r = reveal(k, '需'); k.log({ kind: 'wine', n: cups }); set({ kind: 'xiang', title: '微醉即止', gua: r.gua, found: r.found, choices: [{ id: 'done', label: '罢' }] }); }
+          else { k.log({ kind: 'wine', n: cups }); idle({ hint: '微醉即止' }); }
         }
       }
       // 两杯以后，镜头微微地晃

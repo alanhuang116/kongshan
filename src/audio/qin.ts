@@ -138,11 +138,13 @@ export class Qin extends Base {
   schedule(from: number, to: number) {
     // 琴音 5kHz 以上没有东西：按一半的采样率算，省一半的工夫
     const sr = this.c.sampleRate / 2;
+    // 调得轻（「冥想」里是五成）就弹得更稀、句子更短、泛音多些——远远的、有一下没一下的几声，不成曲
+    const sparse = 1 - clamp(this.e.user.qin, 0, 1);
     while (this.next < to) {
       const t = Math.max(from, this.next);
       if (this.left <= 0) {
         // 新的一句：从低处的散音起
-        this.left = 2 + Math.floor(rand(0, 4));
+        this.left = Math.max(1, 2 + Math.floor(rand(0, 4)) - Math.round(2 * sparse));
         this.idx = pick([0, 1, 2, 2, 3]);
         this.first = true;
       } else {
@@ -152,7 +154,7 @@ export class Qin extends Base {
       const f = SCALE[this.idx], vel = rand(0.5, 0.82) * (this.first ? 1 : 0.9), pan = rand(-0.15, 0.15);
       const dur = clamp(7 - 1.6 * Math.log2(f / 98), 4, 8);
       const r = Math.random();
-      if (r < 0.14 && !this.first) {
+      if (r < 0.14 + 0.4 * sparse && !this.first) {
         // 泛音：低弦取四倍、高弦取二倍
         this.sound(t, renderHarmonic(sr, f * (f < 150 ? 4 : 2), 4.2, vel), sr, 0.2, pan);
       } else if (r < 0.24) {
@@ -173,7 +175,7 @@ export class Qin extends Base {
       }
       this.left--;
       this.first = false;
-      this.next = t + (this.left > 0 ? rand(1.2, 4) : rand(6, 14));
+      this.next = t + (this.left > 0 ? rand(1.2, 4) * (1 + 0.5 * sparse) : rand(6, 14) * (1 + 1.4 * sparse));
     }
   }
 }

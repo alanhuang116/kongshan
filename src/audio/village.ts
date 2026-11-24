@@ -10,6 +10,7 @@
  */
 import type { Voice } from './engine';
 import { bubble, burst, creak, grain, hiss, mode, plateau, reson, tap, voiced, wobble } from './kit';
+import { chip, cuckooSong, playSong, type El } from './song';
 import type { Shot } from './types';
 import { clamp, lerp, rand } from './util';
 
@@ -44,32 +45,12 @@ function honk(v: Voice, t: number, p: number, amp: number, stretch = 1): number 
   });
   return d;
 }
-/** 一只小鸟的一串音：一个振荡器，音高一段段走、幅度一段段开合；fm 给它一点「毛」（麻雀的啾不是纯音） */
-function chirps(v: Voice, notes: Array<[number, number, number, number, number, number]>, pan: number, fm?: { rate: number; depth: number }) {
-  const c = v.ctx, osc = c.createOscillator(), g = c.createGain(), p = c.createStereoPanner();
-  g.gain.setValueAtTime(0, v.t);
-  let end = v.t;
-  for (const [at, len, f0, fMid, f1, amp] of notes) {
-    const a = v.t + at;
-    osc.frequency.setValueAtTime(f0, a);
-    osc.frequency.exponentialRampToValueAtTime(fMid, a + len * 0.35);
-    osc.frequency.exponentialRampToValueAtTime(f1, a + len);
-    g.gain.setValueAtTime(0, a);
-    g.gain.linearRampToValueAtTime(amp, a + Math.min(0.008, len * 0.25));
-    g.gain.linearRampToValueAtTime(amp * 0.7, a + len * 0.6);
-    g.gain.linearRampToValueAtTime(0, a + len);
-    end = Math.max(end, a + len);
-  }
-  if (fm) {
-    const m = c.createOscillator(), md = c.createGain();
-    m.frequency.value = fm.rate; md.gain.value = fm.depth;
-    m.connect(md); md.connect(osc.frequency);
-    m.start(v.t); m.stop(end + 0.05);
-  }
-  p.pan.value = pan;
-  osc.connect(g); g.connect(p); p.connect(v.out);
-  osc.start(v.t); osc.stop(end + 0.05);
-  return end - v.t;
+/** 一只小鸟的几声：算好的一段（song.ts），偏到 pan 那一边、幅度 amp */
+function chirps(v: Voice, els: El[], pan: number, amp: number) {
+  const c = v.ctx, g = c.createGain(), p = c.createStereoPanner();
+  g.gain.value = amp; p.pan.value = pan;
+  g.connect(p); p.connect(v.out);
+  return playSong(c, g, v.t, els);
 }
 
 // ———————————————————————————— 器具 ————————————————————————————
@@ -183,38 +164,29 @@ export const VILLAGE_SHOTS: Pick<Record<Shot, Fn>, 'rooster' | 'hen' | 'chick' |
   },
   /** 两只麻雀吵一阵：你一声我一声，越吵越急，末了各补一声 */
   sparrow(v) {
-    const a = 0.1 * (0.5 + 0.7 * v.vel), birds = [{ p: rand(0.95, 1.05) * v.pitch, notes: [] as Array<[number, number, number, number, number, number]> }, { p: rand(1.08, 1.18) * v.pitch, notes: [] as Array<[number, number, number, number, number, number]> }];
-    const add = (who: number, at: number, amp: number) => { const b = birds[who], len = rand(0.045, 0.075); b.notes.push([at, len, 3300 * b.p, rand(4400, 5000) * b.p, rand(2800, 3200) * b.p, amp]); return len; };
+    const a = 0.09 * (0.5 + 0.7 * v.vel), birds = [{ p: rand(0.95, 1.05) * v.pitch, els: [] as El[] }, { p: rand(1.08, 1.18) * v.pitch, els: [] as El[] }];
+    const add = (who: number, at: number, amp: number) => { const e = chip(at, birds[who].p, amp); birds[who].els.push(e); return e.len; };
     let t = 0, who = 0, gap = rand(0.1, 0.14);
-    for (let i = 0, n = 8 + Math.floor(rand(0, 7)); i < n; i++) { t += add(who, t, a * rand(0.6, 1)) + gap * rand(0.6, 1.2); if (Math.random() < 0.75) who = 1 - who; gap *= 0.96; }
-    t += rand(0.15, 0.3); t += add(0, t, a * 0.8) + rand(0.2, 0.4); t += add(1, t, a * 0.6);
-    birds.forEach((b, i) => { if (b.notes.length) chirps(v, b.notes, i ? 0.25 : -0.25, { rate: rand(190, 260), depth: 420 }); });
+    for (let i = 0, n = 8 + Math.floor(rand(0, 7)); i < n; i++) { t += add(who, t, rand(0.6, 1)) + gap * rand(0.6, 1.2); if (Math.random() < 0.75) who = 1 - who; gap *= 0.96; }
+    t += rand(0.15, 0.3); t += add(0, t, 0.8) + rand(0.2, 0.4); t += add(1, t, 0.6);
+    birds.forEach((b, i) => { if (b.els.length) chirps(v, b.els, i ? 0.25 : -0.25, a); });
     return t + 0.2;
   },
-  /** 布谷：两个音，下行小三度，圆而空。variant: 'x3' 连叫三声。没给 dist 时按远处的算 */
+  /**
+   * 布谷：两个音，下行小三度。variant: 'x3' 连叫三声。没给 dist 时按远处的算。
+   * 原先是一个三角波——两个纯的「呜」，在远处像有人吹埙；这一版软起、带一点气、嗓子里一点抖（song.ts 的 cuckooSong）
+   */
   cuckoo(v) {
-    const a = 0.22 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.97, 1.04), c = v.ctx, n = v.raw.variant === 'x3' ? 3 : 1;
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 1600; lp.Q.value = 0.5;
-    lp.connect(v.out);
-    const osc = c.createOscillator(), g = c.createGain();
-    osc.type = 'triangle';
-    g.gain.setValueAtTime(0, v.t);
-    let t = v.t;
-    for (let k = 0; k < n; k++) {
-      for (const [at, len, f0, f1, amp] of [[0, 0.17, 642, 630, 1], [0.31, 0.27, 512, 498, 0.9]] as const) {
-        osc.frequency.setValueAtTime(f0 * p, t + at);
-        osc.frequency.linearRampToValueAtTime(f1 * p, t + at + len);
-        g.gain.setValueAtTime(0, t + at);
-        g.gain.linearRampToValueAtTime(a * amp, t + at + 0.03);
-        g.gain.setValueAtTime(a * amp, t + at + len - 0.07);
-        g.gain.linearRampToValueAtTime(0, t + at + len);
-      }
-      t += rand(1.2, 1.32);
-    }
-    osc.connect(g); g.connect(lp);
-    osc.start(v.t); osc.stop(t + 0.1);
-    return t - v.t + 0.3;
+    const a = 0.2 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.97, 1.04), c = v.ctx, n = v.raw.variant === 'x3' ? 3 : 1;
+    const lp = c.createBiquadFilter(), g = c.createGain();
+    lp.type = 'lowpass'; lp.frequency.value = 1800; lp.Q.value = 0.5;
+    g.gain.value = a;
+    g.connect(lp); lp.connect(v.out);
+    const els: El[] = [];
+    let t = 0;
+    for (let k = 0; k < n; k++) { for (const e of cuckooSong(p)) els.push({ ...e, at: e.at + t }); t += rand(1.2, 1.32); }
+    playSong(c, g, v.t, els);
+    return t + 0.3;
   },
   /**
    * 鹅 / 雁。不给 variant：家鹅一两声「嘎——」（比雁低、长）；'hiss'：伸着脖子「嘶——」地吓人；

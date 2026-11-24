@@ -2,6 +2,7 @@
  * 场上的事：
  *   打场 —— 挑来的麦捆（或谷穗）解开、一圈一圈摊在场上，拿连枷打。表的指针随着连枷一起一落，
  *           举到顶（朱色那一段）时按下去，一枷拍在麦上最实；麦打完了，场上一堆连糠带粒的；谷穗打下来就是谷子。
+ *           肩上的不够一场（十六捆），场边码着的（自己放下的、邻家帮着挑来的）也一起摊上。
  *   扬场 —— 借风把糠扬走：看着风那道表，风合适时（朱色那一段）一锨扬上去，糠顺风飘走、麦粒落回来。
  *           风小了糠扬不走，风大了麦粒也刮跑。下雨天场上不打不扬。
  *   推磨 —— 场边一盘石磨。按住，扶着磨棍一圈一圈地推，麦子磨成面。
@@ -11,6 +12,7 @@ import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
 import type { Act } from './types';
 import { QUOTES } from '../../data/farm';
+import { qtyCn } from '../bag';
 import { farmOf, type Farm } from '../farm';
 import * as Mo from '../farm/model';
 import { FLOOR, HEAP, MILL } from '../farm/layout';
@@ -43,22 +45,24 @@ function thresh(k: Anlewo, F: Farm): Act {
   const beatUi = () => set({ title: crop === 'wheat' ? '打场' : '打谷', ...chain(crop, crop === 'wheat' ? '打场' : '打谷'), hint: hits === 0 ? '连枷举到顶（朱色那一段）时按下去' : '', hold: { id: 'beat', label: '打' }, meter: meter(0), progress: F.st.floor.beaten, keys: [{ key: '空格', label: '举到顶时按' }], choices: [BYE] });
   const act: FAct = {
     id: 'farm:thresh', name: '打场', anchor: V(FLOOR.x, FLOOR.y + 1.3, FLOOR.z), spot: { x: FLOOR.x, z: FLOOR.z + FLOOR.r + 0.6, yaw: PI }, radius: 3.2, state, noZoom: true,
-    on() { return k.atmos.night < 0.72 && (k.bag.has('sheaf') || k.bag.has('milletEar') || F.st.floor.spread > 0); },
+    on() { return k.atmos.night < 0.72 && (k.bag.has('sheaf') || k.bag.has('milletEar') || F.st.floor.spread > 0 || F.guide.floorPile() >= 0); },
     enter() {
       press.reset(); t = 0; ph = 0; strike = -1; good = 0; hits = 0;
       const v = view(center.clone().lerp(k.player.pos, 0.4), PI * 0.78, 5.4, 2.6, 0.5); cam.start(v.pos, v.look, 42, 1.5);
       const w = why(k, { night: 0.72, rain: true });
-      if (w) { phase = 'no'; set({ title: '打场', text: w, choices: [BYE] }); return; }
+      if (w) { phase = 'no'; set({ title: '打场', text: `${w}${k.bag.has('sheaf') || k.bag.has('milletEar') ? '\n担子先放在场边（「放下」），雨住了再来打。' : ''}`, choices: [BYE] }); return; }
       const f = F.st.floor;
       if (f.spread > 0 && f.crop) { crop = f.crop; startBeat(); return; }
-      // 解开挑来的麦捆，一圈摊开；没有麦就摊谷穗
-      crop = k.bag.has('sheaf') ? 'wheat' : 'millet';
-      const id = crop === 'wheat' ? 'sheaf' : 'milletEar', n = Math.min(16, k.bag.count(id));
-      k.bag.take(id, n, { quiet: true });
+      // 解开挑来的麦捆，一圈摊开；没有麦就摊谷穗；肩上的不够，场边码着的也摊上
+      const pile = F.st.piles[F.guide.floorPile()];
+      crop = k.bag.has('sheaf') ? 'wheat' : k.bag.has('milletEar') ? 'millet' : pile?.item === 'milletEar' ? 'millet' : 'wheat';
+      const id = crop === 'wheat' ? 'sheaf' : 'milletEar', fromBag = Math.min(16, k.bag.count(id));
+      k.bag.take(id, fromBag, { quiet: true });
+      const n = fromBag + F.guide.takeFloor(id, 16 - fromBag);
       Mo.spread(F.st, crop, n);
       F.yardChanged();
       phase = 'unload'; t = 0;
-      set({ title: crop === 'wheat' ? '打场' : '打谷', ...chain(crop, crop === 'wheat' ? '打场' : '打谷'), hint: crop === 'wheat' ? `解开麦捆，${n}捆摊成一圈` : `${n}把谷穗摊开` });
+      set({ title: crop === 'wheat' ? '打场' : '打谷', ...chain(crop, crop === 'wheat' ? '打场' : '打谷'), hint: crop === 'wheat' ? `解开行囊里的麦捆，${n}捆摊成一圈；打下来是麦粒` : `行囊里的谷穗，${n}把摊开；打下来是谷子` });
     },
     exit() { restore(); const av = k.player.av; av.reach('L', null); av.reach('R', null); av.bow = 0; av.setPose('stand', 0.6); },
     update(dt) {
@@ -228,7 +232,7 @@ function grind(k: Anlewo, F: Farm): Act {
   let phase: 'push' | 'done' | 'none' = 'push', theta = PI / 2, turned = 0, flour = 0, mv: { done: boolean } | null = null, retarget = 0, sound = 0;
   addDisc(MILL.x, MILL.z, MILL.base + 0.05);
   const ang = () => Math.atan2(k.player.pos.z - C.z, k.player.pos.x - C.x);
-  const ui = () => set({ title: '推磨', ...chain('wheat', '磨面'), hint: turned === 0 ? '按住，扶着磨棍一圈一圈地推' : '', hold: { id: 'push', label: '推', v: (turned % (PI * 2)) / (PI * 2) }, count: flour, progress: null, keys: [{ key: '空格', label: '按住推' }], choices: [BYE] });
+  const ui = () => set({ title: '推磨', ...chain('wheat', '磨面'), hint: turned === 0 ? `${k.bag.has('wheat') ? `磨行囊里的麦粒（${qtyCn(k.bag.count('wheat'))}升），一升磨一升面。` : '磨家里囤着的麦。'}按住，扶着磨棍一圈一圈地推` : '', hold: { id: 'push', label: '推', v: (turned % (PI * 2)) / (PI * 2) }, count: flour, progress: null, keys: [{ key: '空格', label: '按住推' }], choices: [BYE] });
   const act: FAct = {
     id: 'farm:grind', name: '推磨', anchor: V(MILL.x, MILL.y + 1.3, MILL.z), spot: { x: MILL.x + Math.cos(PI / 2) * R, z: MILL.z + Math.sin(PI / 2) * R, yaw: Math.atan2(-Math.sin(PI / 2), Math.cos(PI / 2)) }, radius: 2.8, state, noZoom: true,
     on() { return (k.bag.has('wheat') || !F.st.pantry.wheat) && k.atmos.night < 0.9; },
@@ -307,7 +311,7 @@ function pound(k: Anlewo, F: Farm): Act | null {
   const mortar = () => { const w = ham.localToWorld(tipL.clone()); return w; };
   let phase: 'stir' | 'done' | 'no' = 'stir', stir = -1, loaded = 0, ok = 0, NEED = 6, warn = 0;
   const lift = () => (ham.userData.lift as number) ?? 0;
-  const ui = (extra: Record<string, unknown> = {}) => set({ title: '舂米', ...chain('millet', '舂米'), hint: ok === 0 ? '碓头抬起来时（朱色那一段）伸手翻一翻；落下来时别伸手' : '', hold: { id: 'stir', label: '翻' }, meter: { v: lift(), lo: 0.55, hi: 1, label: '碓头' }, count: ok, total: NEED, progress: ok / NEED, keys: [{ key: '空格', label: '翻' }], choices: [BYE], ...extra });
+  const ui = (extra: Record<string, unknown> = {}) => set({ title: '舂米', ...chain('millet', '舂米'), hint: ok === 0 ? `舂行囊里的谷子（${qtyCn(loaded)}升），舂好是小米。碓头抬起来时（朱色那一段）伸手翻一翻；落下来时别伸手` : '', hold: { id: 'stir', label: '翻' }, meter: { v: lift(), lo: 0.55, hi: 1, label: '碓头' }, count: ok, total: NEED, progress: ok / NEED, keys: [{ key: '空格', label: '翻' }], choices: [BYE], ...extra });
   const act: FAct = {
     id: 'farm:pound', name: '舂米', anchor: a.position.clone().add(V(0, 1.2, 0)), spot: { x: a.position.x, z: a.position.z, yaw: a.rotation.y }, radius: 2.4, state, noZoom: true,
     on() { return (k.bag.has('gu') || !F.st.pantry.gu) && k.atmos.night < 0.9; },

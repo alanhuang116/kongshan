@@ -1,0 +1,8 @@
+/* 声音册：上头一排「几套现成的」（山居、纯自然、冥想、人间、静）——用的是 .seg 那一排平平的字，选中的底下一笔墨线；
+   下面一行小字说这一套是什么样子。五个字一排，手机上也放得下（字小一点、字距收一点），不折行、不截断。 */
+.presets-wrap { margin: -2px 0 12px; }
+.seg.presets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.seg.presets > button { min-height: 46px; padding: 0 2px; font-size: 16px; letter-spacing: 0.1em; text-indent: 0.1em; }
+.preset-note { min-height: calc(2 * 1.85em); margin-top: 9px; font-size: 13px; line-height: 1.85; letter-spacing: 0.05em; color: var(--ink-2); text-align: justify; }
+@media (pointer: coarse) { .seg.presets > button { min-height: 48px; } }
+@media (max-width: 400px) { .seg.presets > button { font-size: 15px; letter-spacing: 0.05em; text-indent: 0.05em; } }

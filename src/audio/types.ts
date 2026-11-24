@@ -252,6 +252,38 @@ export const LAYER_GROUP: Partial<Record<Layer, Group>> = { wind: 'wind', birds:
 
 /** 各组默认的用户音量：1 就是「按场景算出来的原样」 */
 export const DEFAULT_GROUPS: Record<Group, number> = { wind: 1, water: 1, birds: 1, insects: 1, weather: 1, village: 1 };
+
+/**
+ * 世界自己放的一击归哪一组——用户调的音量也管它们，不只管层（不然把「村」关了，看得见的那只鸡照样在叫）：
+ * 鸟与林子里的松鼠、远山的鹿归「鸟」（与「野」那一层同组），蛙与蜂归「虫」，禽畜、牧笛、别人的活计归「村」，远雷归「雨」。
+ * 玩家自己手上的声音（纸笔、茶酒、琴、门、脚步……）不在这里，只跟着总音量走。见 engine.ts 的 userGain。
+ */
+export const SHOT_GROUP: Partial<Record<Shot, Group>> = {
+  oriole: 'birds', magpie: 'birds', crow: 'birds', geese: 'birds', crane: 'birds', cuckoo: 'birds', sparrow: 'birds', chirp: 'birds', tumble: 'birds', wings: 'birds', squirrel: 'birds', deer: 'birds',
+  frog: 'insects', frogPlop: 'insects', bee: 'insects',
+  fishJump: 'water',
+  rooster: 'village', hen: 'village', cluck: 'village', cackle: 'village', chick: 'village', duck: 'village', quack: 'village', goose: 'village', dog: 'village', dogWhine: 'village', cat: 'village', purr: 'village',
+  ox: 'village', munch: 'village', goat: 'village', sheep: 'village', lamb: 'village', donkey: 'village', peck: 'village', flap: 'village', flute: 'village',
+  hammer: 'village', saw: 'village', plane: 'village', hoe: 'village', plough: 'village', pound: 'village', millThump: 'village', rattle: 'village', whip: 'village', clapper: 'village', gong: 'village', wood: 'village', drum: 'village',
+  loom: 'village', chop: 'village', split: 'village', flail: 'village', thresh: 'village', winnow: 'village', sickle: 'village', sheaf: 'village', sow: 'village', dig: 'village', pull: 'village', pole: 'village',
+  scoop: 'village', stir: 'village', grain: 'village', millstone: 'village', windlass: 'village', bucket: 'village', net: 'village', oar: 'village', swing: 'village', shuttle: 'village',
+  thunder: 'weather',
+};
+/**
+ * 上面那些里头玩家自己也会做的活计（割麦、锄地、打水、摇橹……）：没给位置的（玩家手上那一下）、离听的人三米半以内的，都不归组——
+ * 「村」关了，自己割麦照样有声；村里别人在干的才跟着「村」走。禽畜鸟兽也一样：摸到跟前的那一只（三米半以内）照常出声。
+ */
+export const WORK_SHOTS: ReadonlySet<Shot> = new Set<Shot>([
+  'hammer', 'saw', 'plane', 'hoe', 'plough', 'pound', 'loom', 'chop', 'split', 'flail', 'thresh', 'winnow', 'sickle', 'sheaf', 'sow', 'dig', 'pull', 'pole', 'scoop', 'stir', 'grain', 'millstone', 'windlass', 'bucket', 'net', 'oar', 'swing', 'shuttle', 'wood',
+]);
+/**
+ * 人声：合成的人的声音——书声、远处说话、孩子笑、一声「嗯」（也连着一直响着的 murmur）。另有一个开关（audio.setVoices），不在六组里。
+ * 引擎这边默认是 1（原样）；界面上默认关着（src/app/sound.ts）：人声最容易听着不像、听着瘆人，没有人用耳朵听过之前宁可不出。
+ * 书声关着时，村塾那里换成不出人声的动静：偶尔翻一页书，先生的戒尺在案上轻轻嗒两下（recite.ts 的 lessonCue）。
+ */
+export const VOICE_SHOTS: readonly Shot[] = ['recite', 'murmur', 'laugh', 'kidsLaugh', 'greet'];
+/** 一直响着的里头归组的：池边的一片蛙、蜂箱归「虫」；远处人声归人声 */
+export const LOOP_GROUP: Partial<Record<Loop, Group | 'voices'>> = { frog: 'insects', bee: 'insects', murmur: 'voices' };
 /** 旧九层默认的用户音量：前五个是组（1＝原样），后四个是真的层（默认关） */
 export const DEFAULT_LAYERS: Record<Layer, number> = { wind: 1, birds: 1, stream: 1, rain: 1, insects: 1, chant: 0, qin: 0, bellfar: 0, eaves: 0 };
 
@@ -260,7 +292,8 @@ export const DEFAULT_SCENE: Scene = { place: 'grove', hour: 9, season: 'spring',
 
 /** 各样声音能传多远（米）：到这么远就是 dist = 1。给了 at（世界里的位置）的按它算；把远近折进力度里传来的（vel < 0.25）也按它倒推 */
 export const RANGE: Partial<Record<Shot, number>> = {
-  rooster: 160, dog: 240, goose: 160, cuckoo: 300, flute: 320, thunder: 4000, ox: 140, recite: 110, hammer: 100, millThump: 130, pound: 110, rattle: 130, saw: 70, plane: 50,
+  // 书声原先给了 110 米：人在草堂里（离村塾九十多米）也听得见一班孩子在念，和屋里的整个环境声一样响——太远了。现在 55 米
+  rooster: 160, dog: 240, goose: 160, cuckoo: 300, flute: 320, thunder: 4000, ox: 140, recite: 55, hammer: 100, millThump: 130, pound: 110, rattle: 130, saw: 70, plane: 50,
   hen: 45, cluck: 45, chick: 25, duck: 60, quack: 60, thresh: 80, laugh: 60, chirp: 40, cat: 40, sparrow: 40, hoe: 70, plough: 80, bucket: 50, swing: 35, oar: 120, net: 110, knock: 60, gate: 50, door: 40, gust: 120, stone: 14, bowl: 12,
   // 农事
   sickle: 30, sheaf: 18, flail: 90, winnow: 50, millstone: 45, sow: 18, dig: 55, pluck: 20, grain: 25, windlass: 60, water: 30, chop: 110, split: 25, loom: 40, pull: 18, pole: 20, rustle: 60, fruitFall: 25, scoop: 30, stir: 18,

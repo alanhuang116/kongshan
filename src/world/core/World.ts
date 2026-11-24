@@ -25,7 +25,13 @@ export function detectQuality(force?: string | null): Quality {
   const ua = nav.userAgent ?? '';
   const mobile = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua) || ((nav.maxTouchPoints ?? 0) > 1 && Math.min(screen.width, screen.height) < 900);
   const mem = (nav as Navigator & { deviceMemory?: number }).deviceMemory ?? 4, cores = nav.hardwareConcurrency ?? 4;
-  let tier: Tier = mobile ? (mem >= 6 && cores >= 8 ? 'mid' : 'low') : cores >= 8 ? 'high' : 'mid';
+  // iPhone / iPad（Safari、微信里的网页）不报内存（deviceMemory 是空的），按上面那一条一律落到 low：
+  // 三倍屏上只画 1.25 倍、贴图减半、草木减半，画面又糊又稀，和电脑上看起来像两种画。
+  // iOS 16 以后的机器（A11 起）撑得住 mid；真慢了还有 adapt 往下降清晰度。
+  const ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && (nav.maxTouchPoints ?? 0) > 1);
+  const iosMajor = Number(/OS (\d+)_/i.exec(ua)?.[1] ?? /Version\/(\d+)/i.exec(ua)?.[1] ?? 0);
+  const capableIOS = ios && iosMajor >= 16 && (typeof window === 'undefined' ? 2 : window.devicePixelRatio || 1) >= 2;
+  let tier: Tier = mobile ? ((mem >= 6 && cores >= 8) || capableIOS ? 'mid' : 'low') : cores >= 8 ? 'high' : 'mid';
   if (force === 'low' || force === 'mid' || force === 'high') tier = force;
   const T: Record<Tier, Omit<Quality, 'tier' | 'mobile'>> = {
     low: { dpr: 1.25, msaa: 4, tex: 0.5, density: 0.5 },
@@ -92,6 +98,7 @@ export class World {
     this.ro.observe(canvas.parentElement ?? canvas);
     this.resize();
     this.bind();
+    this.settleOnRotate();
   }
 
   resize() {
@@ -104,6 +111,31 @@ export class World {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     for (const f of this.onResize) f(w, h);
+  }
+
+  /**
+   * 手机转屏（横竖）、浏览器的地址栏收放之后：iPhone 的 Safari 与微信里的网页有时尺寸晚到几百毫秒才对，
+   * 页面还可能被留在一个滚动过的位置上——这时按下去的地方与看到的东西对不上。
+   * 所以这几种事一来，先把滚动归零，再隔一阵量一次画布，量到一秒多以后（只排一串，后来的盖过先前的）。
+   */
+  private settleTimers: number[] = [];
+  private settleOnRotate() {
+    if (typeof window === 'undefined') return;
+    const settle = () => {
+      try { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); } catch { /* 无妨 */ }
+      const el = this.canvas.parentElement ?? this.canvas;
+      if (Math.abs(el.clientWidth - this.size.x) > 0.5 || Math.abs(el.clientHeight - this.size.y) > 0.5) this.resize();
+    };
+    const burst = () => {
+      for (const t of this.settleTimers) clearTimeout(t);
+      settle();
+      this.settleTimers = [80, 250, 500, 900, 1500].map((ms) => window.setTimeout(settle, ms));
+    };
+    window.addEventListener('orientationchange', burst);
+    window.addEventListener('resize', burst);
+    window.visualViewport?.addEventListener('resize', burst);
+    window.visualViewport?.addEventListener('scroll', burst);
+    screen.orientation?.addEventListener?.('change', burst);
   }
 
   /** 画面太慢就降一点清晰度，宽裕了再升回来 */

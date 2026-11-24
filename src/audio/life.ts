@@ -6,6 +6,7 @@
  *                   母鸡、小鸡、鸭、麻雀、井上的辘轳要离村近了才听得见；犬白天隔一两分钟远远吠两声，夜里隔很久才有一回；
  *                   牛在田那边低低地哞。远近都按 near.village（牛看 near.fields）算。
  *   塾（school）  书声：一班孩子一句一句地念一篇课文（上句悬着、下句落下来），念完歇一歇，再念一遍或换一篇。
+ *                 人声关着时（界面上默认如此）不念出声，只有翻书与先生的戒尺（见 recite.ts 的 lessonCue）。
  *   工（work）    修桥：锤几下、锯一阵、刨几下，中间歇手。
  *   这三层是「没人管的时候自己来」的：世界若自己放了同一种声音（audio.play('recite' / 'hammer' / 'rooster' …），
  *   层里就让开一阵（书声 10 秒、锤锯 30 秒、鸡鸣 45 秒、别的禽畜 30 秒），免得两头各念各的。远得听不见的不算。
@@ -35,9 +36,10 @@ export class Village extends Base {
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
     this.answered = e.heardAt('rooster');
-    const o = e.offline;
+    const calm = t < e.calmUntil, o = e.offline && !calm;
     this.next = {
-      rooster: t + (o ? rand(0.3, 1) : rand(2, 12)), hen: t + (o ? rand(1, 3) : rand(3, 15)), chick: t + (o ? rand(2, 4) : rand(6, 25)), duck: t + (o ? rand(3, 6) : rand(10, 40)),
+      // 刚进门的头一分钟静一些：远处的鸡过一阵才叫
+      rooster: t + (o ? rand(0.3, 1) : calm ? rand(15, 35) : rand(2, 12)), hen: t + (o ? rand(1, 3) : rand(3, 15)), chick: t + (o ? rand(2, 4) : rand(6, 25)), duck: t + (o ? rand(3, 6) : rand(10, 40)),
       dog: t + (o ? rand(4, 7) : rand(20, 90)), ox: t + (o ? rand(5, 8) : rand(30, 120)), sparrow: t + (o ? rand(6, 9) : rand(15, 60)), bucket: t + (o ? rand(7, 10) : rand(30, 100)),
       goat: t + (o ? rand(2, 6) : rand(20, 80)), donkey: t + (o ? rand(8, 14) : rand(60, 200)), peck: t + (o ? rand(1, 4) : rand(8, 30)), clapper: t + (o ? rand(3, 6) : rand(40, 160)),
     };
@@ -147,27 +149,41 @@ export class School extends Base {
   private line = 0;
   private reps = 0;
   private next: number;
+  /** 人声关着时：下一回翻书、下一回戒尺 */
+  private page: number;
+  private ruler: number;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
-    // 隔着一段路：高处被吃掉，回声多一些
-    this.far = this.filter('lowpass', 3000, 0.5);
-    const dry = this.slow(0.85), wet = this.slow(0.4);
+    // 隔着村塾的墙、隔着一段路：高处被吃掉；回声少（送多了像空屋子里有人在念）
+    this.far = this.filter('lowpass', 2000, 0.5);
+    const dry = this.slow(0.8), wet = this.slow(0.14);
     this.far.connect(dry); dry.connect(bus.dry);
     this.far.connect(wet); wet.connect(bus.open);
     this.next = t + (e.offline ? 0.2 : rand(0.5, 2.5));
+    this.page = t + (e.offline ? 0.5 : rand(2, 8));
+    this.ruler = t + (e.offline ? 2 : rand(10, 30));
     this.scene(t);
   }
   scene(t: number) {
-    // 远远的只听得见起伏与节奏；走近了字头才清楚
-    this.far.frequency.setTargetAtTime(lerp(1400, 3600, Math.pow(this.e.scene.near.school, 1.2)), t, 0.6);
+    // 远远的只听得见起伏与节奏；走到门口字头才清楚一点
+    this.far.frequency.setTargetAtTime(lerp(850, 2300, Math.pow(this.e.scene.near.school, 1.2)), t, 0.6);
   }
   schedule(from: number, to: number) {
+    // 人声关着：不念出声，只有一堂课的几样小动静（隔十来二十秒翻一页书，隔半分钟到一分多钟先生的戒尺嗒一两下）
+    if (this.e.voiceLevel <= 0.001) {
+      const dist = clamp(0.75 - 0.6 * this.e.scene.near.school, 0.1, 0.8), quiet = this.e.since('recite') < 10;
+      while (this.page < to) { const t = Math.max(from, this.page); if (!quiet) this.say('page', t, { vel: rand(0.4, 0.6), dist, pan: rand(-0.3, 0.3) }, this.far); this.page = t + rand(9, 20); }
+      while (this.ruler < to) { const t = Math.max(from, this.ruler); if (!quiet) this.say('wood', t, { vel: rand(0.45, 0.65), dist, variant: 'ruler' }, this.far); this.ruler = t + rand(35, 80); }
+      if (this.next < to) this.next = to;
+      return;
+    }
     while (this.next < to) {
       const t = Math.max(from, this.next), text = LESSONS[this.lesson], last = this.line >= text.length - 1;
       // 世界自己在放书声（村塾里的孩子跟着动画念），这里就不再念
       if (this.e.since('recite') < 10) { this.next = t + 2; continue; }
       // 单数句悬着，双数句落下来；一篇的末一句一定落下来
       const r = recitePhrase(this.e, this.far, t, { syl: text[this.line], crew: this.crew, pitch: this.pitch, beat: this.beat * rand(0.97, 1.03), close: last || this.line % 2 ? 'down' : 'up' });
+      r.out.gain.value *= this.e.voiceLevel;
       this.later(t + r.dur, () => r.out.disconnect());
       this.next = t + r.dur + rand(0.05, 0.3);
       this.line++;

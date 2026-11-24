@@ -4,7 +4,8 @@
  *   东间 —— 北墙两架书（线装书平放成摞，书根朝外；几卷轴、一只函套），窗下一张素木书案、一只方凳；
  *           案上：稿纸、两张诗稿、砚、墨、笔山上的笔、笔筒、一盏灯，手边一册合着的《周易》、一册摊开的《皇极经世》（页上一幅先天八卦小图）。
  *   明间 —— 正对着门的北墙上挂一轴先天图（六十四卦方圆图），下面一张窄条几，一只小香炉；西北角一瓮酒。
- *   西间 —— 靠北墙一张榻（席卷、木枕、叠着的被），榻上方一幅水墨小景；榻前矮琴几上一张琴；地上一领芦席、一只蒲团；近门处一只小泥炉、一把壶、两只盏。
+ *   西间 —— 靠北墙一张榻（席卷、木枕、叠着的被），榻上方一幅水墨小景；榻前一领芦席，席上一只蒲团、蒲团南边矮琴几上一张琴
+ *           （坐在蒲团上弹，面朝南、朝着院子）；靠南一只小泥炉、一把壶，炉边一张矮茶床放两只盏、一把蒲扇（跪在炉北煮，也面朝院子）。
  *
  * 坐标同 hall.ts：相对草堂正中，y=0 是院子地面，屋里地面在 y=fl。可拿的东西另成一件（c.part），原点在好拿的地方。
  */
@@ -249,13 +250,13 @@ export function furnish(c: Ctx, dm: HallDims): void {
     L(dye(panel(0.33, 0.77, c.rect('scene')).translate(kx + 0.1, sy - 0.2 - 0.385, zw + 0.004), INK.page, 0.6));
     obj.push(dye(cyl(0.016, 0.016, 0.52, 8).rotateZ(Math.PI / 2).translate(kx + 0.1, sy - 1.12, zw + 0.014), INK.darkwood, 2));
 
-    // 琴几：一块板、两块板足，矮矮的；人坐在南边的席上弹
+    // 琴几：一块板、两块板足，矮矮的；人坐在几北的蒲团上，面朝南（朝着院子）弹
     const qx = I.qin.x, qz = I.qin.z, qh = fl + 0.3;
     b.add('wood', at(plank(1.34, 0.03, 0.36, 88), qx, qh - 0.015, qz));
     for (const sx of [-1, 1]) b.add('wood', at(plank(0.03, 0.27, 0.3, 89 + sx), qx + sx * 0.5, fl + 0.135, qz));
     b.add('wood', at(box(1.0, 0.05, 0.022, 'x'), qx, fl + 0.14, qz));
     c.solid({ id: '草堂·琴几', kind: 'rect', x: ox + qx, z: oz + qz, w: 1.34, d: 0.36, top: oy + qh });
-    // 琴（可拿；原点在琴底正中）：琴首在东（弹的人的右手），七弦、岳山、十三徽
+    // 琴（可拿；原点在琴底正中）：琴首（岳山）在西——弹的人面朝南，琴首在他的右手；七弦、岳山、十三徽
     {
       const g: Geo[] = [], st: Array<[number, number]> = [[0.61, 0.092], [0.5, 0.094], [0.44, 0.079], [0.37, 0.1], [0.1, 0.093], [-0.14, 0.086], [-0.24, 0.074], [-0.33, 0.083], [-0.56, 0.072], [-0.61, 0.066]];
       const sec = (hw: number, x: number): THREE.Vector3[] => { const o: THREE.Vector3[] = []; for (let k = 0; k <= 6; k++) { const a = (k / 6) * Math.PI; o.push(v3(x, 0.03 + 0.02 * Math.sin(a), -Math.cos(a) * hw)); } o.push(v3(x, 0, hw * 0.94), v3(x, 0, -hw * 0.94), o[0].clone()); return o; };
@@ -265,30 +266,34 @@ export function furnish(c: Ctx, dm: HallDims): void {
       g.push(dye(box(0.012, 0.014, 0.17).translate(0.52, 0.056, 0), INK.darkwood, 2.4));
       for (let i = 0; i < 7; i++) { const z = -0.06 + i * 0.02; g.push(dye(pole(v3(0.52, 0.064, z), v3(-0.607, 0.052, z * 0.86), 0.0011, 0.0011, 3), [0.96, 0.93, 0.84], 0.6)); }
       for (let i = 0; i < 13; i++) { const u = [0.125, 0.167, 0.2, 0.25, 0.333, 0.4, 0.5, 0.6, 0.667, 0.75, 0.8, 0.833, 0.875][i]; g.push(dye(cyl(0.0045, 0.0045, 0.002, 6).translate(0.52 - u * 1.127, 0.049 + 0.0005, -0.082 + u * 0.012), INK.white, 0.5)); }
-      const qin = c.part('qinBody', 'obj', g, wp(qx, qh + 0.001, qz), new THREE.Euler(0, 0.03, 0));
+      // （掉过头来摆：琴首朝西）
+      const qin = c.part('qinBody', 'obj', g, wp(qx, qh + 0.001, qz), new THREE.Euler(0, Math.PI + 0.03, 0));
       qin.userData = { len: 1.22, strings: v3(-0.04, 0.058, 0) };
-      c.anchor('qin', ox + qx - 0.04, oy + qh + 0.06, oz + qz, 0);
+      c.anchor('qin', ox + qx + 0.04, oy + qh + 0.06, oz + qz, Math.PI);
     }
-    // 一块叠着的琴囊，搁在琴几西头
-    obj.push(dye(at(wobble(sbox(0.2, 0.03, 0.14, 0.06), 0.006, 6, 90, 55), qx - 0.55, qh + 0.07, qz + 0.02, 0.2), [0.78, 0.74, 0.66], 1.3));
+    // 一块叠着的琴囊，搁在琴几东头（琴尾那一头）
+    obj.push(dye(at(wobble(sbox(0.2, 0.03, 0.14, 0.06), 0.006, 6, 90, 55), qx + 0.55, qh + 0.07, qz - 0.02, -0.2), [0.78, 0.74, 0.66], 1.3));
 
-    // 地上一领芦席，席上一只蒲团
-    const mx = -3.15, mz = -0.1, mw = 2.0, md = 1.55;
+    // 地上一领芦席（琴几、坐处都在席上），席上一只蒲团：弹琴的人坐在蒲团上，正对着弦的当中
+    const sx0 = qx + 0.04, sz0 = qz - 0.44;
+    const mx = sx0, mz = qz - 0.36, mw = 1.9, md = 1.22;
     b.add('thatch', at(tint(matGeo(mw, md, 91), 0.98, 0.98, 0.95), mx, fl + 0.006, mz));
     for (const sz of [-1, 1]) obj.push(dye(at(box(mw + 0.01, 0.014, 0.05), mx, fl + 0.008, mz + sz * (md / 2 - 0.02)), INK.indigo, 1.9));
     const pu = lathe([[0.001, 0], [0.22, 0], [0.26, 0.022], [0.262, 0.05], [0.235, 0.072], [0.001, 0.078]], seg(18));
     swapUV(pu);
-    b.add('thatch', at(tint(pu, 0.96, 0.95, 0.9), mx + 0.05, fl + 0.014, mz + 0.1));
-    c.anchor('mat', ox + mx + 0.05, oy + fl + 0.092, oz + mz + 0.1, 0);
-    c.anchor('qinSeat', ox + qx - 0.04, oy + fl + 0.014, oz + qz + 0.62, Math.PI);
+    b.add('thatch', at(tint(pu, 0.96, 0.95, 0.9), sx0, fl + 0.014, sz0));
+    c.anchor('mat', ox + sx0, oy + fl + 0.092, oz + sz0, 0);
+    // 坐处：蒲团面的正中，+z 是坐下后面朝的方向（南）
+    c.anchor('qinSeat', ox + sx0, oy + fl + 0.092, oz + sz0, 0);
 
-    // 茶炉：小泥炉，三个支钉托着壶；炉前一个风口。旁边一块小托板放两只盏，一只茶罐、一把蒲扇
+    // 茶炉：小泥炉，三个支钉托着壶；炉前（朝北，对着煮茶的人）一个风口。
+    // 人跪在炉北、面朝南（朝着院子）：右手边一张矮茶床放两只盏，左手边一只茶罐；一把蒲扇搁在右膝边的地上
     const tx = I.stove.x, tz = I.stove.z, sh = 0.27;
     obj.push(dye(at(flatRock(41, 0.24, 0.035, 0.22, 1), tx, fl - 0.003, tz), INK.slate, 1.2));
     const stove = pot([[0.001, 0], [0.12, 0], [0.135, 0.03], [0.158, 0.12], [0.15, 0.2], [0.128, 0.255], [0.132, sh], [0.108, sh], [0.105, 0.24], [0.125, 0.16], [0.11, 0.1], [0.001, 0.095]], seg(18));
     shade(stove, (x, y, z) => (Math.hypot(x, z) < 0.12 && y > 0.09 ? 0.45 : 1 - 0.1 * smooth(0.16, sh, y)));
     obj.push(dye(at(stove, tx, fl + 0.03, tz), INK.clay, 1.45));
-    obj.push(dye(at(box(0.085, 0.07, 0.01), tx, fl + 0.085, tz, 0).applyMatrix4(M.mul(M.t(tx, 0, tz), M.ry(-0.7), M.t(-tx, 0, -tz + 0.146))), INK.ink, 2.6));
+    obj.push(dye(at(box(0.085, 0.07, 0.01), tx, fl + 0.085, tz, 0).applyMatrix4(M.mul(M.t(tx, 0, tz), M.ry(Math.PI), M.t(-tx, 0, -tz + 0.146))), INK.ink, 2.6));
     for (let i = 0; i < 3; i++) obj.push(dye(at(box(0.022, 0.02, 0.04), tx + Math.cos(i * 2.094) * 0.118, fl + 0.03 + sh + 0.008, tz + Math.sin(i * 2.094) * 0.118, -i * 2.094 + Math.PI / 2), INK.clay, 1.6));
     c.solid({ id: '草堂·茶炉', kind: 'disc', x: ox + tx, z: oz + tz, r: 0.2, top: oy + fl + 0.03 + sh });
     // 壶（可拿；原点在提梁顶上握的地方）
@@ -299,24 +304,29 @@ export function furnish(c: Ctx, dm: HallDims): void {
       g.push(dye(lathe([[0.001, 0.115], [0.047, 0.113], [0.044, 0.123], [0.014, 0.13], [0.014, 0.14], [0.02, 0.15], [0.001, 0.154]], seg(12)).translate(0, by, 0), INK.iron, 2.2));
       g.push(dye(tube([v3(0.08, by + 0.055, 0), v3(0.115, by + 0.075, 0), v3(0.14, by + 0.11, 0)], (t) => 0.016 - 0.007 * t, 6, true), INK.iron, 2.0));
       g.push(dye(tube([v3(0, by + 0.1, -0.065), v3(0, by + 0.16, -0.06), v3(0, -0.004, 0), v3(0, by + 0.16, 0.06), v3(0, by + 0.1, 0.065)].map((p) => p), 0.0055, 5), INK.iron, 2.2));
-      const k = c.part('kettle', 'obj', g, wp(tx, fl + 0.03 + sh + 0.018 + 0.2, tz), new THREE.Euler(0, -0.7 + Math.PI, 0));
-      k.userData = { spout: v3(0.14, by + 0.11, 0), bottom: by };
-      c.anchor('stove', ox + tx, oy + fl + 0.03 + sh + 0.018, oz + tz, yawOf(-0.5, 0.6));
+      // 壶嘴朝西（跪着的人的右手边，茶床那边），提梁顺着南北：右手从上头攥住提梁，往右一倾就注进盏里
+      const k = c.part('kettle', 'obj', g, wp(tx, fl + 0.03 + sh + 0.018 + 0.2, tz), new THREE.Euler(0, Math.PI, 0));
+      k.userData = { spout: v3(0.14, by + 0.11, 0), bottom: by, bail: v3(0, 0, 1) };
+      c.anchor('stove', ox + tx, oy + fl + 0.03 + sh + 0.018, oz + tz, Math.PI);
     }
-    const px = tx - 0.42, pz = tz + 0.12;
-    b.add('wood', at(plank(0.34, 0.02, 0.2, 93), px, fl + 0.03, pz, 0.25));
-    for (const sx of [-1, 1]) b.add('wood', at(box(0.02, 0.022, 0.18, 'z'), px + sx * 0.13 * Math.cos(0.25), fl + 0.011, pz - sx * 0.13 * Math.sin(0.25), 0.25));
+    // 矮茶床：一块小板、四条短腿，跪着的人右手边；上头两只盏
+    const px = tx - 0.38, pz = tz - 0.25, ph = 0.16;
+    b.add('wood', at(plank(0.32, 0.02, 0.22, 93), px, fl + ph - 0.01, pz, 0.04));
+    for (const ex of [-1, 1]) for (const ez of [-1, 1]) b.add('wood', at(boxUp(0.022, ph - 0.02, 0.022, 'y'), px + ex * 0.13, fl, pz + ez * 0.085, 0.04));
+    c.solid({ id: '草堂·茶床', kind: 'rect', x: ox + px, z: oz + pz, w: 0.32, d: 0.22, top: oy + fl + ph });
     const cupG = () => [dye(pot([[0.001, 0], [0.019, 0], [0.021, 0.006], [0.043, 0.036], [0.045, 0.04], [0.041, 0.038], [0.018, 0.011], [0.001, 0.01]], seg(12)), INK.white, 1.0)];
-    c.part('cup1', 'obj', cupG(), wp(px - 0.07, fl + 0.041, pz + 0.04)).userData = { rim: 0.04 };
-    c.part('cup2', 'obj', cupG(), wp(px + 0.065, fl + 0.041, pz - 0.0)).userData = { rim: 0.04 };
-    obj.push(dye(at(pot([[0.001, 0], [0.04, 0], [0.052, 0.03], [0.05, 0.085], [0.034, 0.1], [0.034, 0.11], [0.001, 0.115]], seg(12)), tx - 0.34, fl, tz - 0.2), INK.glaze, 1.5));
-    // 蒲扇：一片桃形的叶、一根柄，平放在地上
+    c.part('cup1', 'obj', cupG(), wp(px + 0.075, fl + ph + 0.001, pz)).userData = { rim: 0.04 };
+    c.part('cup2', 'obj', cupG(), wp(px - 0.065, fl + ph + 0.001, pz + 0.035)).userData = { rim: 0.04 };
+    // 茶罐：炉东
+    obj.push(dye(at(pot([[0.001, 0], [0.04, 0], [0.052, 0.03], [0.05, 0.085], [0.034, 0.1], [0.034, 0.11], [0.001, 0.115]], seg(12)), tx + 0.3, fl, tz + 0.04), INK.glaze, 1.5));
+    // 蒲扇（可拿；原点在柄的握处，+y 顺着柄朝扇面，扇面在 xy 平面里）：平放在跪处右膝边的地上
     {
       const sh2 = new THREE.Shape();
       sh2.moveTo(0, 0); sh2.bezierCurveTo(0.12, 0.02, 0.17, 0.16, 0.12, 0.27); sh2.bezierCurveTo(0.08, 0.33, -0.08, 0.33, -0.12, 0.27); sh2.bezierCurveTo(-0.17, 0.16, -0.12, 0.02, 0, 0);
-      const fan = blank(new THREE.ExtrudeGeometry(sh2, { depth: 0.004, bevelEnabled: false, curveSegments: 6 }).rotateX(-Math.PI / 2));
-      obj.push(dye(at(fan, tx + 0.3, fl + 0.004, tz + 0.3, 2.4), INK.hemp, 1.1));
-      obj.push(dye(pole(v3(tx + 0.3, fl + 0.012, tz + 0.3), v3(tx + 0.3 - Math.sin(2.4) * -0.16, fl + 0.012, tz + 0.3 - Math.cos(2.4) * -0.16), 0.008, 0.007, 5), INK.bamboo, 1.4));
+      const blade = blank(new THREE.ExtrudeGeometry(sh2, { depth: 0.004, bevelEnabled: false, curveSegments: 6 }).translate(0, 0.07, -0.002));
+      const fanG = [dye(blade, INK.hemp, 1.1), dye(pole(v3(0, -0.09, 0), v3(0, 0.09, 0), 0.008, 0.007, 5), INK.bamboo, 1.4)];
+      const fan = c.part('fan', 'obj', fanG, wp(tx - 0.3, fl + 0.012, tz - 0.62), new THREE.Euler(-Math.PI / 2, Math.PI / 2, 0, 'YXZ'));
+      fan.userData = { blade: v3(0, 0.22, 0) };
     }
     // 西墙南头一只木箱
     const cx2 = -xi + 0.3, cz2 = 1.55;
@@ -363,4 +373,3 @@ function matGeo(w: number, d: number, seed: number): Geo {
 }
 /** uv 对调（让草丝绕着圈走） */
 function swapUV(g: Geo): Geo { const uv = g.attributes.uv as THREE.BufferAttribute; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getY(i), uv.getX(i)); return g; }
-const yawOf = (dx: number, dz: number) => Math.atan2(dx, dz);

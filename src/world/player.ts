@@ -44,6 +44,8 @@ export class Player {
   pace = 1;
   /** 正在做事：不听行走的输入 */
   locked = false;
+  /** 此刻的雪（0…1；总装每帧给）：雨雪里戴笠披蓑看它；没给（-1）时取村里那一路报上来的 */
+  snow = -1;
   /**
    * 总装告诉行者此刻是不是在做事——自己走动着做的那几件事（浇菊……）locked 为假，闲时的小动作要靠它才知道别出来。
    * 不给也行：拿着东西、手伸着、头看着某处时身子自己知道（Avatar.engaged）。
@@ -233,7 +235,7 @@ export class Player {
     // 闲着的时候：小动作、负手、遮雨（在不在屋檐下，半秒量一次）
     this.envT -= dt;
     if (this.envT <= 0) { this.envT = 0.5; this.indoor = placeAt(this.pos.x, this.pos.z, this.zone).indoor > 0.2; }
-    this.idle.update(dt, { speed: this.speed, busy: this.locked || !!this.busy?.() || !!this.slide || !!this.settle, night: U.uNight.value, rain: U.uWet.value, indoor: this.indoor });
+    this.idle.update(dt, { speed: this.speed, busy: this.locked || !!this.busy?.() || !!this.slide || !!this.settle, night: U.uNight.value, rain: U.uWet.value, snow: this.snow >= 0 ? this.snow : undefined, indoor: this.indoor });
     this.av.update(dt, t, { speed: this.speed < 0.05 ? 0 : this.speed, climb: this.climb, turn });
   }
 

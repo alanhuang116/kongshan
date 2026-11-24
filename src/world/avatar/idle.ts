@@ -2,10 +2,12 @@
  * 闲着的时候做什么（行者用；村里人也可以用）：
  *   站着——站定一会儿，隔一阵换一换手的摆法（负手、拢袖、垂手），隔一阵做个小动作（理袖、望天、回头看一眼、捻须，偶尔伸个懒腰）；
  *   散步——从容地走了一阵，多半就负手而行；走着偶尔往旁边看一眼；快走、跑起来手就放开；
- *   下雨天在外面——抬起一只袖子遮着头（跑起来、进了屋、雨停了就放下）。
+ *   下雨下雪在外头——戴上斗笠、披上蓑衣（头顶有屋顶、屋檐就卸下；进出屋檐那一下不来回换：在檐下待了半秒多才卸，出去一会儿才戴）；
+ *     站在雨里，隔一阵抬手扶一扶笠沿（shade）。雨具不算小动作：做事时、身子被占着时照样跟着天时与在不在檐下戴、卸。
  * 只在身子没被别的事占着时才动：做事时（busy：锁着、或总装说着在做事）、或身子 engaged（不是站着、俯身、手伸着或拿着东西、
  * 头看着某处、身下垫着东西）时一概不出，手上的摆法也不去碰。被占过之后计时从头算，所以做完事站起来要过一会儿才又有小动作。
  */
+import { SKY, WET, shelterAt } from './gear';
 import type { Avatar, GestureName, HandsName } from './types';
 
 export interface IdleState {
@@ -17,7 +19,9 @@ export interface IdleState {
   night: number;
   /** 雨（0…1） */
   rain: number;
-  /** 在屋里（屋檐下）：不遮雨 */
+  /** 雪（0…1）；不给就取村里那一路报上来的（gear.ts 的 SKY） */
+  snow?: number;
+  /** 在屋里（草堂、亭里）：不戴雨具 */
   indoor: boolean;
 }
 
@@ -39,6 +43,8 @@ export class Idle {
   private stretchAgo = 99;
   /** 刚做完一件事站起来（被占了好一阵）：伸懒腰的多些 */
   private sat = 0; private afterSit = false;
+  /** 雨具：此刻要不要戴、想换成另一样已经多久了；下一回直接换好（刚开场、刚换了处）；站在雨里多久扶一回笠沿 */
+  private gearWant = false; private gearT = 0; private gearSnap = true; private brimNext = 6;
   private seed: number;
 
   constructor(private av: Avatar, seed = 20261121) { this.seed = (Math.abs(Math.floor(seed)) % 2147483646) + 1; this.newStroll(); }
@@ -48,6 +54,7 @@ export class Idle {
 
   /** 换处、被搬到别处之后：从头算起；手若是我换的，放回垂手 */
   reset() {
+    this.gearSnap = true;
     this.still = 0; this.walk = 0; this.nextG = 6 + this.rnd() * 4; this.nextH = 4 + this.rnd() * 3; this.nextLook = 5 + this.rnd() * 6;
     if (this.av.gesturing) this.av.gesture?.(null);
     if (this.mine && this.av.hands === this.mine && this.mine !== 'free') this.av.setHands('free', 0);
@@ -57,6 +64,14 @@ export class Idle {
   update(dt: number, st: IdleState) {
     const av = this.av;
     this.stretchAgo += dt;
+    // 雨具：下雨下雪、头顶没有屋顶（不在屋里亭里、也不在檐下）就戴；在不在雨里变了，过一小会儿才跟着换（进出屋檐不来回）
+    const sky = Math.max(st.rain, st.snow ?? SKY.snow), r = av.root.position;
+    const wantGear = sky > WET && !st.indoor && !shelterAt(r.x, r.y + 1.35, r.z);
+    if (this.gearSnap) { this.gearWant = wantGear; this.gearT = 0; }
+    else if (wantGear !== this.gearWant) { this.gearT += dt; if (this.gearT > (wantGear ? 0.35 : 0.6)) { this.gearWant = wantGear; this.gearT = 0; } }
+    else this.gearT = 0;
+    av.setGear?.(this.gearWant ? 1 : 0, this.gearSnap);
+    this.gearSnap = false;
     if (!this.on || st.busy || av.engaged) {
       // 被占着：什么都不做，计时从头算；我换过的手也不再归我管
       if (st.busy || av.engaged) this.sat += dt;
@@ -67,10 +82,9 @@ export class Idle {
     if (this.sat > 20) this.afterSit = true;
     this.sat = 0;
     const hands = av.hands ?? 'free', moving = st.speed > 0.15, quick = st.speed > this.quick;
-    // 下雨天在外面：抬袖遮雨（跑起来就放下，袖子另有用处）
-    const wet = st.rain > 0.45 && !st.indoor;
-    if (wet && !quick) { if (av.gesturing !== 'shade') av.gesture?.('shade', 1); }
-    else if (av.gesturing === 'shade') av.gesture?.(null);
+    // 雨里：斗笠遮着，不再抬袖遮雨；站着时隔一阵扶一扶笠沿（见下），跑起来、进了檐下就放下
+    const wet = this.gearWant;
+    if (av.gesturing === 'shade' && (quick || !wet)) av.gesture?.(null);
 
     if (moving) {
       this.still = 0;
@@ -92,7 +106,13 @@ export class Idle {
     // 站着
     if (this.walk > 0) this.newStroll();
     this.walk = 0; this.still += dt;
-    if (this.still < 1.5 || wet) return;
+    if (this.still < 1.5) return;
+    if (wet) {
+      // 站在雨里：别的小动作不做，隔一阵抬手扶一扶笠沿
+      this.brimNext -= dt;
+      if (this.brimNext <= 0 && !av.gesturing && (av.gearK ?? 0) > 0.95) { av.gesture?.('shade', this.rnd() < 0.6 ? -1 : 1); this.brimNext = 9 + this.rnd() * 9; }
+      return;
+    }
     // 歇着的手：隔一阵换一换（负手、拢袖、垂手）
     this.nextH -= dt;
     if (this.nextH <= 0 && !av.gesturing) {

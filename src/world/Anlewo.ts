@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { World, detectQuality, type Pointer, type Quality } from './core/World';
 import { FX_LAYER, PIG, U, setRoofs, wash, type Roof } from './ink/ink';
-import { Atmos, type Season, type Weather } from './env/atmos';
+import { Atmos, SUN, type Season, type Weather } from './env/atmos';
 import { createLand, type Land } from './env/land';
 import { Nav, PLACE } from './nav';
 import { Player } from './player';
@@ -15,8 +15,9 @@ import { SITE, YARD_Y, ground, pathDist, riverAt, streamAt } from './site';
 import type { Act, Spot } from './acts/types';
 import { createActs } from './acts';
 import { clearSky, pickSky, type SkyCard } from './acts/skyinfo';
+import { createGhost, type Ghost } from './ghost';
 import type { Avatar, PoseName } from './avatar/types';
-import { addDisc, placeAt, setDynamic, setTerrain, useSolids, waterDepth, type SolidLike, type Zone } from './walk';
+import { addDisc, placeAt, setDynamic, setTerrain, standable, useSolids, waterDepth, type SolidLike, type Zone } from './walk';
 import { Mem } from './mem';
 import { Bag } from './bag';
 
@@ -134,6 +135,10 @@ export class Anlewo {
   private inHall = false; private outPitch = 0.14; private outDist = 8;
   /** 题名页背后的俯瞰（镜头在高处缓缓移着，看得见整片山水） */
   private over: { pos: THREE.Vector3; look: THREE.Vector3; t: number } | null = null;
+  /** 题名页那幅俯瞰正开着 */
+  get overview() { return !!this.over; }
+  /** 「入」时从哪里接着走（上回停下的地方；界面给，空着就从桃林进来） */
+  resumeAt: { x: number; z: number; yaw: number; zone: string } | null = null;
   private startId = 'grove';
   /** 已经观过的象（卦名）：界面从存档里读出来放进这里，观到新的就添上 */
   found = new Set<string>();
@@ -233,6 +238,8 @@ export class Anlewo {
     prog(0.86, '行者');
     const av = (await part(M_AVATAR, '行者', (m) => (m.createAvatar as (q: Quality) => Avatar)(k.q))) ?? plainFigure();
     k.player = new Player(scene, av);
+    // 人被门柱、篱笆、树干挡住时透出一层淡影（ghost.ts）
+    k.safe('ghost', () => { k.ghost = createGhost(av.root); });
     // 脚步声要知道的是「真在跑」（速度过了 2.2），不是按着 Shift 的意思
     k.player.onStep = () => k.events.step?.(k.surface(), { run: k.player.running, speed: k.player.speed });
     // 正在做一件事（哪怕是自己走动着做的）：行者不冒出负手、伸懒腰那些闲时动作
@@ -296,13 +303,36 @@ export class Anlewo {
     this.day++;
     this.mem.set('day', this.day);
     this.events.day?.(this.day);
+    this.note('又是新的一天。点右上角的「第几日」，看看今天能做什么', 'time');
     for (const f of this.onDay) { try { f(this.day); } catch (e) { console.warn('过夜时出错', e); } }
+  }
+  /**
+   * 时辰走过几个要紧的时候，画面下方说一句：天亮、日中、日头偏西、太阳快落山、天黑、夜深。
+   * 按这一季的日出日落（atmos 的 SUN）定；只在时辰自己走过去时说（拨时辰、睡一觉跳过去的不说）；在做事、在换处时也说（话不挡手）。
+   */
+  private timeCue(h0: number, h1: number) {
+    if (this.over || this.veil > 0.5) return;
+    const [sr, ss] = SUN[this.season], wet = this.atmos.w.rain + this.atmos.w.snow > 0.4, out = this.nav.place.indoor < 0.5;
+    const cues: Array<[number, string]> = [
+      [sr - 0.5, '东边亮了。村里人起来了'],
+      [12, '日头正中。半天过去了'],
+      [ss - 2.5, '日头偏西了'],
+      [ss - 0.7, wet ? '天色暗下来了，再过一会儿就黑了' : '太阳快落山了。天黑以前，田里、外头的事收一收'],
+      [ss + 1.2, wet || !out ? '天黑了，屋里点上了灯' : '天黑了，屋里点上了灯；晴夜往上拖，抬头看看星'],
+      [23.4, '夜深了。草堂的榻上睡一觉，就到天亮'],
+    ];
+    for (const [at, text] of cues) {
+      const t = ((at % 24) + 24) % 24;
+      if (h0 < t && h1 >= t) this.note(text, 'time');
+    }
   }
   /** 时辰流转得多快（每秒过多少钟头；0 停） */
   setFlow(rate: number) { this.flow = Math.max(0, rate); }
   /** 画面下方浮一句话 */
   note(text: string, kind?: string) { this.events.note?.(text, kind); }
 
+  /** 人被挡住时透出的淡影 */
+  ghost: Ghost | null = null;
   /** 平时夜里点天：开着的那张星笺（点的时候人在哪、开了多久） */
   private skyOpen: { x: number; z: number; t: number } | null = null;
   /** 头一个晴夜在外头时提一句「可以抬头点星」（存档里记过就不再提） */
@@ -372,7 +402,13 @@ export class Anlewo {
   /** 「入」：画面淡成一片雾，人已站在入口（桃林最西头），再显出来 */
   async begin() {
     if (!this.over) return;
-    await this.nav.travel(() => { this.setOverview(false); this.placeAt(this.startId); });
+    await this.nav.travel(() => {
+      this.setOverview(false);
+      const r = this.resumeAt;
+      // 上回停的地方还站得住就放在那里（朝向照旧），不然从入口进来
+      if (r && standable(r.x, r.z, r.zone as Zone) != null) { this.player.teleport(r.x, r.z, r.yaw, r.zone as Zone); this.nav.snapBehind(); }
+      else this.placeAt(this.startId);
+    });
   }
 
   // —— 行 ——
@@ -571,6 +607,8 @@ export class Anlewo {
   // —— 每帧 ——
   update(dt: number, t: number) {
     const w = this.world, a = this.atmos, p = this.player;
+    // 淡影只在走动时出（做事时镜头是摆好的，不要它）
+    this.ghost?.update(!this.act && !this.nav.busy && this.veil < 0.5);
     // 星笺：走开了、进屋了、做起事来、天亮了、开了好一会儿，就收起
     if (this.skyOpen) {
       const o = this.skyOpen; o.t += dt;
@@ -590,7 +628,9 @@ export class Anlewo {
     if (this.timeMode === 'now' && !a.transitioning && Math.floor(t) % 30 === 0 && Math.floor(t - dt) % 30 !== 0) a.setHour(this.hourFor('now'));
     else if (this.flow > 0 && this.timeMode !== 'now' && !this.over && !this.nav.busy && !a.transitioning && this.veil < 0.5) {
       // 时辰流转：一帧一帧往前推（不走「慢慢过渡」那条路），过了子夜就是新的一天
+      const h0 = a.hour;
       let h = a.hour + this.flow * Math.min(dt, 0.1);
+      this.timeCue(h0, h);
       if (h >= 24) { h -= 24; this.newDay(); }
       a.setHour(h, true); this.timeMode = h;
       this.clockT += dt;
@@ -611,6 +651,7 @@ export class Anlewo {
     }
     if (this.keyTurn && !this.act) this.nav.turn(this.keyTurn * 1.5, dt);
     if (this.life) setDynamic(this.life.blockers ?? []);
+    p.snow = a.w.snow;
     p.update(dt, t, this.nav.camYaw);
     // 进了草堂：屋顶、南墙隐去，镜头从南面高处往里看；出来再还原
     const pl = this.nav.place, indoor = pl.indoor >= 1;

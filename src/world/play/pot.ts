@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { lathe, merge } from '../core/geo';
 import { dye, pole, tube, v3 } from '../build/kit';
+import { FX_LAYER, FX_PARS, INK_PARS, U, type RGB } from '../ink/ink';
 import { inkGeo, mats } from './kit';
 
 export const CHI = 0.312;
@@ -54,6 +55,72 @@ export function arrowGeo(): THREE.BufferGeometry {
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.03, p.getY(i));
   return g;
 }
+
+// —— 画在地上、空中的几点淡墨（瞄准的那一溜点、出手的弧、矢落下的那一圈）——
+const DOT_V = /* glsl */ `
+${INK_PARS}
+attribute vec4 aDot;   // x, y, z, 半径（米）
+attribute vec4 aCol;   // 颜色与浓淡
+uniform vec4 uView; uniform float uMinPx;
+varying vec2 vP; varying float vZ; varying vec4 vC; varying vec3 vW;
+void main() {
+  vec4 c = viewMatrix * vec4(aDot.xyz, 1.0);
+  // 远了不小到看不见：半径至少 uMinPx 个像素
+  float px = aDot.w * projectionMatrix[1][1] / max(0.05, -c.z) / max(uView.y, 1e-5) * 0.5;
+  float r = aDot.w * max(1.0, uMinPx / max(px, 1e-3));
+  c.xy += position.xy * r;
+  vZ = -c.z; vP = position.xy; vC = aCol; vW = aDot.xyz;
+  gl_Position = projectionMatrix * c;
+}
+`;
+const DOT_F = /* glsl */ `
+${INK_PARS}
+${FX_PARS}
+varying vec2 vP; varying float vZ; varying vec4 vC; varying vec3 vW;
+void main() {
+  float r = length(vP);
+  // 一点墨：边上软，略不圆
+  float a = smoothstep(1.0, 0.45, r * (1.0 + 0.08 * sin(atan(vP.y, vP.x) * 3.0 + vW.x * 40.0))) * vC.a * fxSeen(vZ, 0.03) * (1.0 - inkFogK(vW));
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(mix(vC.rgb, uLight, uNight * 0.55), a);
+}
+`;
+/** 淡墨点：每帧 clear() → add() 若干 → commit()；一次绘制，画在勾完线之后那一层，自己比深度（被人、壶挡住的那几点不画） */
+export class Dots {
+  mesh: THREE.Mesh;
+  private dot: Float32Array; private col: Float32Array; private geo: THREE.InstancedBufferGeometry; private n = 0;
+  constructor(private max = 96, minPx = 2) {
+    const quad = new THREE.PlaneGeometry(2, 2), g = (this.geo = new THREE.InstancedBufferGeometry());
+    g.index = quad.index; g.setAttribute('position', quad.attributes.position);
+    this.dot = new Float32Array(max * 4); this.col = new Float32Array(max * 4);
+    g.setAttribute('aDot', new THREE.InstancedBufferAttribute(this.dot, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aCol', new THREE.InstancedBufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
+    g.instanceCount = 0;
+    const mat = new THREE.ShaderMaterial({ uniforms: { ...U, uMinPx: { value: minPx } }, vertexShader: DOT_V, fragmentShader: DOT_F, transparent: true, depthTest: false, depthWrite: false });
+    this.mesh = new THREE.Mesh(g, mat);
+    this.mesh.layers.set(FX_LAYER);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 3;
+    this.mesh.name = 'play:dots';
+    this.mesh.visible = false;
+  }
+  clear() { this.n = 0; }
+  get count() { return this.n; }
+  add(x: number, y: number, z: number, r: number, c: RGB, a: number) {
+    if (this.n >= this.max) return;
+    const i = this.n++;
+    this.dot[i * 4] = x; this.dot[i * 4 + 1] = y; this.dot[i * 4 + 2] = z; this.dot[i * 4 + 3] = r;
+    this.col[i * 4] = c[0]; this.col[i * 4 + 1] = c[1]; this.col[i * 4 + 2] = c[2]; this.col[i * 4 + 3] = a;
+  }
+  commit() {
+    this.geo.instanceCount = this.n;
+    (this.geo.attributes.aDot as THREE.BufferAttribute).needsUpdate = true;
+    (this.geo.attributes.aCol as THREE.BufferAttribute).needsUpdate = true;
+    this.mesh.visible = this.n > 0;
+  }
+}
+/** 点的颜色：墨、朱 */
+export const DOT_INK: RGB = [0.14, 0.14, 0.16], DOT_ZHU: RGB = [0.74, 0.22, 0.16];
 
 /** 壶的网格（obj 材质）与十二支矢（实例化，木） */
 export function makePot(): { pot: THREE.Mesh; arrows: THREE.InstancedMesh } {

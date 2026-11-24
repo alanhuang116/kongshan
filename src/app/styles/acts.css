@@ -314,3 +314,10 @@
   .panel.is-compact .panel-foot { padding: 2px 14px 10px; }
   .panel-words p { font-size: 15px; }
 }
+
+/* 触屏：「毕」（罢、起身）总在右上角——不随这一件事有没有大键、有没有面板换地方，拇指好记（右下角留给大键、印与摇杆那一带） */
+@media (pointer: coarse) {
+  .act .act-done { bottom: auto; top: calc(var(--sat) + clamp(12px, 2.4vh, 24px)); }
+  .act:not(.has-hold) .act-foot { max-width: calc(100% - 24px); }
+  .act.has-panel:not(.no-done):not(.has-foot):not(.has-hold) .panel { margin-bottom: 0; }
+}

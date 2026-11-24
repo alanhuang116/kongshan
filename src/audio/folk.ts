@@ -3,7 +3,7 @@
  *
  *   梆子 ＝ 一段掏空的硬木，竹棍敲在口上：空腔一个清楚的音（700–820Hz）加木头两个高一些的分音、敲击的一点「嗒」；敲几下看是第几更；
  *   更锣 ＝ 小铜锣：几个不成整数倍的分音，头上音高略往上一挑（小锣的样子），两三秒才散；
- *   醒木 ＝ 硬木拍在案上：接触极短所以亮，案板低低一「咚」；
+ *   醒木 ＝ 硬木拍在案上：接触极短所以亮，案板低低一「咚」；variant 'ruler' 是村塾先生的戒尺在案上轻轻嗒一两下（更轻、更薄）；
  *   说话 ＝ 几个「嗓子」你一句我一句：每个字一起一落，句子从高往低走，元音的共振峰一个字一换——整个过一道低通（隔得远，字头的高处都没了），
  *          只听得出有人在说话、有起有落，听不出字。不要假装说出什么来；
  *   「嗯」 ＝ 闭着嘴的一声哼：声带的一个音只从鼻子出来——低处一个很强的共鸣，高处很弱。
@@ -66,6 +66,25 @@ export function chatter(v: Voice, d: number, a: number, dest: AudioNode, voices 
   return end;
 }
 
+/**
+ * 戒尺（wood 的 variant 'ruler'）：村塾里先生拿一条硬木的尺在案上轻轻嗒一两下——比醒木轻、薄、短：
+ * 尺子自己的两三个分音（七八百、两千上下、四千），案面低低一「笃」；两下的话第二下轻一些。人声关着时村塾那里出的就是它与翻书。
+ */
+function ruler(v: Voice): number {
+  const a = 0.5 + 0.7 * v.vel, p = v.pitch * rand(0.95, 1.05), n = Math.random() < 0.6 ? 2 : 1;
+  let t = v.t;
+  for (let i = 0; i < n; i++) {
+    const g = (i ? rand(0.55, 0.75) : 1) * a, ex = tap(v, t, 0.35, 1.5 * g, 0.4);
+    reson(v, ex, rand(720, 900) * p, 8, 0.7);
+    reson(v, ex, rand(1900, 2300) * p, 10, 0.4);
+    reson(v, ex, rand(3700, 4200) * p, 12, 0.15);
+    reson(v, ex, rand(200, 250), 4, 1.1);
+    burst(v, { t, dur: 0.008, f: 4500, q: 0.8, amp: 0.12 * g, att: 0.0005 });
+    t += rand(0.17, 0.24);
+  }
+  return t - v.t + 0.3;
+}
+
 type Fn = (v: Voice) => number;
 export const FOLK_SHOTS: Pick<Record<Shot, Fn>, 'clapper' | 'gong' | 'wood' | 'murmur' | 'kidsLaugh' | 'greet' | 'whip'> = {
   /**
@@ -112,6 +131,7 @@ export const FOLK_SHOTS: Pick<Record<Shot, Fn>, 'clapper' | 'gong' | 'wood' | 'm
   },
   /** 说书的醒木一拍：硬木拍在案上，短而脆的一「啪」（接触极短，所以亮），案板低低地一「咚」 */
   wood(v) {
+    if (v.raw.variant === 'ruler') return ruler(v);
     const a = 0.5 + 0.7 * v.vel, t = v.t, p = v.pitch * rand(0.96, 1.04), ex = tap(v, t, 0.5, 2.4 * a, 0.35);
     reson(v, ex, rand(1500, 1800) * p, 9, 0.9);
     reson(v, ex, rand(2900, 3400) * p, 10, 0.45);

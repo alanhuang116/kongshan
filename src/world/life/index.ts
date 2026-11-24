@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import type { Quality } from '../core/World';
 import type { Season } from '../env/atmos';
 import type { Avatar } from '../avatar/types';
+import { WET, nearRoof, setSky, shelterAt } from '../avatar/gear';
 import { setDynamic } from '../walk';
 import { createFauna, type Fauna } from './fauna';
 import { OxTeam } from './ox';
@@ -127,6 +128,17 @@ export function createLife(o: LifeOpts): Life {
       const f0 = performance.now();
       folk.tend(c);
       for (const p of folk.people) p.tick(c);
+      // 雨具：下雨下雪、人在外头就戴斗笠、披蓑衣，到了檐下、进了棚就卸下（身子自己慢慢戴、卸）。走着路的按头顶有没有屋顶算；
+      // 站下来干活的，离屋檐不到一步半就算在檐下（雨天的活本来就排在檐下，站处多半在檐口外一点）。
+      // 没人看着的、时辰被一下子拨过去的，直接换好。天时也报给行者那一路（avatar/gear.ts 的 SKY：行者取雪用）
+      setSky(e.rain, e.snow);
+      const wetSky = Math.max(e.rain, e.snow) > WET;
+      for (let i = 0; i < folk.people.length; i++) {
+        const p = folk.people[i];
+        if (!p.here || ((c.frame + i) % 4 && !c.wound)) continue;
+        const dry = shelterAt(p.pos.x, p.pos.y + 1.35 * p.scale, p.pos.z) || (!p.walking && nearRoof(p.pos.x, p.pos.z, 1.5));
+        p.fig.setGear(wetSky && !dry ? 1 : 0, c.wound || !p.inView);
+      }
       folkMs += (performance.now() - f0 - folkMs) * 0.05;
       setDynamic(blockers);
       // 牛、水牛与别的生灵（量着各花了多少：fauna.ms、fauna.per）

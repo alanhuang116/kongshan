@@ -8,6 +8,7 @@ import { PAGES, PAIRS, POEMS, SAYINGS } from '../src/data/shaoyong';
 import { DIPPER, HOU_SOURCE, TERMS } from '../src/data/almanac';
 import { LINES, WORDS, YUQIAO, YUQIAO_NOTE, YUQIAO_SCENE } from '../src/data/talk';
 import { GUA, TRIGRAMS, XIANTIAN_SOURCE, XIAOXI, XIAOXI_NOTE, YI_WORDS, type Trigram } from '../src/data/yi';
+import { SCENES } from '../src/data/gua64';
 
 const len = (s: string) => Array.from(s).length;
 /** 只含汉字（基本区与扩展 A 区） */
@@ -591,6 +592,20 @@ describe('六十四卦（GUA）', () => {
   });
   it('原文指纹（防误改）', () => {
     expect(fnv(GUA.map((g) => `${g.n}${g.name}:${g.judgment}:${g.image}`).join('\n'))).toBe('00507ed1');
+  });
+  it('所见与说明（gua64.ts：本应用自己的话，照录两份文档）：六十四卦都有，只说景，不谈吉凶', () => {
+    expect(Object.keys(SCENES)).toEqual(GUA.map((g) => g.name));
+    for (const g of GUA) {
+      const s = SCENES[g.name];
+      for (const t of [s.view, s.note]) {
+        expect(t, g.name).not.toMatch(ASCII);
+        expect(t, g.name).toMatch(/。$/);
+        expect(t, g.name).not.toMatch(/吉|凶|咎|悔|吝|占|卜/);
+        expect(len(t), g.name).toBeLessThanOrEqual(60);
+      }
+    }
+    // 指纹：照录的原文，动过一个字就对不上（先拿文档核对，tests/xiang.test.ts 里有逐字的核对）
+    expect(fnv(GUA.map((g) => `${g.name}:${SCENES[g.name].view}:${SCENES[g.name].note}`).join('\n'))).toBe('a2ed5404');
   });
 });
 

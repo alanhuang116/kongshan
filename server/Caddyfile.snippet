@@ -1,0 +1,18 @@
+# 加进 /etc/caddy/Caddyfile 里现有的 kongshan 那一块（kongshan.169-58-39-104.nip.io { … }）里头，放在 file_server 之前；
+# 先备份，在 /tmp 的副本上 caddy validate，再 systemctl reload caddy。
+# /ws 与 /ws/… 转给本机的中转（WebSocket 由 Caddy 自己升级、转发），别的路径照旧走 file_server。
+	handle /ws* {
+		reverse_proxy 127.0.0.1:3820
+	}
+
+# 加好以后整块大致是这样（root、缓存头、manifest 的类型都是原来就有的，不动）：
+#
+# kongshan.169-58-39-104.nip.io {
+# 	root * /opt/yiwen/kongshan/current
+# 	encode zstd gzip
+# 	handle /ws* {
+# 		reverse_proxy 127.0.0.1:3820
+# 	}
+# 	…（原来的 header 几行）…
+# 	file_server
+# }

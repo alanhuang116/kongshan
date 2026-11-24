@@ -81,6 +81,11 @@ export interface ReachOpts {
   dir?: THREE.Vector3;
   /** 手心朝哪：世界方向。不给就由它自己定 */
   palm?: THREE.Vector3;
+  /**
+   * 满把攥着一根杆（竿、提梁、柄）：给杆的方向（世界）。这时目标点是杆上那一点，手指顺着小臂伸过去、与杆垂直地绕过它，
+   * 掌心朝着杆、落在杆靠小臂的那一侧（不插进杆里）；palm 只用来挑掌心朝哪一边（不给是手背朝上）。给了 grip 就不看 dir
+   */
+  grip?: THREE.Vector3;
   /** 过渡的快慢（1/秒），默认 10；越大跟得越紧 */
   rate?: number;
 }
@@ -105,6 +110,8 @@ export interface Avatar {
    * 俯身的目标值 0…1（内部平滑）：站着是鞠躬；跪着是叩拜——上身伏下、额头近地、两手前伸按在地上；坐着是略略低头。
    */
   bow: number;
+  /** 上身另外扭多少（弧度，正是往左转；胸、肩跟着转，胯不动）。扫地这类由腰带着的动作用；不用时给 0 */
+  twist?: number;
   /** 把一只手伸到世界里的一点（掌心到那里）；给 null 则放回姿态自己的摆法。够不着时尽量伸过去 */
   reach(side: Side, target: THREE.Vector3 | null, o?: ReachOpts): void;
   /** 头转向世界里的一点（有限度）；null 则看前方 */
@@ -132,6 +139,13 @@ export interface Avatar {
   readonly ready?: boolean;
   /** 正被「外面」占着：不是站着、在俯身、手伸着、手里拿着东西、头看着某处、身下垫着东西——做事时都是这样，闲时的小动作这时不出 */
   readonly engaged?: boolean;
+  /**
+   * 雨具（斗笠、蓑衣）：要戴几成，0…1（下雨下雪、人在外头时给 1）。身子自己慢慢戴上、卸下（约一秒：斗笠从背后翻上头、
+   * 蓑衣自肩上披下来，右手空着就扶着笠沿）；instant 为真直接到位（没人看着、刚换了处）。本来戴着斗笠、披着蓑衣的人不另加
+   */
+  setGear?(v: number, instant?: boolean): void;
+  /** 此刻雨具戴到几成（0…1） */
+  readonly gearK?: number;
   setVisible(v: boolean): void;
   dispose(): void;
 }

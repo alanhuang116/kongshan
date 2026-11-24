@@ -2,7 +2,7 @@
 // 下方浮着的话、夜里。每一屏截一张图，并做通盘检查（uikit.mjs 的 fit：出界、截断、安全区、键太小、相叠、字与底的对比）。
 // 用法：KS_URL=http://localhost:3820/ node tests/play/ui.mjs [尺寸,尺寸…|all] [--only=名字,名字…] [--out=目录]
 //   尺寸：pc laptop pad iphone se landscape（all 是这六种），另有 iphoneApp landApp（装到主屏幕、带安全区）
-//   名字：title roam near menu map sky bag bag-full xiang-sheet sound journal about folk folk-place folk-open stars book read write xiang talk said widgets items long
+//   名字：title roam near menu guide guide-4 today map sky bag bag-full xiang-sheet sound journal about folk folk-place folk-open stars book read write xiang talk said widgets items long
 //         farm-reap farm-thresh farm-sow farm-weed farm-done notes night（夜里另有 stars-look stars-star stars-xiang：观星时收紧的面板，天要留出六成以上）
 // 截图在 shots/ui/<尺寸>/；最后打印每种尺寸有几条问题。有问题时退出码是 1。
 import { join } from 'node:path';
@@ -97,8 +97,16 @@ for (const size of sizes) {
     await check('menu');
     await page.keyboard.press('Escape'); await ev(() => window.__ui.setUi({ menu: false })); await wait(300);
   }
+  // —— 「初到」：头一页与末一页（「关于」「今日」里可以再叫出来） ——
+  if (want('guide') || want('guide-4')) {
+    await ev(() => window.dispatchEvent(new Event('ks:guide'))); await wait(1100);
+    if (want('guide')) await check('guide');
+    if (want('guide-4')) { for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await wait(250); } await wait(700); await check('guide-4'); }
+    await page.keyboard.press('Escape'); await wait(500);
+    if (await ev(() => !!document.querySelector('[data-testid="guide"]'))) issues.push('guide: Esc 没收起');
+  }
   // —— 每一页册子 ——
-  for (const sh of ['map', 'sky', 'bag', 'bag-full', 'xiang-sheet', 'sound', 'journal', 'about', 'folk', 'folk-place', 'folk-open', 'stars']) {
+  for (const sh of ['today', 'map', 'sky', 'bag', 'bag-full', 'xiang-sheet', 'sound', 'journal', 'about', 'folk', 'folk-place', 'folk-open', 'stars']) {
     if (!want(sh)) continue;
     const id = sh === 'bag-full' ? 'bag' : sh === 'xiang-sheet' ? 'xiang' : sh.startsWith('folk') ? 'folk' : sh;
     if (sh === 'bag-full') await ev(() => { const g = window.__ks.bag; for (const [k, n] of [['sheaf', 12], ['wheat', 3], ['seedWheat', 2], ['egg', 2], ['peach', 5], ['tea', 1], ['candy', 3], ['coin', 120], ['firewood', 1]]) g.add(k, n, { quiet: true }); });

@@ -5,6 +5,7 @@
  */
 import type { Voice } from './engine';
 import { burst, voiced } from './kit';
+import { chip, playSong, type El } from './song';
 import type { Shot } from './types';
 import { rand } from './util';
 import { VILLAGE_SHOTS } from './village';
@@ -38,18 +39,12 @@ export function giggle(v: Voice, t: number, p: number, a: number, dest: AudioNod
   voiced(v, { t, f0, amp, formants: [[1000, 4, 1], [1750, 6, -0.55], [3300, 8, 0.25]], tilt: 3000, jitter: 18, breath: 0.45, gain: 0.3 * a, dest });
   return t + x;
 }
-/** 小鸟的一声啾：音高一扬一落的一个短音 */
-function tweet(v: Voice, t: number, f0: number, f1: number, len: number, amp: number) {
-  const c = v.ctx, o = c.createOscillator(), g = c.createGain();
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(f1, t + len * 0.4);
-  o.frequency.exponentialRampToValueAtTime(f0 * 0.85, t + len);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(amp, t + Math.min(0.008, len * 0.25));
-  g.gain.linearRampToValueAtTime(amp * 0.6, t + len * 0.6);
-  g.gain.linearRampToValueAtTime(0, t + len);
-  o.connect(g); g.connect(v.out);
-  o.start(t); o.stop(t + len + 0.03);
+/** 几声小鸟的「叽」（song.ts 的 chip：短、先扬后抑、带谐波与一点毛——不是一个纯的正弦）放进 v.out，幅度 amp */
+function chips(v: Voice, els: El[], amp: number): number {
+  const g = v.ctx.createGain();
+  g.gain.value = amp;
+  g.connect(v.out);
+  return playSong(v.ctx, g, v.t, els);
 }
 
 export const EXTRA_SHOTS: Pick<Record<Shot, Fn>, 'flap' | 'chirp' | 'tumble' | 'thresh' | 'laugh' | 'cluck' | 'quack'> = {
@@ -60,23 +55,17 @@ export const EXTRA_SHOTS: Pick<Record<Shot, Fn>, 'flap' | 'chirp' | 'tumble' | '
   },
   /** 一两声啾（一只小鸟、一只雏） */
   chirp(v) {
-    const a = 0.09 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.92, 1.1);
-    let t = v.t;
-    for (let i = 0, n = 1 + Math.floor(rand(0, 2.6)); i < n; i++) {
-      const len = rand(0.05, 0.08);
-      tweet(v, t, 3300 * p, rand(4300, 4900) * p, len, a * (i ? rand(0.6, 0.9) : 1));
-      t += len + rand(0.07, 0.13);
-    }
-    return t - v.t + 0.15;
+    const p = v.pitch * rand(0.92, 1.1), els: El[] = [];
+    let t = 0;
+    for (let i = 0, n = 1 + Math.floor(rand(0, 2.6)); i < n; i++) { const e = chip(t, p * rand(0.97, 1.04), i ? rand(0.6, 0.9) : 1); els.push(e); t += e.len + rand(0.07, 0.13); }
+    chips(v, els, 0.085 * (0.5 + 0.7 * v.vel));
+    return t + 0.15;
   },
   /** 两只麻雀吵着吵着打着滚落下来：一阵很急的扑翅，上头是又密又急的啾，末了落在地上轻轻一「噗」 */
   tumble(v) {
-    const a = 0.5 + 0.7 * v.vel, end = flaps(v, v.t, 7 + Math.floor(rand(0, 4)), 0.5 * a, 0.055);
-    for (let t = v.t + 0.03; t < end - 0.05;) {
-      const len = rand(0.04, 0.06);
-      tweet(v, t, 3400 * v.pitch * rand(0.95, 1.15), rand(4400, 5200) * v.pitch, len, 0.075 * a * rand(0.6, 1));
-      t += len + rand(0.03, 0.07);
-    }
+    const a = 0.5 + 0.7 * v.vel, end = flaps(v, v.t, 7 + Math.floor(rand(0, 4)), 0.5 * a, 0.055), els: El[] = [];
+    for (let t = 0.03; t < end - v.t - 0.05;) { const e = chip(t, v.pitch * rand(0.95, 1.15), rand(0.6, 1)); els.push(e); t += e.len + rand(0.03, 0.07); }
+    chips(v, els, 0.07 * a);
     burst(v, { t: end + 0.02, dur: 0.09, type: 'lowpass', f: 420, q: 0.6, amp: 0.45 * a, att: 0.006, noise: 'pink' });
     return end - v.t + 0.3;
   },

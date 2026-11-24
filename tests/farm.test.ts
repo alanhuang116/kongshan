@@ -2,9 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import { CHAIN, CROPS, QUOTES, SEASONS, type Season } from '../src/data/farm';
 import {
-  BEDS, VILLAGE_ROWS, advance, beat, beatsFor, bind, bindable, capOf, changeSeason, chainStep, freshState, loadSheaves, loadState, newDay,
-  perRow, reap, rowDir, save, sow, sowable, spread, stageIndex, takeLeft, till, villageCut, villageNext, water, weed, winnow, work,
+  BEDS, PILES_MAX, VILLAGE_ROWS, addPile, advance, beat, beatsFor, bind, bindable, capOf, changeSeason, chainStep, freshState, loadSheaves, loadState, newDay,
+  perRow, reap, rowDir, save, sow, sowable, spread, stageIndex, takeLeft, takePile, till, villageCut, villageNext, water, weed, winnow, work,
 } from '../src/world/farm/model';
+import { aheadOf, along, compass, nextTurn, passes, routeLen, stepsText, type P2 } from '../src/world/farm/way';
 
 describe('农时', () => {
   it('冬麦秋种、粟春夏种、豆夏种、菜冬天不种', () => {
@@ -242,6 +243,76 @@ describe('存档', () => {
   });
   it('每一季的头一回都能存、能读', () => {
     for (const s of SEASONS as Season[]) expect(loadState(save(freshState(s)), s)).toEqual(freshState(s));
+  });
+});
+
+describe('放在地上的担子', () => {
+  it('放下、并进去、拿走；放满了并到最近那一副同样的里', () => {
+    const st = freshState('summer');
+    expect(st.piles).toEqual([]);
+    addPile(st, { item: 'sheaf', n: 8, x: 10, z: 10, yaw: 0 });
+    addPile(st, { item: 'sheaf', n: 4, x: 10.6, z: 10.4, yaw: 1 });
+    expect(st.piles.length).toBe(1);
+    expect(st.piles[0].n).toBe(12);
+    addPile(st, { item: 'water', n: 2, x: 10.2, z: 10, yaw: 0 });
+    expect(st.piles.length).toBe(2);
+    expect(takePile(st, 0, 5)).toBe(5);
+    expect(st.piles[0].n).toBe(7);
+    expect(takePile(st, 0, 99)).toBe(7);
+    expect(st.piles.map((p) => p.item)).toEqual(['water']);
+    for (let i = 0; i < PILES_MAX + 2; i++) addPile(st, { item: 'milletEar', n: 1, x: i * 10, z: 50, yaw: 0 });
+    expect(st.piles.length).toBe(PILES_MAX);
+    expect(st.piles.filter((p) => p.item === 'milletEar').reduce((a, p) => a + p.n, 0)).toBe(PILES_MAX + 2);
+  });
+  it('存档往返；坏的那几副不要', () => {
+    const st = freshState('autumn');
+    addPile(st, { item: 'milletEar', n: 6, x: 3, z: 4, yaw: 0.5 });
+    expect(loadState(JSON.parse(JSON.stringify(save(st))), 'autumn').piles).toEqual(st.piles);
+    const bad = { ...save(st), piles: [{ item: 'rock', n: 2, x: 0, z: 0 }, { item: 'water', n: 0, x: 0, z: 0 }, { item: 'sheaf', n: 3, x: 'a', z: 0 }, { item: 'sheaf', n: 3, x: 1, z: 2 }] };
+    expect(loadState(bad, 'autumn').piles).toEqual([{ item: 'sheaf', n: 3, x: 1, z: 2, yaw: 0 }]);
+  });
+});
+
+describe('认路（担子往哪儿挑）', () => {
+  it('方向：北、东北、东……（+x 东、+z 南）', () => {
+    expect(compass(0, -1)).toBe('北');
+    expect(compass(1, -1)).toBe('东北');
+    expect(compass(1, 0)).toBe('东');
+    expect(compass(1, 1)).toBe('东南');
+    expect(compass(0, 1)).toBe('南');
+    expect(compass(-1, 1)).toBe('西南');
+    expect(compass(-1, 0)).toBe('西');
+    expect(compass(-1, -1)).toBe('西北');
+  });
+  it('步数：近的「几步」，远的按五步、十步取整', () => {
+    expect(stepsText(5)).toBe('几步');
+    expect(stepsText(14)).toBe('约二十步');
+    expect(stepsText(63)).toBe('约九十步');
+    expect(stepsText(84)).toBe('约一百二十步');
+  });
+  const R: P2[] = [[0, 0], [0, 10], [20, 10]];
+  it('人在路上哪儿、还剩多远；顺着路往前', () => {
+    expect(routeLen(R)).toBe(30);
+    const a = along(R, 1, 4);
+    expect(a.i).toBe(0);
+    expect(a.off).toBeCloseTo(1);
+    expect(a.left).toBeCloseTo(26);
+    expect(aheadOf(R, a, 8)).toEqual([2, 10]);
+    const b = along(R, 12, 11);
+    expect(b.i).toBe(1);
+    expect(b.left).toBeCloseTo(8);
+  });
+  it('朝哪一点走：下一个拐点；拐点就在脚边就朝再下一个；离路远了先回到路上', () => {
+    expect(nextTurn(R, along(R, 0, 3), 0, 3)).toEqual([0, 10]);
+    // 再下一个拐点远在十四米外：取顺着路十四米那一点（方向一样，往东）
+    expect(nextTurn(R, along(R, 0.2, 9), 0.2, 9)).toEqual([13, 10]);
+    expect(nextTurn(R, along(R, 0.2, 9), 0.2, 9, { far: 30 })).toEqual([20, 10]);
+    expect(nextTurn(R, along(R, 11, 2), 11, 2)).toEqual([11, 10]);
+  });
+  it('路上要过的几处：只说还在前头的', () => {
+    const marks = [{ x: 0, z: 6, r: 1, say: '过石桥' }, { x: 15, z: 10.5, r: 1, say: '过柴门' }, { x: 50, z: 50, r: 1, say: '远处' }];
+    expect(passes(R, along(R, 0, 1), marks)).toEqual(['过石桥', '过柴门']);
+    expect(passes(R, along(R, 0, 8), marks)).toEqual(['过柴门']);
   });
 });
 

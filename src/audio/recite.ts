@@ -10,8 +10,16 @@
  *          阳平往上挑、上声一沉、去声往下落（唱读里声调是收着的，只有说话时的六七成）。听不清字，听得出「在念书」；
  *   嗓子——每个孩子是一个锯齿波，起字时音高从下面一点滑上来（说话都这样），分两拨各过一组孩子的共振峰（比大人高两三成）。
  * 字音不求可懂。远近不在这里管（村塾那一层自己有一道低通；一击则由引擎按 dist 处理）。
+ *
+ * 试玩的人说书声「瘆人」——走进草堂时听见的尤甚（那时村塾在九十多米外，声音却和屋里的整个环境声一样响，不隔墙）。
+ * 合成的人声是最容易听着不像人、像鬼的一样，写的人又听不到，所以：
+ *   界面上人声默认关着（src/app/sound.ts），关着时这里不出人声，村塾那里只有一堂课的几样小动静（lessonCue：翻书、戒尺）；
+ *   开着时（「人间」）也收着念：末一个字拖得短一些、往下落得少（原先落一个多半音、拖两拍多，像在哭腔），
+ *   共振峰放宽（窄了像吹出来的哨），整体轻一些；书声传得近了（55 米，原先 110），屋里听外头的声音隔着墙。
  */
 import type { Engine, Voice } from './engine';
+import { FOLK_SHOTS } from './folk';
+import { STUDY_SHOTS } from './study';
 import { parseSyllable, type Syllable, type Vowel } from './xinjing';
 import { cents, clamp, pick, rand } from './util';
 
@@ -103,10 +111,10 @@ export function recitePhrase(e: Engine, dest: AudioNode, t: number, o: ReciteO =
   const on: number[] = [];
   let x = 0.07;
   for (let i = 0; i < n; i++) { on.push(x); x += beat * (n === 7 && i === 3 ? 1.35 : n === 6 && i === 2 ? 1.2 : 1); }
-  const lastLen = beat * rand(2.0, 2.5), end = on[n - 1] + lastLen;
+  const lastLen = beat * rand(1.5, 1.85), end = on[n - 1] + lastLen;
   const lenOf = (i: number) => (i === n - 1 ? lastLen : on[i + 1] - on[i]);
   const out = c.createGain();
-  out.gain.value = 0.17 * (0.5 + 0.7 * clamp(o.vel ?? 0.7));
+  out.gain.value = 0.1 * (0.5 + 0.7 * clamp(o.vel ?? 0.7));
   out.connect(dest);
 
   // 两拨共振峰（人有高矮）；第二拨的口型晚二十毫秒
@@ -117,7 +125,7 @@ export function recitePhrase(e: Engine, dest: AudioNode, t: number, o: ReciteO =
     amp.gain.value = 1;
     const fs: BiquadFilterNode[] = [];
     let f2g = amp;
-    ([[620, 6, 1], [1500, 9, -0.6], [3050, 12, 0.3]] as const).forEach(([f, q, g], k) => {
+    ([[620, 4.5, 1], [1500, 6.5, -0.55], [3050, 8, 0.22]] as const).forEach(([f, q, g], k) => {
       const bp = c.createBiquadFilter(), fg = c.createGain();
       bp.type = 'bandpass'; bp.frequency.value = f * kf; bp.Q.value = q; fg.gain.value = g;
       input.connect(bp); bp.connect(fg); fg.connect(amp);
@@ -176,9 +184,9 @@ export function recitePhrase(e: Engine, dest: AudioNode, t: number, o: ReciteO =
       g.gain.setTargetAtTime(lvl, ton, 0.025);
       g.gain.setTargetAtTime(lvl * 0.62, ton + 0.08, 0.09);
       if (i === n - 1) {
-        // 拖腔：下句往下落，上句微微上扬；各人收得有早有晚
-        if (close === 'down') osc.frequency.setTargetAtTime(f * cents(-170 + rand(-40, 40)), ton + lastLen * 0.35, lastLen * 0.22);
-        else osc.frequency.setTargetAtTime(f * cents(50 + rand(-20, 20)), ton + lastLen * 0.5, lastLen * 0.2);
+        // 拖腔：下句往下落一点，上句微微上扬；各人收得有早有晚（落得多了像哭腔）
+        if (close === 'down') osc.frequency.setTargetAtTime(f * cents(-80 + rand(-25, 25)), ton + lastLen * 0.35, lastLen * 0.22);
+        else osc.frequency.setTargetAtTime(f * cents(25 + rand(-10, 10)), ton + lastLen * 0.5, lastLen * 0.2);
         g.gain.setTargetAtTime(0, ton + lastLen * 0.78 + kid.rel, 0.09);
       }
     });
@@ -221,7 +229,14 @@ function lessonLine(v: Voice): number {
   const start = Math.max(v.t, s.until);
   if (start - v.t > 1.5) return 0;
   const text = LESSONS[s.text], last = s.line >= text.length - 1;
-  const r = recitePhrase(v.e, v.out, start, { syl: text[s.line], crew: s.crew, pitch: v.pitch * s.pitch, beat: s.beat * rand(0.97, 1.03), vel: v.vel, close: last || s.line % 2 ? 'down' : 'up' });
+  // 孩子们在村塾屋里念，人在外头：隔着一道门窗，字头的高处被吃掉（在门口截在两千赫兹上下，远一些九百）
+  let dest: AudioNode = v.out;
+  if (v.raw.at) {
+    const lp = v.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2300 - 1400 * Math.pow(v.dist, 0.7); lp.Q.value = 0.5;
+    lp.connect(v.out); dest = lp;
+  }
+  const r = recitePhrase(v.e, dest, start, { syl: text[s.line], crew: s.crew, pitch: v.pitch * s.pitch, beat: s.beat * rand(0.97, 1.03), vel: v.vel, close: last || s.line % 2 ? 'down' : 'up' });
   // 末一个字的拖腔收住之后换一口气，下一句才起
   s.until = start + r.dur - 0.15;
   s.line++;
@@ -235,10 +250,43 @@ function lessonLine(v: Voice): number {
 }
 
 /**
+ * 不出人声的一堂课（人声关着时，世界照旧每两秒半叫一回 recite，引擎把它换成 variant 'still' 交到这里）：
+ * 隔十来二十秒翻一页书，隔半分钟到一分多钟先生的戒尺在案上轻轻嗒一两下；别的那几回什么都不出。
+ * 翻书传不远：离得远一些就轻得多（三十米外几乎没有），戒尺传得稍远。隔了十五秒没人叫，这堂课就散了，下回另起。
+ */
+interface Still { page: number; ruler: number; last: number }
+const STILL = new WeakMap<Engine, Still>();
+export function lessonCue(v: Voice): number {
+  let s = STILL.get(v.e);
+  if (!s || v.t - s.last > 15 || v.t < s.last - 1) { s = { page: v.t + rand(1.5, 7), ruler: v.t + rand(10, 30), last: v.t }; STILL.set(v.e, s); }
+  s.last = v.t;
+  const sub = (g: number, at: number, raw: Voice['raw'] = {}): Voice => {
+    const out = v.ctx.createGain();
+    out.gain.value = g;
+    out.connect(v.out);
+    return { ...v, out, t: at, raw, pitch: 1 };
+  };
+  let tail = 0;
+  if (v.t >= s.page) {
+    s.page = v.t + rand(9, 20);
+    const g = 0.9 * Math.pow(1 - v.dist, 2.5);
+    if (g > 0.02) tail = Math.max(tail, STUDY_SHOTS.page(sub(g, v.t + rand(0, 0.4))) + 0.4);
+  }
+  if (v.t >= s.ruler) {
+    s.ruler = v.t + rand(35, 80);
+    const g = 0.75 * Math.pow(1 - v.dist, 1.5);
+    if (g > 0.02) tail = Math.max(tail, FOLK_SHOTS.wood(sub(g, v.t + rand(0.2, 0.9), { variant: 'ruler' })) + 0.9);
+  }
+  return tail;
+}
+
+/**
  * 一击：念一句。什么都不另说（世界里就是这样叫的）——接着这堂课往下念一句，见上。
  * 说了 n（几个字，4–7）、voices（几个孩子，3–5）或 variant（'up' 上句 / 'down' 下句 / 'lead' 先生领一句、孩子跟一句）——单独的一句，每回另起。
+ * variant 'still'：不出人声的那一堂课（见 lessonCue；人声关着时引擎自己换过来）。
  */
 export function reciteShot(v: Voice): number {
+  if (v.raw.variant === 'still') return lessonCue(v);
   if (v.raw.n == null && v.raw.voices == null && v.raw.variant == null) return lessonLine(v);
   const o: ReciteO = { n: v.raw.n, voices: v.raw.voices, pitch: v.pitch * rand(1, 1.1), vel: v.vel };
   if (v.raw.variant === 'lead') {

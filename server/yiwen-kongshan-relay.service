@@ -1,0 +1,49 @@
+# /etc/systemd/system/yiwen-kongshan-relay.service —— 安乐窝「同游」的中转：只听本机 3820，由 Caddy 把 wss://kongshan.169-58-39-104.nip.io/ws 转进来
+# 不存任何东西、没有任何密钥；进程一停，屋子与人都没了（客户端自己会重连）。
+[Unit]
+Description=yiwen kongshan relay (安乐窝·同游)
+After=network.target
+
+[Service]
+Type=simple
+User=kongshan
+Group=kongshan
+WorkingDirectory=/opt/yiwen/kongshan-relay/current
+Environment=NODE_ENV=production
+Environment=KS_RELAY_HOST=127.0.0.1
+Environment=KS_RELAY_PORT=3820
+# 一间屋子至多几人、总共至多几个连接、同一个地址至多几个连接（见 relay.mjs 文件头）
+Environment=KS_RELAY_ROOM=24
+Environment=KS_RELAY_MAX=240
+Environment=KS_RELAY_PER_IP=12
+# 服务器上的 node 在 /usr/local/bin（与别的几个单元一致）
+ExecStart=/usr/local/bin/node /opt/yiwen/kongshan-relay/current/relay.mjs
+Restart=always
+RestartSec=2
+# 停的时候先给各人发「要走了」（1001），再退出
+KillSignal=SIGTERM
+TimeoutStopSec=5
+MemoryMax=200M
+TasksMax=64
+LimitNOFILE=4096
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/log/yiwen
+StandardOutput=append:/var/log/yiwen/yiwen-kongshan-relay.log
+StandardError=append:/var/log/yiwen/yiwen-kongshan-relay.log
+
+[Install]
+WantedBy=multi-user.target

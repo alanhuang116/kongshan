@@ -1,0 +1,24 @@
+/*
+ * 行囊里每样东西的「用处」（BagSheet.tsx 的 .bag-use）：东西自己那句小字下面再一句，前头两个淡淡的楷字「用处」。
+ * 不加框、不加底色——一道极淡的墨线引着，读起来是册页上的旁注；手机上与那句小字一样大，读得清。
+ */
+.bag-group li p.bag-use {
+  grid-column: 1 / -1;
+  margin-top: 1px;
+  padding-left: 0.65em;
+  border-left: 1.5px solid var(--rule);
+  font-size: 12.5px;
+  line-height: 1.75;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.bag-group li p.bag-use i {
+  font-style: normal;
+  font-family: var(--kai);
+  font-size: 12.5px;
+  letter-spacing: 0.2em;
+  color: var(--ink-2);
+  margin-right: 0.45em;
+}
+/* 东西自己那句小字与用处之间，不必再空一行 */
+.bag-group li p + p.bag-use { margin-top: 0; }

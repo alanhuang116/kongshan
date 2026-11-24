@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 // 字体：自己托管，按 unicode-range 分片；fonts.css 由 tools/fonts.mjs 生成
 import './styles/fonts.css';
 import './styles/base.css';
@@ -21,6 +21,13 @@ import ActLayer from './acts/ActLayer';
 
 // 别的几路的册页样式（村人簿、星图）：文件有了就带上
 import.meta.glob(['./styles/folk.css', './styles/stars.css'], { eager: true });
+// 各路后加的样式：放进 styles/extra/ 就带上（排在上面这些后头，同样的选择器以它为准）
+import.meta.glob('./styles/extra/*.css', { eager: true });
+// 各路后加的界面件：放进 plugins/ 的 .tsx，默认导出一个组件，走动时（roam）画在别的界面之上、册页之下
+const PLUGINS = Object.entries(import.meta.glob<{ default: () => ReactNode }>('./plugins/*.tsx', { eager: true }))
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([path, m]) => ({ key: path, C: m.default }))
+  .filter((p) => typeof p.C === 'function');
 
 /**
  * 画在最底下（一整幅画布），界面一层层压在上面：题名页 → 走动时的四角 → 做事时的面板 → 下方浮着的话 → 册页。
@@ -54,6 +61,7 @@ export default function App() {
       {!hideUi && phase === 'roam' && <ActLayer />}
       {!hideUi && phase === 'roam' && <Notes />}
       {!hideUi && phase === 'roam' && <SkyCard />}
+      {!hideUi && phase === 'roam' && PLUGINS.map(({ key, C }) => <C key={key} />)}
       {!hideUi && <Sheets />}
       {error && <div className="fatal"><p>这台设备没能把画铺开。</p><small>{error}</small></div>}
     </div>

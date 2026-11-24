@@ -582,7 +582,7 @@ export const FOLK: FolkDef[] = [
   },
   {
     id: 'monk', name: '了然', call: '施主', role: '行脚僧（过路，在茶亭歇脚）', age: 45, sex: 'm', home: '村外', family: [],
-    temper: '和气，话少，见人先合十。', likes: ['tea', 'water'],
+    temper: '和气，话少，见人先合十。', likes: ['tea', 'bun'],
     plan: days({
       home: '路上',
       fair: (sr, ss, s) => s === 'winter' ? [] : [[9, 11.4, '茶亭', '自西边来，在茶亭歇脚讨碗茶，再往东去', 'pass']],

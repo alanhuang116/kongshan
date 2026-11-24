@@ -7,6 +7,7 @@
  *   割麦 —— 按住，一镰一镰割过去，割下的顺着垄铺成一溜；一垄割完，按住「捆」，一捆一捆捆好立在地里。
  *   掐穗、拔豆、摘菜 —— 按住，顺着垄一穗一穗掐、一棵一棵拔、一棵一棵摘，收进篮里（行囊）。
  *   挑麦 —— 捆好的麦挑上肩（行囊里的麦捆），挑到晒场上去打。地头邻家帮着收下的，「取回」。
+ *   挑起 —— 放在地上的担子（自己「放下」的、进屋前放在门外的、邻家码在场边的）重新挑上肩。挑到哪儿、怎么走见 farm/guide.ts。
  *   帮割 —— 夏天邻家王伯的麦熟了，帮着割一截。
  * 各件事做到一半走开，下回从做到的地方接着做（spot 跟着挪）。夜里看不清、冬天地冻，不做。
  */
@@ -14,13 +15,16 @@ import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
 import type { Act } from './types';
 import { BED_CROPS, CROPS, QUOTES, TIPS, type CropId } from '../../data/farm';
+import { itemText, qtyCn } from '../bag';
 import { farmOf, type Farm } from '../farm';
 import * as Mo from '../farm/model';
 import { spec } from '../farm/model';
 import { BED_GEO, FLOOR, PLOT, rowAt, rowLen, rowPoint, type BedGeo } from '../farm/layout';
 import { h3 } from '../farm/paint';
 import { ladle, seedBasket, sickle, bucketGeo, mats } from '../farm/props';
+import { Guide, what } from '../farm/guide';
 import { hoe as hoeMesh } from '../life/props';
+import { ground as groundOf } from '../site';
 import { BYE, Cam, Press, UPV, base, chain, clamp01, dirL, ease, grip, lerp, loc, movable, view, walk, walkVia, type FAct } from '../farm/actkit';
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -163,7 +167,7 @@ function sowAct(k: Anlewo, F: Farm, g: BedGeo): Act {
     const list = seedsNow();
     const items = list.map((s) => ({ id: s.id, n: k.bag.count(s.id) }));
     if (!items.some((i) => i.n > 0)) { phase = 'none'; set({ title: '下种', ...chain(null, '下种'), text: `${TIPS.noSeed}这一季${g.name}能种${Mo.sowable(kind, k.season).map((c) => CROPS[c].name).join('、') || '的没有'}。`, choices: [BYE] }); return; }
-    set({ title: '下种', ...chain(Mo.sowable(kind, k.season)[0], '下种'), text: `这一季能下：${Mo.sowable(kind, k.season).map((c) => `${CROPS[c].name}（${CROPS[c].note}）`).join('\n')}`, hint: '挑一样种子', items, choices: [BYE] });
+    set({ title: '下种', ...chain(Mo.sowable(kind, k.season)[0], '下种'), text: `种这一畦要用一升种子；行囊里有${list.filter((s) => k.bag.has(s.id)).map((s) => itemText(s.id, k.bag.count(s.id))).join('、')}。\n这一季能下：${Mo.sowable(kind, k.season).map((c) => `${CROPS[c].name}（${CROPS[c].note}）`).join('\n')}`, hint: '挑一样种子', items, choices: [BYE] });
   };
   const walkUi = () => set({ title: `种${cropName(crop)}`, ...chain(crop, '下种'), hint: casts === 0 ? '按住，一边走一边撒；松手停下' : '', hold: { id: 'sow', label: '撒', v: total() }, progress: total(), keys: [{ key: '空格', label: '按住撒种' }], choices: [BYE] });
   const startWalk = () => {
@@ -265,7 +269,7 @@ function waterAct(k: Anlewo, F: Farm, g: BedGeo): Act {
     movable(act, out.x, out.z, yaw, c.x + (g.x1 - g.x0) * 0.22, c.y + 1.3, c.z);
   };
   const meter = () => ({ v: clamp01(b().water / 1.1), lo: 0.64, hi: 0.93, label: '土墒' });
-  const ui = (extra: Record<string, unknown> = {}) => set({ title: '浇水', ...chain(b().crop, '浇水'), hint: pours === 0 ? '按住，一瓢一瓢地泼；表到朱色那一段就够了' : '', hold: { id: 'pour', label: '浇' }, meter: meter(), count: k.bag.count('water'), keys: [{ key: '空格', label: '按住浇' }], choices: [BYE], ...extra });
+  const ui = (extra: Record<string, unknown> = {}) => set({ title: '浇水', ...chain(b().crop, '浇水'), hint: pours === 0 ? `用行囊里的${qtyCn(k.bag.count('water'))}桶水：按住，一瓢一瓢地泼；表到朱色那一段就够了` : '', hold: { id: 'pour', label: '浇' }, meter: meter(), count: k.bag.count('water'), keys: [{ key: '空格', label: '按住浇' }], choices: [BYE], ...extra });
   const act: FAct = {
     id: `farm:water:${g.id}`, name: '浇水', anchor: V(0, 0, 0), spot: { x: 0, z: 0, yaw: 0 }, radius: 4.5, state, noZoom: true,
     on() {
@@ -587,6 +591,7 @@ function reapAct(k: Anlewo, F: Farm, g: BedGeo, crop: CropId): Act {
     cmd(c, arg) {
       if (c === K.hold || c === 'bind') press.cmd(arg);
       else if (c === 'load') { k.exitAct(); setTimeout(() => k.enterAct(`farm:load:${g.id}`), 60); }
+      else if (c === 'go') { k.exitAct(); setTimeout(() => F.guide.walkThere(), 120); }
       else if (c === 'done') k.exitAct();
     },
   };
@@ -609,7 +614,8 @@ function reapAct(k: Anlewo, F: Farm, g: BedGeo, crop: CropId): Act {
       set({ title: '割麦', ...chain(crop, '挑'), text: `${g.name}的麦割完了，${bb.sheaves}捆立在地里。挑到晒场上去打。`, lines: [q.text], source: q.source, gloss: q.note, done: true, choices: [{ id: 'load', label: '挑起来', main: true }, BYE] });
     } else {
       F.worked(`${CROPS[crop].reap}，得${got}`);
-      set({ title: CROPS[crop].reap, ...chain(crop, crop === 'millet' ? '打谷' : CROPS[crop].reap), text: crop === 'millet' ? `谷穗掐完了，一篮子沉甸甸的（${got}把）。拿到晒场上打下谷粒来。` : `收完了，得${got}${item === 'bean' ? '升豆' : '把菜'}。`, lines: [q.text], source: q.source, done: true, choices: [BYE] });
+      const ears = k.bag.count('milletEar');
+      set({ title: CROPS[crop].reap, ...chain(crop, crop === 'millet' ? '打谷' : CROPS[crop].reap), text: crop === 'millet' ? `谷穗掐完了，两筐沉甸甸的（${got}把），挑在肩上。\n${F.guide.tell('milletEar', ears)}` : `收完了，得${got}${item === 'bean' ? '升豆' : '把菜'}。`, lines: [q.text], source: q.source, done: true, choices: crop === 'millet' ? [{ id: 'go', label: '挑到场上', main: true }, BYE] : [BYE] });
     }
   };
   spotNow();
@@ -652,13 +658,14 @@ function loadAct(k: Anlewo, F: Farm, g: BedGeo): Act {
       if (t < 1.0) { av.setPose('crouch', 0.6); } else if (t < 1.2) { if (n > 0) k.bag.add('sheaf', n); k.sfx('pole', { vel: 0.5 }); av.setPose('stand', 0.8); t = 1.2; }
       if (t >= 1.2 && t - dt < 1.2 + 1e-6) {
         F.worked();
-        set({ title: '挑麦', ...chain('wheat', '打场'), text: `挑起来了：麦${n}捆。${b().sheaves > 0 || b().left ? '地里还剩一些，再来一趟。' : ''}\n晒场在村里，两户人家中间那块夯平的地（过了石桥往东，井的北边）。挑着担子走不快，也跑不动。`, done: true, choices: [{ id: 'go', label: '挑到场上', main: true }, BYE] });
+        const all = k.bag.count('sheaf');
+        set({ title: '挑麦', ...chain('wheat', '打场'), text: `挑起来了：${what('sheaf', n)}${all > n ? `（肩上一共${what('sheaf', all)}）` : ''}。${b().sheaves > 0 || b().left ? '地里还剩一些，再来一趟。' : ''}\n${F.guide.tell('sheaf', all)}\n晒场在村里，两户人家中间那块夯平的地，井的北边。挑着担子走不快，也跑不动；挑累了，随处可以放下。`, done: true, choices: [{ id: 'go', label: '挑到场上', main: true }, BYE] });
         t = 99;
       }
     },
     cmd(c) {
-      // 挑到场上：过石桥、顺着村路走到晒场（一段一段地找路），到了就打场
-      if (c === 'go') { k.exitAct(); setTimeout(() => walkVia(k, ROUTE_TO_FLOOR, () => k.enterAct('farm:thresh')), 120); }
+      // 挑到场上：顺着认好的路（过石桥或汀步、顺着村路，一段一段地找路）走到晒场，到了就打场
+      if (c === 'go') { k.exitAct(); setTimeout(() => { if (!F.guide.walkThere()) walkVia(k, ROUTE_TO_FLOOR, () => k.enterAct('farm:thresh')); }, 120); }
       else if (c === 'done') k.exitAct();
     },
   };
@@ -686,6 +693,58 @@ function takeAct(k: Anlewo, F: Farm, g: BedGeo): Act {
     cmd(c) { if (c === 'done') k.exitAct(); },
   };
   spotNow();
+  return act;
+}
+
+// ———————————————————————————— 挑起（放在地上的担子） ————————————————————————————
+function liftAct(k: Anlewo, F: Farm): Act {
+  const { state, set } = base(k);
+  const cam = new Cam(k);
+  const KIND = { sheaf: 'sheaf', milletEar: 'ear', water: 'water' } as const;
+  let t = -1, idx = -1;
+  /** 签立在离人最近的那一副上；人走到扁担侧边、面朝它 */
+  const spotNow = () => {
+    const near = F.guide.nearestPile(k.player.pos.x, k.player.pos.z);
+    if (!near) return null;
+    const s = Guide.besidePile(near.pile);
+    movable(act, s.x, s.z, s.yaw, near.pile.x, groundOf(near.pile.x, near.pile.z) + 1.3, near.pile.z);
+    return near;
+  };
+  const act: FAct = {
+    id: 'farm:lift', name: '挑起', anchor: V(0, -60, 0), spot: { x: 0, z: -400, yaw: 0 }, radius: 2.6, state, noZoom: true,
+    on() { return k.act ? F.st.piles.length > 0 : !!spotNow(); },
+    enter() {
+      const near = F.guide.nearestPile(k.player.pos.x, k.player.pos.z, 4);
+      idx = near?.i ?? -1; t = 0;
+      const c = k.player.pos.clone(), v = view(c, k.player.yaw + 2.3, 4.2, 1.8, 0.7);
+      cam.start(v.pos, v.look, 42, 1.3);
+      if (near) { F.holdPole = true; F.holdKind = KIND[near.pile.item]; }
+      set({ title: '挑起', hint: '' });
+    },
+    exit() { F.holdPole = false; F.holdKind = null; t = -1; spotNow(); },
+    update(dt) {
+      cam.update(dt);
+      if (t < 0 || t > 50) return;
+      t += dt;
+      const av = k.player.av;
+      // 蹲下去、扁担搭上肩、站起来
+      if (t < 1.0) { av.setPose('crouch', 0.6); return; }
+      t = 99;
+      av.setPose('stand', 0.8);
+      const got = idx >= 0 ? F.guide.pickUp(idx) : null;
+      if (!got) { F.holdPole = false; set({ title: '挑起', text: k.bag.count('water') >= 2 ? '肩上已经挑着一担水了，再挑不下。' : '地上空了。', choices: [BYE] }); return; }
+      k.sfx('pole', { vel: 0.5 });
+      F.worked();
+      const all = k.bag.count(got.item), d = F.guide.plan(got.item), p = k.player.pos;
+      const close = !!d && Math.hypot(d.tx - p.x, d.tz - p.z) < 7;
+      const go = d ? { id: 'go', label: got.item === 'water' ? `挑去浇${d.name}` : close ? '就打场' : '挑到场上', main: true } : null;
+      set({ title: '挑起', text: `挑起来了：${what(got.item, all)}。\n${F.guide.tell(got.item, all)}`, done: true, choices: go ? [go, BYE] : [BYE] });
+    },
+    cmd(c) {
+      if (c === 'go') { k.exitAct(); setTimeout(() => F.guide.walkThere(), 120); }
+      else if (c === 'done') k.exitAct();
+    },
+  };
   return act;
 }
 
@@ -769,6 +828,6 @@ export function create(k: Anlewo): Act[] {
     if (spec(g.id).kind === 'grain') out.push(loadAct(k, F, g));
     out.push(takeAct(k, F, g));
   }
-  out.push(helpAct(k, F));
+  out.push(helpAct(k, F), liftAct(k, F));
   return out;
 }

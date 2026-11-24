@@ -35,17 +35,60 @@ const GAMES = [
   {
     id: 'pitchpot', q: { s: 'yard', t: '10' },
     play: async ({ k, wait, until }) => {
-      let hold = false, n = 0;
+      const dots = () => { const m = k.world.scene.getObjectByName('play:dots'); return m?.visible ? m.geometry.instanceCount : 0; };
+      // 头一支在手上时：提示里说了怎么投（瞄准、按住、「正好」那段松手），壶上的签说瞄得怎样，地上一溜淡墨点
+      await until(() => k.act?.state?.hold?.id === 'throw', 8000);
+      await wait(200);
+      const s0 = k.act.state, first = { hint: s0.hint, tag: s0.tags?.[0]?.text, dots: dots() };
+      let hold = false, n = 0, arc = 0;
       const tm = setInterval(() => {
         const s = k.act?.state; if (!s) return;
-        if (s.hold && !hold) { if (Math.abs(s.aim) > 0.002) { k.cmd('aim', -s.aim * 0.8); return; } hold = true; k.cmd('throw', 'down'); return; }
-        if (hold && s.meter && s.meter.lo != null) { const mid = (s.meter.lo + s.meter.hi) / 2; if (Math.abs(s.meter.v - mid) < 0.02) { k.cmd('throw', 'up'); hold = false; n++; } }
+        if (s.hold?.id === 'throw' && !hold) { if (Math.abs(s.aim) > 0.002) { k.cmd('aim', -s.aim * 0.8); return; } hold = true; k.cmd('throw', 'down'); return; }
+        if (hold && s.meter && s.meter.lo != null) {
+          arc = Math.max(arc, dots());
+          const mid = (s.meter.lo + s.meter.hi) / 2; if (Math.abs(s.meter.v - mid) < 0.02) { k.cmd('throw', 'up'); hold = false; n++; }
+        }
       }, 16);
       await until(() => k.act?.state?.done, 70000);
       clearInterval(tm);
-      return { n, text: k.act?.state?.text, mem: k.mem.get('play', {}).pot };
+      const r1 = { n, text: k.act?.state?.text, mem: k.mem.get('play', {}).pot };
+      // 第二局：故意投大、投小、瞄偏，每一支都要说落在哪、下一支怎么改
+      k.cmd('again');
+      const one = async (how) => {
+        await until(() => k.act?.state?.hold?.id === 'throw' && k.act.state.meter?.lo != null, 8000);
+        const c0 = k.act.state.count ?? 0;
+        // 先扶正，再按要的偏开
+        for (let i = 0; i < 40 && Math.abs(k.act.state.aim) > 0.002; i++) { k.cmd('aim', -k.act.state.aim * 0.8); await wait(30); }
+        if (how === 'left') { k.cmd('aim', 0.1); await wait(60); }
+        k.cmd('throw', 'down');
+        const ok = await until(() => {
+          const m = k.act.state.meter; if (!m || m.lo == null) return false;
+          const mid = (m.lo + m.hi) / 2;
+          return how === 'far' ? m.v > Math.min(0.98, m.hi + 0.16) : how === 'near' ? m.v > 0.12 && m.v < m.lo - 0.2 : Math.abs(m.v - mid) < 0.02;
+        }, 6000);
+        k.cmd('throw', 'up');
+        await until(() => (k.act.state.count ?? 0) > c0 && k.act.state.result && k.act.state.tags?.length, 6000);
+        const st = k.act.state, out = { how, ok, result: st.result, hint: st.hint, tag: st.tags?.[0]?.text };
+        await until(() => k.act.state.hold?.id === 'throw' || k.act.state.done, 6000);
+        out.next = k.act.state.hint;
+        return out;
+      };
+      const fb = [await one('far'), await one('near'), await one('left')];
+      return { ...r1, first, arc, fb };
     },
-    check: (r) => [['十二支投完', r.n >= 12, `n=${r.n}`], ['按《投壶新格》计筭', r.mem?.best > 30 && r.mem?.n === 1, `best=${r.mem?.best}`], ['结果里有筭或全壶', /筭|全壶/.test(r.text ?? '')]],
+    check: (r) => {
+      const F = Object.fromEntries((r.fb ?? []).map((x) => [x.how, x]));
+      return [
+        ['十二支投完', r.n >= 12, `n=${r.n}`], ['按《投壶新格》计筭', r.mem?.best > 30 && r.mem?.n === 1, `best=${r.mem?.best}`], ['结果里有筭或全壶', /筭|全壶/.test(r.text ?? '')],
+        ['头一支：提示里说了怎么投（瞄准、按住、「正好」那段松手）', /瞄准/.test(r.first?.hint ?? '') && /按住/.test(r.first?.hint ?? '') && /正好.*松手/.test(r.first?.hint ?? ''), r.first?.hint],
+        ['瞄着时壶上有签说瞄得怎样、地上有一溜淡墨点', /对准|偏左|偏右|壶耳/.test(r.first?.tag ?? '') && r.first?.dots >= 12, `签=${r.first?.tag} 点=${r.first?.dots}`],
+        ['蓄力时空中有一道弧', r.arc >= (r.first?.dots ?? 0) + 10, `点=${r.arc}`],
+        ['投大了：说力大了，签在落下的地方写远了', F.far?.result === 'far' && /力大了/.test(F.far?.hint ?? '') && F.far?.tag === '远了', JSON.stringify(F.far ?? {})],
+        ['投小了：说力小了，签写近了', F.near?.result === 'near' && /力小了/.test(F.near?.hint ?? '') && F.near?.tag === '近了', JSON.stringify(F.near ?? {})],
+        ['瞄偏了：说偏左', F.left?.result === 'left' && /偏左/.test(F.left?.hint ?? '') && F.left?.tag === '偏左', JSON.stringify(F.left ?? {})],
+        ['下一支的提示照着上一支说怎么改', /上一支力大了/.test(F.far?.next ?? '') && /上一支力小了/.test(F.near?.next ?? '') && /上一支偏左/.test(F.left?.next ?? ''), [F.far?.next, F.near?.next, F.left?.next].join(' | ')],
+      ];
+    },
   },
   {
     id: 'fishing', q: { s: 'bridge', t: 'dawn' },
@@ -69,10 +112,43 @@ const GAMES = [
   },
   {
     id: 'boat', q: { s: 'ferry', t: '10' }, long: true,
-    play: async ({ k, until }) => {
-      await until(() => k.act?.state?.meter, 6000);
-      const boat = k.world.scene.getObjectByName('play:boat');
-      // 摇：推到头松、拉到头按；转向：朝着签（竹篙 / 栈桥）
+    play: async ({ k, wait, until }) => {
+      await until(() => k.act?.state?.hold?.id === 'row', 8000);
+      const boat = k.world.scene.getObjectByName('play:boat'), cv = k.world.canvas, yaw = () => boat.rotation.y;
+      const turn = (y0) => Math.atan2(Math.sin(yaw() - y0), Math.cos(yaw() - y0)) * 57.3;
+      const key = (type, kk, code = '') => window.dispatchEvent(new KeyboardEvent(type, { key: kk, code }));
+      // 船头在画面上朝哪边（船头一点减船尾一点的横坐标，像素），减去刚上船、船身正对镜头方位时的那个数（镜头在船后偏左，透视里船头本就略偏左）：往左转时应为负
+      const bowRaw = () => {
+        const o = { x: 0, y: 0, visible: false, dist: 0 }, a = boat.position.clone(), b = boat.position.clone();
+        a.x += Math.sin(boat.rotation.y) * 2; a.z += Math.cos(boat.rotation.y) * 2; b.x -= Math.sin(boat.rotation.y); b.z -= Math.cos(boat.rotation.y);
+        k.nav.project(a, o); const ax = o.x; k.nav.project(b, o); return ax - o.x;
+      };
+      await wait(2000);
+      const bow0 = bowRaw(), bowX = () => bowRaw() - bow0;
+      const T = {};
+      // 停着按 ←（只拨着橹）：慢慢往左掉头；歇一会儿镜头跟上了，再按 D：往右
+      let y0 = yaw(); key('keydown', 'ArrowLeft'); await wait(1600); T.leftStill = turn(y0); T.bowLeft = bowX(); key('keyup', 'ArrowLeft');
+      await wait(2500);
+      y0 = yaw(); key('keydown', 'd', 'KeyD'); await wait(2000); T.rightD = turn(y0); T.bowRight = bowX(); key('keyup', 'd', 'KeyD');
+      await wait(1500);
+      // 摇着按 A：转得比停着快
+      for (let i = 0; i < 6; i++) { k.cmd('row', i % 2 ? 'up' : 'down'); await wait(430); }
+      y0 = yaw(); key('keydown', 'a', 'KeyA');
+      for (let i = 0; i < 4; i++) { k.cmd('row', i % 2 ? 'up' : 'down'); await wait(400); }
+      T.leftRow = turn(y0); key('keyup', 'a', 'KeyA');
+      await wait(1200);
+      // 手指在画上往右拖（像触屏）：舵往右，船头往右；松手回正
+      const r = cv.getBoundingClientRect(), px = r.left + r.width * 0.3, py = r.top + r.height * 0.5;
+      const pe = (type, x, id = 41, y = py) => cv.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true }));
+      y0 = yaw(); pe('pointerdown', px); for (let i = 1; i <= 8; i++) { pe('pointermove', px + i * 10); await wait(16); }
+      await wait(250); T.dragRud = k.act.state.rud; await wait(1300); T.dragTurn = turn(y0); pe('pointerup', px + 80);
+      await wait(700); T.dragBack = k.act.state.rud;
+      // 点一下水面（画面左下）：船头自己往左转过去
+      const lx = r.left + r.width * 0.12, ly = r.top + r.height * 0.62;
+      pe('pointerdown', lx, 42, ly); pe('pointerup', lx, 42, ly);
+      await wait(500); T.tapRud = k.act.state.rud;
+      await until(() => Math.abs(k.act.state.rud ?? 0) < 0.05, 15000);
+      // 摇一整趟：推到头松、拉到头按；转向：朝着签（竹篙 / 栈桥）
       const tm = setInterval(() => {
         const s = k.act?.state; if (!s?.meter) return;
         if (s.meter.lo > 0.5 && s.meter.v > 0.97) k.cmd('row', 'up'); else if (s.meter.lo < 0.5 && s.meter.v < 0.03) k.cmd('row', 'down');
@@ -86,9 +162,20 @@ const GAMES = [
       await until(() => { if (k.act?.state?.lines) viewed = true; return k.act?.state?.done; }, 240000);
       clearInterval(tm);
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowLeft' })); window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }));
-      return { viewed, text: k.act?.state?.text, mem: k.mem.get('play', {}).boat };
+      return { viewed, T, text: k.act?.state?.text, mem: k.mem.get('play', {}).boat };
     },
-    check: (r) => [['绕到竹篙那里停了一停（南望伊阙）', r.viewed], ['摇回来泊好、记了一趟几秒', r.mem?.n === 1 && r.mem?.best > 20, `best=${r.mem?.best}`]],
+    check: (r) => {
+      const T = r.T ?? {}, f = (x) => (x == null ? '—' : (+x).toFixed(1));
+      return [
+        ['停着按 ←：船头往左掉头（慢一些）', T.leftStill > 5, `${f(T.leftStill)}°`],
+        ['往左转时画面上船头也在左（左右不反）', T.bowLeft < -2, `船头偏 ${f(T.bowLeft)} 像素`],
+        ['按 D：船头往右，画面上也在右', T.rightD < -5 && T.bowRight > 2, `${f(T.rightD)}°，船头偏 ${f(T.bowRight)} 像素`],
+        ['摇着按 A：转得比停着快', T.leftRow > T.leftStill * 1.3 && T.leftRow > 12, `${f(T.leftRow)}°`],
+        ['在画上往右拖：舵往右、船头往右，松手回正', T.dragRud < -0.5 && T.dragTurn < -4 && Math.abs(T.dragBack) < 0.15, `舵 ${f(T.dragRud)} 转 ${f(T.dragTurn)}° 松手后 ${f(T.dragBack)}`],
+        ['点一下左边的水面：船头往左转过去', T.tapRud > 0.3, `舵 ${f(T.tapRud)}`],
+        ['绕到竹篙那里停了一停（南望伊阙）', r.viewed], ['摇回来泊好、记了一趟几秒', r.mem?.n === 1 && r.mem?.best > 20, `best=${r.mem?.best}`],
+      ];
+    },
   },
   {
     id: 'kite', q: { s: 'ferry', t: '10', season: 'spring' },

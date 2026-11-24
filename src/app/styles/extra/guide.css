@@ -1,0 +1,25 @@
+/* 「初到」：画面当中一张宣纸（上下两道极淡的裱边、墨晕开的淡影），后面一层很淡的纸色，画还看得见 */
+.guide { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px); animation: fade 0.6s var(--out) backwards; }
+.guide-back { position: absolute; inset: 0; background: var(--wash); opacity: 0.35; }
+.guide-card { position: relative; width: min(440px, 100%); max-height: 100%; overflow: auto; overscroll-behavior: contain; display: grid; gap: 14px; padding: 20px 24px 18px; border-radius: 2px; background: linear-gradient(var(--rule-2), var(--rule-2)) 0 0 / 100% 3px no-repeat, linear-gradient(var(--rule-2), var(--rule-2)) 0 100% / 100% 3px no-repeat, var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); animation: rise 0.5s var(--out) backwards; }
+.guide-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule-2); }
+.guide-head h3 { font-family: var(--brush); font-size: 30px; line-height: 1.15; letter-spacing: 0.16em; color: var(--title); }
+.guide-head h3.is-kai { font-family: var(--kai); font-size: 25px; }
+/* 第几页：几点小墨点，此刻那一点是朱（夜里是金） */
+.guide-dots { display: flex; gap: 7px; }
+.guide-dots li { width: 6px; height: 6px; border-radius: 1px; background: var(--rule); transition: background-color 0.3s; }
+.guide-dots li.is-past { background: var(--ink-3); }
+.guide-dots li.is-on { background: var(--mark); }
+.guide-body { display: grid; gap: 10px; }
+.guide-body p { font-family: var(--kai); font-size: 16.5px; line-height: 1.9; letter-spacing: 0.06em; color: var(--ink); text-wrap: pretty; overflow-wrap: anywhere; }
+.guide-body p + p { color: var(--ink-2); font-size: 15.5px; }
+.guide-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
+/* 开着时，画面下方的走法提示先让开；右上那一条（第几日、时辰、册）浮在纸色上面，看得清，但这时点不动 */
+body[data-guide] .dock { opacity: 0; }
+body[data-guide] .corner { z-index: 9; pointer-events: none; }
+/* 末一页说到「册」里的「今日」与时辰：「册」上那圈墨环转成朱，时辰底下那一点也晕开一圈 */
+body[data-guide="3"] .menu-key::before { opacity: 1; background: var(--mark); transform: rotate(-25deg); }
+body[data-guide="3"] .when-line::after { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mark) 28%, transparent); }
+body[data-guide="3"] .when-day { color: var(--mark); }
+@media (max-width: 380px) { .guide-card { padding: 18px 18px 16px; } .guide-body p { font-size: 15.5px; } }
+@media (max-height: 460px) { .guide-card { gap: 10px; padding: 14px 20px 12px; } .guide-head h3 { font-size: 25px; } .guide-body p { font-size: 15px; line-height: 1.75; } }

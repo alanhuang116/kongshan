@@ -9,7 +9,8 @@ import * as walk from '../world/walk';
 import { today } from './calendar';
 import * as snd from './sound';
 import { hasSheet } from './sheets/extra';
-import { addEntry, addFound, addNote, patch, saveWorld, saved, setUi, ui, type Sheet } from './store';
+import { addEntry, addFound, addNote, patch, saveWorld, saved, setUi, ui, type Sheet, type Spot } from './store';
+import { PLACES } from '../world/site';
 import { WORDS, guaOf } from './texts';
 
 let ks: Anlewo | null = null;
@@ -174,6 +175,10 @@ export async function boot(canvas: HTMLCanvasElement) {
   w.__ks = k; w.__walk = walk; w.__ui = { ui, saved, setUi, patch, addNote, sound: snd };   // 给调试与自动测试用
   sense();
   setInterval(sense, 1000);
+  // 记下人停在哪（下回「入」时从这里接着走）：走动时隔几秒记一次，页面收起、关掉时也记
+  setInterval(keepSpot, 4000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') keepSpot(); });
+  window.addEventListener('pagehide', keepSpot);
   setInterval(soundTick, 250);
   if (START.auto) {
     // 跳过题名页：人已经站在那一处
@@ -193,13 +198,34 @@ export async function boot(canvas: HTMLCanvasElement) {
   setTimeout(() => { w.__ready = true; }, START.auto ? 900 : 400);
 }
 
-/** 「入」：画淡成一片雾，人已站在桃林的入口，再从雾里显出来 */
+/** 人此刻停在哪：正在走动（不在题名页、没在做事、没在换处）时记下来 */
+function keepSpot() {
+  const k = ks;
+  if (!k || ui.get().phase !== 'roam' || k.nav.busy || k.overview) return;
+  const p = k.player, prev = saved.get().spot;
+  if (prev && Math.hypot(prev.x - p.pos.x, prev.z - p.pos.z) < 0.5 && Math.abs(prev.yaw - p.yaw) < 0.3) return;
+  patch({ spot: { x: Math.round(p.pos.x * 100) / 100, z: Math.round(p.pos.z * 100) / 100, yaw: Math.round(p.yaw * 100) / 100, zone: p.zone ?? 'ground', place: k.nav.cur, t: Date.now() } });
+}
+/** 上回停的地方还能不能站（在图里、不在水里墙里）：能就返回它 */
+export function resumeSpot(): Spot | null {
+  const sp = saved.get().spot;
+  if (!sp) return null;
+  return walk.standable(sp.x, sp.z, sp.zone as walk.Zone) != null ? sp : null;
+}
+/** 那一处的名字（院中、田畴……） */
+export const placeName = (id: string) => PLACES.find((p) => p.id === id)?.name ?? '';
+
+/**
+ * 「入」：画淡成一片雾，人已站在那里，再从雾里显出来。
+ * from 'resume'：回到上回停下的地方（有、而且还站得住的话）；'grove'：从桃林的入口走进来（头一回、或题名页上点了「从桃林走进来」）
+ */
 let entering = false;
-export async function enter(skip = false) {
+export async function enter(skip = false, from: 'resume' | 'grove' = 'resume') {
   const k = ks;
   if (!k || entering) return;
   entering = true;
   const s = saved.get();
+  k.resumeAt = !skip && from === 'resume' ? resumeSpot() : null;
   snd.unlock({ master: s.master, muted: s.muted, levels: s.sound });
   patch({ visits: s.visits + 1 });
   if (skip) { k.veil = 0; setUi({ phase: 'roam', place: k.nav.cur, arrivedAt: Date.now() }); return; }
@@ -228,6 +254,25 @@ export function go(id: string) {
 }
 /** 做某件事：id 省略时做走近了的那件。人会自己走到位 */
 export function doAct(id?: string) { if (!ks) return; snd.play('tick', { vel: 0.5 }); ks.use(id); }
+/**
+ * 「今日」上点了「去」：那件事远（四十来步以外）就先淡出、到离它最近的那一处，再走过去做；近的直接走过去。
+ */
+export async function goDo(id: string) {
+  const k = ks;
+  if (!k || k.nav.busy) return;
+  const a = k.acts[id];
+  if (!a) return;
+  setUi({ sheet: null, menu: false });
+  snd.play('tick', { vel: 0.5 });
+  if (k.act) k.exitAct();
+  const far = Math.hypot(a.spot.x - k.player.pos.x, a.spot.z - k.player.pos.z) > 42;
+  if (far) {
+    let best = '', bd = Infinity;
+    for (const p of PLACES) { if (!p.spawn) continue; const d = Math.hypot(p.spawn[0] - a.spot.x, p.spawn[1] - a.spot.z); if (d < bd) { bd = d; best = p.id; } }
+    if (best) { setUi({ busy: true }); await k.go(best); setUi({ busy: false }); }
+  }
+  k.use(id);
+}
 /** 收起星笺（天上点亮的那一处也熄掉） */
 export function closeSky() { if (ks) ks.skyClose(); setUi({ sky: null }); }
 /** 取景偏移：把画面里的人往右（x）、往上（y）让出几成画幅（有面板时别挡着他） */
@@ -245,7 +290,7 @@ export function setTime(mode: TimeMode | number) { patch({ time: mode }); ks?.se
  */
 export function setFlow(rate: number) {
   const r = Math.max(0, Math.min(1, rate));
-  patch({ flow: r });
+  patch({ flow: r, flowChosen: true });
   ks?.setFlow(r);
   if (r > 0 && ks && ks.timeMode === 'now') setTime(Math.round(ks.atmos.hour * 100) / 100);
 }

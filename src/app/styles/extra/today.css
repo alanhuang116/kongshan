@@ -1,0 +1,20 @@
+/* 「今日」：分几栏（此刻宜、田里、托事、慢慢来），一栏一道细线；一件一行：名字、一句话、在哪里，右边一个「去」 */
+.today-sec { padding: 4px 0 14px; }
+.today-sec + .today-sec { border-top: 1px solid var(--rule-2); padding-top: 14px; }
+.today-sec h4 { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.4em; color: var(--ink-2); margin-bottom: 4px; }
+.today-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 14px; padding: 9px 0; }
+.today-row + .today-row { border-top: 1px dashed var(--rule-2); }
+.today-what { display: grid; gap: 2px; min-width: 0; }
+.today-what b { font-family: var(--kai); font-weight: 400; font-size: 17px; letter-spacing: 0.14em; color: var(--ink); }
+.today-line { font-size: 13.5px; line-height: 1.7; letter-spacing: 0.04em; color: var(--ink); overflow-wrap: anywhere; }
+.today-what small { font-size: 12px; line-height: 1.6; letter-spacing: 0.04em; color: var(--ink-2); }
+.today-row .key { min-height: 44px; min-width: 56px; padding: 0 14px; }
+.today-none { font-size: 13px; line-height: 1.85; letter-spacing: 0.04em; color: var(--ink-2); padding: 6px 0 2px; }
+.today-more { margin-top: 2px; }
+.today-grow li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 4px 12px; padding: 6px 0; }
+.today-grow li + li { border-top: 1px dashed var(--rule-2); }
+.today-grow span { font-size: 13px; line-height: 1.8; letter-spacing: 0.04em; color: var(--ink-2); overflow-wrap: anywhere; }
+.today-foot { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--rule-2); }
+@media (max-width: 380px) { .today-what b { font-size: 16px; } .today-line { font-size: 13px; } }
+/* 「关于」里那两个去处（再看一遍「初到」、今日） */
+.about p.about-guide { display: flex; flex-wrap: wrap; gap: 2px 18px; margin: 4px 0 0; }

@@ -6,13 +6,14 @@ import { ui, useStore } from '../store';
 import Copy from './Copy';
 import Panel, { hasPanel } from './Panel';
 import { choicesOf, exitOf, holdOf, keysOf, meterOf, num, stepsOf, str, strList, tagsOf } from './state';
-import { HoldKey, KeyHints, MeterBar, StepList, Tags, hasKeyboard } from './Widgets';
+import { HoldKey, KeyHints, MeterBar, SteerKeys, StepList, Tags, hasKeyboard } from './Widgets';
 
 /**
  * 做事时的那一层界面（state 怎么写见 state.ts）：
  *   左上竖写这件事的名字（与计数、几步里的第几步）；下面当中一块薄板放提示、一道表、进度与键盘上怎么按；右下一枚「毕」。
  *   有话要读、有象要看、有签要选、要从行囊里挑东西时，旁边出一块面板（Panel）；要写字时出一张纸（Copy）。
  *   要按住的事，右下是一枚落在底座里的大键（HoldKey，空格同），「毕」挪到右上；钉在画里的小签（Tags）跟着画面走。
+ *   触屏上要转向的事（摇橹，state.steer 为真），左边另有「左」「右」两枚（SteerKeys）。
  * 这一层自己不接指针——画面上的东西（天上的星、琴弦、炉火、菊丛）照常点得到；只有面板、纸、小签与几枚键接。Esc 也是「做完了」。
  *
  * 右下那一枚：state 里只带着一枚「做完了」的签（罢、起身……）而别无可放时，那枚签就落在这里（点了把它的 id 发回去）；
@@ -40,6 +41,7 @@ export default function ActLayer() {
   const hint = str(st.hint);
   const meter = writing ? null : meterOf(st.meter), hold = writing ? null : holdOf(st.hold), tags = writing ? [] : tagsOf(st.tags);
   const keys = kb && !writing ? keysOf(st.keys) : [], steps = stepsOf(st);
+  const steer = touch && !writing && st.steer === true;
   const quiet = !!act && (QUIET.has(kind) || st.quiet === true) && !panel && !writing && cs.length === 0 && !hold && !meter;
   // 收紧的面板（观星）：贴底一条，提示挪进面板里，不另出一块板；画不让开（天就在那里）
   const compact = !!act && !writing && panel && (COMPACT.has(act) || st.compact === true);
@@ -97,6 +99,7 @@ export default function ActLayer() {
       </header>
       <div className="act-main">
         {writing ? <Copy key={model.join('/')} model={model} head={head} hint={hint ?? undefined} /> : panel ? <Panel st={st} compact={compact} lead={compact ? hint : null} /> : null}
+        {steer && <SteerKeys />}
         {foot && (
           <div className={`act-foot${quiet && faded ? ' is-faded' : ''}`} data-testid="act-foot">
             {hint && <p className="act-hint">{hint}</p>}

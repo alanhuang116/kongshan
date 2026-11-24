@@ -181,7 +181,9 @@ export async function fit(page, label, o = {}) {
           if (bottom - top < 4) continue;
           vr = { left: r.left, right: r.right, top, bottom };
         }
-        if (Math.min(w, h) < minTap - 0.5) out.push(`键太小 ${name(el)}「${own || el.getAttribute('aria-label') || ''}」${Math.round(w)}×${Math.round(h)}`);
+        // 竹简（手机上十枚排成一行）：窄而高（约 35×100），竖着点不会点错，宽不到 44 也算够
+        const slip = el.matches('.slip') && h >= minTap * 2 && w >= 34;
+        if (!slip && Math.min(w, h) < minTap - 0.5) out.push(`键太小 ${name(el)}「${own || el.getAttribute('aria-label') || ''}」${Math.round(w)}×${Math.round(h)}`);
         taps.push({ el, r: vr, n: name(el) });
       }
     }

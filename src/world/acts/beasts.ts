@@ -21,7 +21,7 @@ import type { Fauna } from '../life/fauna';
 import { say } from '../life/fauna/kit';
 import { Parts, creatureMat, paint, tone, trs } from '../life/rig';
 import type { Act } from './types';
-import { PAIRS, V, shot } from './lib';
+import { PAIRS, V, openShot, shot } from './lib';
 import { hitPlaneY, jpos } from './util';
 
 type St = Record<string, unknown>;
@@ -198,7 +198,8 @@ function petDog(k: Anlewo, F: Fauna): Act {
       const av = k.player.av, p = k.player.pos;
       av.setPose('crouch', 1.0); av.setHands('free');
       D.pet('come', { x: p.x, z: p.z, yaw: k.player.yaw });
-      k.nav.setPose(shot(V(p.x + Math.sin(k.player.yaw) * 0.5, p.y + 0.35, p.z + Math.cos(k.player.yaw) * 0.5), k.player.yaw + Math.PI * 0.62, 2.4, 0.9, 0.0, 42, { yaw: 22, up: 8, down: 8 }), 1.4);
+      // 机位：从人身后偏右那一面起，找一处与人、狗之间没有墙挡着的地方（狗常卧在甲家矮墙根，镜头别落到墙后去）；拖动时绕着人与狗转
+      k.nav.setPose(openShot(V(p.x + Math.sin(k.player.yaw) * 0.5, p.y + 0.35, p.z + Math.cos(k.player.yaw) * 0.5), k.player.yaw + Math.PI * 0.62, 2.6, 0.9, 0.0, 42, { up: 28, down: 8, orbit: 160 }), 1.4);
       snd(k, 'dogWhine', D.pos.x, D.pos.z, 0.4);
       show();
     },

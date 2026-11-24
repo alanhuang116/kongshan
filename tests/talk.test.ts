@@ -12,8 +12,9 @@ import { FOLK } from '../src/data/folk';
 import { BOOKS, META, type L } from '../src/data/talk2';
 import { FAVORS, FAVOR_ITEMS } from '../src/data/favors';
 import { LINES } from '../src/data/talk';
-import { ITEMS, Bag } from '../src/world/bag';
+import { ITEMS, Bag, useOf } from '../src/world/bag';
 import { Mem } from '../src/world/mem';
+import { GIFTS, ITEM_USES } from '../src/data/itemUses';
 import { BONDS, folkOf, people, person, fill } from '../src/world/acts/favor';
 import { FAUNA } from '../src/world/life/fauna/api';
 
@@ -342,5 +343,74 @@ describe('人情账', () => {
     const F3 = folkOf({ ...k, mem: new Mem({ folk: { p: { elder: 'x', farmer: { n: 'a', v: null } }, f: { tea: { s: 'weird' } } } }) } as never);
     expect(F3.level('elder')).toBe(0);
     expect(F3.fm('tea')).toBeNull();
+  });
+});
+
+// —— 送东西：送什么、一回送多少、用处里说的谁要什么，与名册对得上 ——
+describe('送东西与用处', () => {
+  const liked = (id: string, item: string) => !!FOLK.find((f) => f.id === id)?.likes.includes(item);
+  it('送得出去的都是登记过的东西；名册里有人喜欢的、有人不肯收的、有专门的话的，都送得出去', () => {
+    for (const id of Object.keys(GIFTS)) expect(ITEMS[id]?.name, `GIFTS 里的 ${id}`).toBeTruthy();
+    for (const f of FOLK) for (const l of f.likes) if (ITEMS[l] && l !== 'coin') expect(GIFTS[l], `${f.name}喜欢的 ${l} 送不出去`).toBeTruthy();
+    for (const [id, m] of Object.entries(META)) for (const n of m.no ?? []) expect(GIFTS[n], `${id} 不收的 ${n} 本来就送不出去`).toBeTruthy();
+    for (const [id, B] of Object.entries(BOOKS)) for (const it of Object.keys(B.got ?? {})) expect(GIFTS[it], `${id} 收到 ${it} 的话用不上`).toBeTruthy();
+    for (const id of ['water', 'coin', 'sheaf', 'milletEar', 'gu']) expect(GIFTS[id], `${id} 不该送人`).toBeUndefined();
+  });
+  it('一回送多少是正经的数（一到四），先生递的那句短、有标点、没有 ASCII', () => {
+    for (const [id, g] of Object.entries(GIFTS)) {
+      expect(g.n, id).toBeGreaterThanOrEqual(1); expect(g.n, id).toBeLessThanOrEqual(4);
+      if (g.say) { expect(len(g.say), id).toBeLessThanOrEqual(22); expect(g.say, id).toMatch(/[。！]$/); expect(g.say, id).not.toMatch(/[\x00-\x7f]/); }
+    }
+  });
+  it('用处里说到的人都在名册里，说他要这个的，他真的喜欢（或有收到它的话、或不肯收）', () => {
+    const bad: string[] = [];
+    for (const [item, t] of Object.entries(ITEM_USES)) {
+      for (const r of refs(t)) {
+        if (!IDS.has(r)) { bad.push(`${item}：{${r}} 不在名册里`); continue; }
+        if (!liked(r, item) && !BOOKS[r]?.got?.[item] && !META[r]?.no?.includes(item)) bad.push(`${item}：用处里说 ${nameOf(r)}，名册里他不喜欢 ${item}`);
+      }
+      expect(useOf(item), item).not.toMatch(/[{}]/);
+    }
+    expect(bad).toEqual([]);
+  });
+  it('送他东西（几个）：一回交出那么多；先知道他收不收、要交几个；他回赠的先进行囊、到手才浮字', () => {
+    const { k, F } = fakeWorld();
+    const bagNotes: string[] = [];
+    k.bag.onNote = (t) => bagNotes.push(t);
+    F.meet('farmwife');
+    k.bag.add('egg', 6, { quiet: true });
+    expect(F.plan('farmwife', 'egg', 4)).toEqual({ kind: 'like', n: 4 });
+    expect(F.give('farmwife', 'egg', 4).kind).toBe('like');
+    expect(k.bag.count('egg')).toBe(2);
+    F.drainGot();                                                    // 她也许回赠了一把青菜
+    k.bag.add('flower', 1, { quiet: true });
+    expect(F.plan('farmer', 'flower', 1).kind).toBe('no');
+    expect(F.plan('monk', 'egg', 2).kind).toBe('no');
+    // 熟了回赠：东西已经在行囊里，先不浮「得……」，说话那一路递到手时再说
+    F.addV('elder', 6); F.meet('elder');
+    k.bag.add('tea', 1, { quiet: true });
+    const r0 = Math.random; Math.random = () => 0.1;
+    try { const r = F.give('elder', 'tea', 1); expect(r.back?.item).toBe('jujube'); } finally { Math.random = r0; }
+    expect(k.bag.count('jujube')).toBe(1);
+    expect(bagNotes.some((n) => n.startsWith('得枣'))).toBe(false);
+    expect(F.drainGot()).toEqual([{ item: 'jujube', n: 1 }]);
+    expect(F.drainGot()).toEqual([]);
+  });
+  it('托事交东西那一枚签：交的是哪样、几个；办成了的回礼等递到手', () => {
+    const { k, F } = fakeWorld({ hour: 9 });
+    (k.life.npcs.elder as { act?: string }).act = 'sit';
+    F.meet('elder');
+    F.run('fv:tea:yes', 'elder');
+    expect(F.handInfo('fv:tea:hand', 'elder')).toBeNull();          // 还没有茶
+    k.bag.add('tea', 1, { quiet: true });
+    expect(F.handInfo('fv:tea:hand', 'elder')).toEqual({ item: 'tea', n: 1 });
+    expect(F.handInfo('fv:tea:hand', 'farmer')).toBeNull();
+    F.run('fv:tea:hand', 'elder');
+    expect(F.drainGot()).toEqual([{ item: 'jujube', n: 1 }]);
+    // 两尾鱼的托事：从「送东西」里挑鱼，要交两尾
+    F.addV('keeper', 5); F.meet('keeper');
+    F.run('fv:fish:yes', 'keeper');
+    k.bag.add('fish', 3, { quiet: true });
+    expect(F.plan('keeper', 'fish', 1)).toEqual({ kind: 'favor', n: 2 });
   });
 });

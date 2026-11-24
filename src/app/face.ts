@@ -53,3 +53,19 @@ export function useBrush(text: string): boolean {
   }, [text]);
   return ok;
 }
+
+/**
+ * iPhone 上（Safari、微信里的网页都有）：字体是按字分片下载的，晚到的那几片字，压在磨砂层（backdrop-filter）里有时画不出来、留一块空白——
+ * 右上那一条的时辰卦名、简册的竹简最容易碰上。等这几个字的字体到了，返回的数加一：拿它当 React 的 key，那几个字就重画一遍。
+ */
+export function useGlyphKey(text: string, family = 'LXGW WenKai'): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
+    if (!fonts?.load || !text) return;
+    void fonts.load(`16px "${family}"`, text).then(() => { if (live) setN((v) => v + 1); }).catch(() => { /* 字体没来就照旧 */ });
+    return () => { live = false; };
+  }, [text, family]);
+  return n;
+}

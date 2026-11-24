@@ -11,11 +11,14 @@
 import type { Engine, Voice } from './engine';
 import { EXTRA_SHOTS } from './extra';
 import { bubble, burst, curveOf, hiss, reson, sprinkle, tap, voiced, wobble } from './kit';
+import { orioleSong, playSong } from './song';
 import type { Shot } from './types';
-import { clamp, lerp, pick, rand } from './util';
+import { clamp, lerp, rand } from './util';
 import { cluck, VILLAGE_SHOTS } from './village';
 
 const TAU = Math.PI * 2;
+/** 世界里的黄鹂上一回叫是什么时候（每个引擎一份） */
+const ORIOLE = new WeakMap<Engine, number>();
 
 // ———————————————————————————— 蛙 ————————————————————————————
 interface CroakO { rate: number; f1: number; f2: number; amp: number; /** 上面那个共鸣占几成（远的蛙高处被吃掉，给小一些） */ hi?: number; q1?: number; q2?: number }
@@ -190,33 +193,20 @@ export const ANIMAL_SHOTS: Pick<Record<Shot, Fn>, 'frog' | 'oriole' | 'magpie' |
     }
     return tail + 0.3;
   },
-  /** 黄鹂：一串圆润的哨音，一个音滑到下一个（婉转），中间有一个音打着颤（「流水」似的那一下）；1.3–2.9kHz */
+  /**
+   * 黄鹂：几个圆润的音，每个一百毫秒上下、里头一扬一落，其中一个打一下颤；音与音之间断开，不滑过去（做法见 song.ts）。
+   * 头一版是一个振荡器从一个音滑到下一个、音与音之间不落到底——量下来九成八是纯音，像有人在吹口哨。
+   * 世界里那一对黄鹂在石桥两头的柳树间，五到十几秒叫一回：隔得近（十二秒内）的那几回，三成半的时候不叫——鸟不是每回都应
+   */
   oriole(v) {
-    const c = v.ctx, a = 0.085 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.94, 1.07), t0 = v.t;
-    const osc = c.createOscillator(), g = c.createGain(), lp = c.createBiquadFilter(), fm = c.createOscillator(), fd = c.createGain();
-    osc.setPeriodicWave(v.e.wave('oriole', [1, 0.14, 0.05, 0.02]));
-    let t = t0, f = rand(1500, 1900) * p;
-    osc.frequency.setValueAtTime(f * 0.9, t);
-    g.gain.setValueAtTime(0, t);
-    fd.gain.setValueAtTime(0, t);
-    const n = 4 + Math.floor(rand(0, 3)), warble = 1 + Math.floor(rand(0, n - 1));
-    for (let i = 0; i < n; i++) {
-      const len = rand(0.09, 0.2);
-      osc.frequency.setTargetAtTime(f, t, len * 0.12);
-      osc.frequency.setTargetAtTime(f * rand(0.97, 1.04), t + len * 0.45, len * 0.3);
-      g.gain.setTargetAtTime(a * rand(0.75, 1), t, 0.012);
-      g.gain.setTargetAtTime(a * rand(0.12, 0.3), t + len * 0.72, 0.02);
-      if (i === warble) { fd.gain.setTargetAtTime(f * 0.035, t + 0.01, 0.01); fd.gain.setTargetAtTime(0, t + len * 0.8, 0.01); }
-      t += len + rand(0.01, 0.05);
-      f = clamp(f * pick([1.26, 1.33, 0.8, 0.75, 1.5, 0.67, 1.12]), 1300 * p, 2900 * p);
-    }
-    g.gain.setTargetAtTime(0, t, 0.025);
-    fm.frequency.value = rand(24, 34);
-    lp.type = 'lowpass'; lp.frequency.value = 6500; lp.Q.value = 0.5;
-    fm.connect(fd); fd.connect(osc.frequency);
-    osc.connect(g); g.connect(lp); lp.connect(v.out);
-    osc.start(t0); osc.stop(t + 0.25); fm.start(t0); fm.stop(t + 0.25);
-    return t - t0 + 0.35;
+    const last = ORIOLE.get(v.e) ?? -Infinity;
+    if (v.raw.at && v.t - last < 12 && Math.random() < 0.35) return 0;
+    ORIOLE.set(v.e, v.t);
+    const c = v.ctx, a = 0.075 * (0.5 + 0.7 * v.vel), p = v.pitch * rand(0.94, 1.07), g = c.createGain(), lp = c.createBiquadFilter();
+    g.gain.value = a;
+    lp.type = 'lowpass'; lp.frequency.value = 7000; lp.Q.value = 0.5;
+    g.connect(lp); lp.connect(v.out);
+    return playSong(c, g, v.t, orioleSong(p, 4 + Math.floor(rand(0, 3)))) + 0.35;
   },
   /** 喜鹊「喳喳喳」：一连串粗哑的短音（一秒七八下），每一下是很毛的一口气——嗓子里的音被抖得很碎，噪声多；一两阵 */
   magpie(v) {

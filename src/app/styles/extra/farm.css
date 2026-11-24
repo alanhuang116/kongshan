@@ -1,0 +1,66 @@
+/* —— 挑担子：往哪儿挑（右上那一条底下一张小纸；宽屏在上头当中）、画里那一笔上头的名字 —— */
+.carry { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.carry-hint {
+  position: absolute; top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 58px); right: calc(var(--sar) + clamp(14px, 2.2vw, 30px));
+  max-width: min(430px, calc(100vw - var(--sal) - var(--sar) - 96px));
+  display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 9px; pointer-events: auto;
+  border-radius: 2px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04);
+  border: 1px solid var(--rule-2); box-shadow: var(--board-shadow);
+  transition: opacity 0.45s, visibility 0.45s; animation: rise 0.6s var(--out) backwards;
+}
+.carry.is-hidden .carry-hint { opacity: 0; visibility: hidden; pointer-events: none; }
+/* 宽屏：上头当中（左上的处名、右上那一条之间空着） */
+@media (min-width: 1000px) {
+  .carry-hint { top: calc(var(--sat) + clamp(14px, 2.6vh, 28px)); right: auto; left: 50%; transform: translateX(-50%); max-width: 560px; animation-name: rise-x; }
+}
+/* 方向：一圈淡墨的环，里面一支箭（照着镜头转：朝上是往前走）；到了，环里一点朱 */
+.carry-way { position: relative; flex: none; width: 40px; height: 40px; display: grid; place-items: center; }
+.carry-way::before { content: ''; position: absolute; inset: 0; background: var(--ink-3); opacity: 0.7; -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; pointer-events: none; }
+.carry-way.is-at::after { content: ''; width: 9px; height: 9px; background: var(--mark); -webkit-mask: var(--m-dot) center / contain no-repeat; mask: var(--m-dot) center / contain no-repeat; animation: ink-breathe 2.8s ease-in-out infinite; }
+.carry-arrow { display: block; width: 26px; height: 26px; will-change: transform; }
+.carry-arrow svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.carry-arrow path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.carry-shaft { stroke: var(--ink); stroke-width: 2.1; }
+.carry-head { stroke: var(--mark); stroke-width: 2.4; }
+.carry-text { display: grid; gap: 1px; min-width: 0; padding: 1px 0; }
+.carry-text b { font-family: var(--kai); font-weight: 400; font-size: 15.5px; line-height: 1.35; letter-spacing: 0.12em; color: var(--ink); overflow-wrap: anywhere; }
+.carry-text span { font-family: var(--kai); font-size: 13.5px; line-height: 1.45; letter-spacing: 0.06em; color: var(--ink-2); overflow-wrap: anywhere; text-wrap: pretty; }
+.carry-line i { white-space: nowrap; }
+.carry-text small { font-family: var(--kai); font-size: 12.5px; line-height: 1.45; letter-spacing: 0.04em; color: var(--ink-2); overflow-wrap: anywhere; text-wrap: pretty; }
+/* 「放下」：一枚纸签；电脑上带一个小键帽 G */
+.key.carry-drop { flex: none; flex-direction: row; gap: 6px; min-height: 40px; min-width: 56px; padding: 0 11px; letter-spacing: 0.12em; text-indent: 0.12em; }
+.key.carry-drop kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; font: 500 10.5px/1 system-ui, sans-serif; letter-spacing: 0; text-indent: 0; color: var(--ink-2); border: 1px solid var(--ink-3); border-radius: 2px; }
+@media (pointer: coarse) { .key.carry-drop { min-height: 44px; min-width: 60px; } }
+@media (max-width: 420px) {
+  .carry-hint { gap: 8px; padding: 6px 7px 6px 8px; }
+  .carry-way { width: 36px; height: 36px; }
+  .carry-arrow { width: 24px; height: 24px; }
+  .carry-text b { font-size: 15px; letter-spacing: 0.08em; }
+  .carry-text span { font-size: 13px; letter-spacing: 0.03em; }
+}
+/* 横着的手机（矮屏）：上头的一条更紧 */
+@media (max-height: 460px) {
+  .carry-hint { top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 54px); padding: 4px 6px 4px 7px; }
+  .carry-text small { display: none; }
+}
+/* 画里那一笔上头竖写的名字：写在画上，身后垫一团纸色；名字上头一点朱 */
+.carry-tag { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 0.4s; will-change: transform, opacity; pointer-events: none; isolation: isolate; }
+.carry.is-hidden .carry-tag { visibility: hidden; }
+.carry-tag::before { content: ''; position: absolute; inset: -10px -15px -8px; background: var(--wash); filter: blur(9px); border-radius: 44%; opacity: 0.88; z-index: -1; }
+.carry-tag span { position: relative; display: block; writing-mode: vertical-rl; padding-top: 13px; font-family: var(--brush); font-size: 21px; line-height: 1.1; letter-spacing: 0.16em; color: var(--title); }
+.carry-tag span::before { content: ''; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px; background: var(--mark); border-radius: 1px; }
+
+/* —— 村图：「你」是一滴朱墨（尖头是面朝的方向），外面一圈慢慢晕开；挑着担子时一道朱色的点线连到要去的地方 —— */
+.map .map-me .map-me-halo { fill: var(--paper); fill-opacity: 0.78; stroke: none; }
+.map .map-me .map-me-ring { fill: none; stroke: var(--mark); stroke-width: var(--me-w, 1.6px); transform-box: fill-box; transform-origin: center; animation: map-me-ring 2.6s ease-out infinite; }
+.map .map-me .map-me-body { fill: var(--mark); stroke: var(--paper); stroke-width: var(--me-w, 1.4px); stroke-linejoin: round; }
+.map .map-me .map-me-eye { fill: var(--paper); stroke: none; }
+.map .map-me text { font-family: var(--kai); fill: var(--mark); stroke: var(--paper); stroke-linejoin: round; paint-order: stroke; letter-spacing: 0.1em; dominant-baseline: middle; }
+@keyframes map-me-ring { 0% { transform: scale(0.75); opacity: 0.95; } 100% { transform: scale(1.9); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .map .map-me .map-me-ring { animation: none; opacity: 0.6; } }
+.map .map-route { fill: none; stroke: var(--mark); stroke-opacity: 0.85; stroke-linecap: round; stroke-linejoin: round; }
+.map .map-dest .map-dest-pole { stroke: var(--ink); stroke-linecap: round; }
+.map .map-dest .map-dest-dot { fill: var(--mark); stroke: var(--paper); }
+.map .map-dest text { font-family: var(--kai); fill: var(--ink); stroke: var(--paper); stroke-linejoin: round; paint-order: stroke; stroke-opacity: 0.9; letter-spacing: 0.08em; dominant-baseline: middle; }
+.map .map-pile path { fill: none; stroke: var(--ink); stroke-linecap: round; stroke-opacity: 0.85; }
+.map .map-pile circle { fill: var(--ink); fill-opacity: 0.75; stroke: var(--paper); }

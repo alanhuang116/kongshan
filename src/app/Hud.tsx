@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { PLACES } from '../world/site';
 import { GuaGlyph } from './Gua';
 import { branchOf, cn } from './calendar';
-import { useBrush } from './face';
-import { doAct, getKs, openSheet, setRun, setStick, toggleMenu } from './ks';
+import { useBrush, useGlyphKey } from './face';
+import { doAct, getKs, openSheet, setRun, setStick, SUN, toggleMenu } from './ks';
 import { hasSheet } from './sheets/extra';
 import { patch, saved, ui, useStore, type Sheet } from './store';
 import { XIAOXI } from './texts';
@@ -16,7 +16,7 @@ const coarse = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: 
  * 签多了互相压着时，只留近的那一枚；也不压在右上那一条、简册、摇杆、「疾」、做事的印与走法的提示底下。
  * 走近了的那件事若不在画面里（在身后、或被挡着），下面另出一枚签。
  */
-const KEEP_CLEAR = '.corner-bar, .menu, .stick, .run-key, .act-key, .walk-hint:not(.is-gone), .notes .note, .sky-card';
+const KEEP_CLEAR = '.corner-bar, .menu, .stick, .run-key, .act-key, .walk-hint:not(.is-gone), .notes .note, .sky-card, .carry:not(.is-hidden) .carry-hint, .tg-key, .tg-panel';
 function Markers({ touch }: { touch: boolean }) {
   const box = useRef<HTMLDivElement>(null), prompt = useRef<HTMLButtonElement>(null);
   const [list, setList] = useState<Array<{ id: string; label: string }>>([]);
@@ -128,18 +128,19 @@ function Stick() {
   );
 }
 
-/** 「疾」（触屏）：摇杆旁一枚小键，点一下一直跑，再点一下放开；跑着的时候亮（跟着世界报来的 run 走） */
+/** 「疾」（触屏）：摇杆旁一枚小键，点一下一直跑，再点一下放开；跑着的时候亮（跟着世界报来的 run 走）。环下一行小字写着它是做什么的 */
 function RunKey() {
   const run = useStore(ui, (s) => s.run);
   return (
-    <button className={`run-key${run ? ' is-on' : ''}`} onClick={() => setRun(!getKs()?.runLock)} aria-pressed={run} aria-label={run ? '在跑，点一下放慢' : '跑'} data-testid="run-key">
+    <button className={`run-key${run ? ' is-on' : ''}`} onClick={() => setRun(!getKs()?.runLock)} aria-pressed={run} aria-label={run ? '在跑，点一下放慢' : '跑：点一下跑起来'} data-testid="run-key">
       <span>疾</span>
+      <small aria-hidden>{run ? '慢下' : '跑'}</small>
     </button>
   );
 }
 
-/** 电脑上：会走了之后，提示一回「Shift 跑」（跑过一回、或过一会儿就收起，以后不再出） */
-function RunHint() {
+/** 会走了之后，提示一回怎么跑：电脑上是「Shift」，手机上是「疾」那一枚（跑过一回、或过一会儿就收起，以后不再出） */
+function RunHint({ touch }: { touch: boolean }) {
   const told = useStore(saved, (s) => s.runTold), walked = useStore(saved, (s) => s.walked);
   const run = useStore(ui, (s) => s.run);
   const [on, setOn] = useState(false), [gone, setGone] = useState(false);
@@ -157,7 +158,9 @@ function RunHint() {
   if (told || !walked || !on) return null;
   return (
     <p className={`walk-hint run-hint glass${gone ? ' is-gone' : ''}`} role="note" data-testid="run-hint">
-      <span><kbd className="is-wide">Shift</kbd>按住，快步跑</span><span><b>点一下</b>一直跑，再点放开</span>
+      {touch
+        ? <><span><b>「疾」</b>点一下跑起来</span><span><b>再点一下</b>慢下来走</span></>
+        : <><span><kbd className="is-wide">Shift</kbd>按住，快步跑</span><span><b>点一下</b>一直跑，再点放开</span></>}
     </p>
   );
 }
@@ -207,20 +210,22 @@ function PlaceName({ id }: { id: string }) {
 }
 
 /**
- * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（村图、天时、行囊、村人簿、星图），
+ * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（今日、村图、天时、行囊、村人簿、星图），
  * 左边一卷是记下的与设置（观象册、起居注、声音、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
  * 村人簿、星图那两页的文件还没有时，那一枚不出。
  */
 const ROLLS: Array<Array<[Exclude<Sheet, null>, string]>> = [
-  [['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['folk', '村人簿'], ['stars', '星图']],
+  [['today', '今日'], ['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['folk', '村人簿'], ['stars', '星图']],
   [['xiang', '观象册'], ['journal', '起居注'], ['sound', '声音'], ['about', '关于']],
 ];
 const rolls = () => ROLLS.map((r) => r.filter(([id]) => hasSheet(id))).filter((r) => r.length > 0);
 function Menu() {
+  // 竹简上的字体晚到时重画（iPhone 的磨砂层里会留空白）
+  const gk = useGlyphKey(rolls().flat().map(([, n]) => n).join(''));
   return (
     <>
       <div className="menu-back" onClick={() => toggleMenu(false)} />
-      <nav className="menu" aria-label="册">
+      <nav className="menu" aria-label="册" key={gk}>
         {rolls().map((r, i) => (
           <div className="roll" key={i}>
             {r.map(([id, name]) => (
@@ -231,6 +236,19 @@ function Menu() {
       </nav>
     </>
   );
+}
+
+/**
+ * 时辰牌底下一道细线：一天二十四个钟头从左到右，白天那一段是实的墨线、夜里是点线；
+ * 一点朱砂（夜里是一圈金，像月）走在线上——此刻走到一天的哪里、离天黑还有多远，一眼看得见。
+ */
+function DayLine() {
+  const h = useStore(ui, (s) => Math.round(s.hour * 20) / 20);
+  const season = useStore(saved, (s) => s.season);
+  const [rise, set] = SUN[season];
+  const night = h < rise - 0.3 || h > set + 0.3;
+  const style = { '--rise': rise / 24, '--set': set / 24, '--at': h / 24 } as CSSProperties;
+  return <i className={`when-line${night ? ' is-night' : ''}`} style={style} aria-hidden data-testid="day-line" />;
 }
 
 export default function Hud() {
@@ -257,16 +275,20 @@ export default function Hud() {
   // 扫叶这样的事，做的时候人照常走动：摇杆得留着
   const free = !!(act && getKs()?.acts[act]?.free);
   const dayName = `第${cn(day + 1)}日`;
+  // 时辰、卦名的字体晚到时让它们重画（iPhone 的磨砂层里会留空白）
+  const gk = useGlyphKey(`${dayName}${now.branch}·${now.gua.name}册`);
   return (
     <div className={`hud${busy ? ' is-busy' : ''}${act ? ' is-act' : ''}${free ? ' is-free' : ''}${sheet ? ' has-sheet' : ''}${touch ? ' is-touch' : ''}${skyOn ? ' has-sky' : ''}`}>
       <Markers touch={touch} />
       <PlaceName key={`${place}:${arrivedAt}`} id={place} />
       <div className="corner">
         <div className="corner-bar">
-          <button className="when" onClick={() => openSheet('sky')} aria-label={`${dayName}，${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when">
-            <small className="when-day" data-testid="hud-day">{dayName}</small>
-            <span>{now.branch}<i>·</i>{now.gua.name}</span>
+          {/* 「第几日」单独一格：点它看今天能做什么（「今日」）；时辰与卦那一格看天时 */}
+          <button className="when-day" onClick={() => openSheet('today')} aria-label={`${dayName}。今天能做什么`} data-testid="hud-day" key={`d${gk}`}>{dayName}</button>
+          <button className="when" onClick={() => openSheet('sky')} aria-label={`${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when">
+            <span key={`s${gk}`}>{now.branch}<i>·</i>{now.gua.name}</span>
             <GuaGlyph lines={now.gua.lines} />
+            <DayLine />
           </button>
           <button className={`menu-key${menu ? ' is-on' : ''}`} onClick={() => toggleMenu()} aria-expanded={menu} aria-label={`册：${rolls().flat().map(([, n]) => n).join('、')}`} data-testid="key-menu">册</button>
         </div>
@@ -274,7 +296,7 @@ export default function Hud() {
       </div>
       <footer className="dock">
         <WalkHint touch={touch} />
-        {!touch && <RunHint />}
+        <RunHint touch={touch} />
       </footer>
       {touch && <Stick />}
       {touch && <RunKey />}

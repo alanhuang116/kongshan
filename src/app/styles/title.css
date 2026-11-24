@@ -26,6 +26,12 @@
 @media (hover: hover) { .enter:hover { transform: scale(1.05); color: var(--ink-max); } }
 .enter:active { transform: scale(0.95); }
 .title-invite { font-family: var(--kai); font-size: clamp(14.5px, 2vh, 16.5px); line-height: 1.8; letter-spacing: 0.22em; color: var(--ink); max-width: 20em; animation: rise 1.6s 0.2s var(--out) backwards; }
+/* 回来的人：上回停在哪（一行）、记得的事（小一号），下面一行字的链接「从桃林走进来」 */
+.title-recap { display: grid; gap: 2px; justify-items: start; }
+.title-recap p { margin: 0; }
+.title-recap-more { font-size: 0.86em; letter-spacing: 0.14em; color: var(--ink-2); }
+.title-from-grove { margin-top: 2px; min-height: 36px; font-size: 13.5px; }
+@media (max-aspect-ratio: 4/5) { .title-recap { justify-items: center; } }
 /* 一截话（到标点为止）不拆开 */
 .ph { display: inline-block; white-space: nowrap; }
 

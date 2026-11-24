@@ -16,7 +16,8 @@ export class Wild extends Base {
   private next: Record<Kind, number>;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
-    const o = e.offline;
+    // 离线渲染时各样都早一点来（量得到）；照刚进门的头一分钟算时（e.calmUntil）就按实时的来
+    const o = e.offline && t >= e.calmUntil;
     this.next = { magpie: t + (o ? rand(0.5, 3) : rand(10, 60)), crow: t + (o ? rand(1, 4) : rand(15, 70)), deer: t + (o ? rand(2, 5) : rand(30, 120)), squirrel: t + (o ? rand(1, 4) : rand(20, 90)) };
   }
   private due(k: Kind, from: number, to: number, fn: (t: number) => number) {

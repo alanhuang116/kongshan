@@ -11,10 +11,12 @@
  *   路上碰见（meet）—— 走着路碰见村里别的人：互相看一眼、点个头；两个都在走、又都是爱说话的，就站下来说一会儿
  *          （一个说、一个点头，轮着来，有时笑一声），说完各走各的。碰见的是在干活的人，那人手里一顿、抬头点一点。
  *   远了就省：二十来米内每帧动，五十米内隔帧，百米内三帧一动，再远五帧一动；看不见的偶尔动一下（身子不重摆），两百六十米外不画。
+ *   手上的事（cue）—— 被叫着说话时，说话那一路要他接东西、递东西（acts/gift.ts）：每帧在「把手里的活放稳」之后，
+ *          照 cue 把手伸到哪、看哪、俯多少、蹲不蹲；endCue() 收住（蹲下的站起来）。收下的东西 keep() 放在身边，换事、回家时收走。
  */
 import * as THREE from 'three';
 import { Figure } from '../avatar/figure';
-import type { HandsName, Look, PoseName } from '../avatar/types';
+import type { HandsName, Look, PoseName, Side } from '../avatar/types';
 import type { Quality } from '../core/World';
 import type { Season } from '../env/atmos';
 import { route } from './route';
@@ -34,8 +36,20 @@ export interface Ctx {
 }
 export type Script = Generator<void, void, void>;
 export type Act = (p: Person, c: Ctx) => Script;
+/** 一只手伸到世界里的哪一点（掌心）、手指朝哪、手心朝哪、跟得多紧 */
+export interface CueHand { at: THREE.Vector3; dir?: THREE.Vector3; palm?: THREE.Vector3; rate?: number }
+/**
+ * 手上的事（说话那一路接东西、递东西时给的）：每一样不给（undefined）就是不管它、由他自己的活计摆；
+ * L / R 给 null 是那只手放回去；pose 给了就换成那个姿势（蹲下放东西），换回 null 就还原；hands 给 'pray' 是合十。
+ */
+export interface Cue { L?: CueHand | null; R?: CueHand | null; look?: THREE.Vector3 | null; bow?: number | null; pose?: PoseName | null; hands?: HandsName | null }
 
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
+/** 收走一样东西：从画里拿掉，几何丢掉（材质是大家共用的，不动） */
+function dropObj(o: THREE.Object3D) {
+  o.removeFromParent();
+  o.traverse((x) => { const g = (x as THREE.Mesh).geometry; if (g) g.dispose(); });
+}
 export const ease = (k: number) => k * k * (3 - 2 * k);
 const _s = new THREE.Sphere(), _v = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3();
 let SEQ = 0;
@@ -93,6 +107,17 @@ export class Person {
   private waveT = 0; private waveAt = new THREE.Vector3(); private waveYaw = 0;
   /** 抬头看的是谁（null：看行者） */
   private glanceAt: Person | null = null;
+  /** 手上的事（被叫着时照它摆；见 Cue） */
+  cue: Cue | null = null;
+  /** cue 换姿势、换手的摆法之前是什么样（endCue 时还原） */
+  private cuePose0: PoseName | null = null; private cueHands0: HandsName | null = null;
+  /** 收下的东西（放在身边地上的、拿在手里的、插在头上的）：换事、回家时收走 */
+  private keeps: THREE.Object3D[] = [];
+  /** 接东西时暂且放下的活计（stowHand） */
+  private stowed: THREE.Object3D[] = [];
+  /** 身子的根 → 人（说话那一路从 npcs[id].root 找到他） */
+  private static byRoot = new WeakMap<THREE.Object3D, Person>();
+  static of(root: THREE.Object3D | null | undefined): Person | null { return root ? Person.byRoot.get(root) ?? null : null; }
 
   private script: Script | null = null;
   private att: THREE.Vector3 | null = null; private attOn = false;
@@ -116,6 +141,7 @@ export class Person {
     this.root.visible = false;
     this.scale = this.fig.look.scale;
     Person.all.push(this);
+    Person.byRoot.set(this.root, this);
     { const a = this.idx * 2.39996, r = 0.18 + 0.2 * ((this.idx * 0.618) % 1); this.ox = Math.cos(a) * r; this.oz = Math.sin(a) * r; }
   }
 
@@ -129,6 +155,54 @@ export class Person {
     if (!this.here || this.att || this.talkTo || this.waveT > 0) return;
     this.waveAt.copy(p); this.waveT = 2.4; this.waveYaw = this.yaw;
   }
+  /** 这只手此刻拿着活计里的东西（锄、篮、灯笼……）：接东西时先用另一只手 */
+  busyHand(side: Side): boolean {
+    const j = side === 'L' ? this.fig.joints.handL : this.fig.joints.handR;
+    return this.held.some((o) => o.visible && o.parent === j);
+  }
+  /** 两只手都拿着活计、又要腾一只手接东西时：先把这只手里的东西放下（收起来），unstowHands / endCue 时拿回手里 */
+  stowHand(side: Side) {
+    const j = side === 'L' ? this.fig.joints.handL : this.fig.joints.handR;
+    for (const o of this.held) if (o.visible && o.parent === j) { o.visible = false; this.stowed.push(o); }
+  }
+  unstowHands() { for (const o of this.stowed) if (this.held.includes(o)) o.visible = true; this.stowed.length = 0; }
+  /** 收起手上的事：手放回去，蹲下的站起来，合十的放下，放下的活计拿回手里 */
+  endCue() {
+    const f = this.fig;
+    if (this.cue) { if (this.cue.L !== undefined) f.reach('L', null); if (this.cue.R !== undefined) f.reach('R', null); if (this.cue.look !== undefined) f.lookAt(null); }
+    this.cue = null;
+    this.unstowHands();
+    if (this.cuePose0) { f.setPose(this.cuePose0, 0.7); this.cuePose0 = null; }
+    if (this.cueHands0) { f.setHands(this.cueHands0, 0.4); this.cueHands0 = null; }
+  }
+  /** 照 cue 摆（在 rest 之后，这一帧的手、头、俯身以它为准） */
+  private applyCue() {
+    const q = this.cue!, f = this.fig;
+    for (const side of ['L', 'R'] as const) {
+      const h = q[side];
+      if (h === undefined) continue;
+      // null：放回去一次，之后这只手还给他自己的活计（rest）摆
+      if (h) f.reach(side, h.at, { dir: h.dir, palm: h.palm, rate: h.rate }); else { f.reach(side, null); delete q[side]; }
+    }
+    if (q.look !== undefined) f.lookAt(q.look);
+    if (q.bow != null) f.bow = q.bow;
+    if (q.pose) { if (f.pose !== q.pose) { this.cuePose0 ??= f.pose; f.setPose(q.pose, 0.6); } }
+    else if (this.cuePose0) { f.setPose(this.cuePose0, 0.7); this.cuePose0 = null; }
+    if (q.hands) { if (f.hands !== q.hands) { this.cueHands0 ??= f.hands; f.setHands(q.hands, 0.35); } }
+    else if (this.cueHands0) { f.setHands(this.cueHands0, 0.4); this.cueHands0 = null; }
+  }
+  /**
+   * 收下一样东西：world 是放在身边（东西已经摆在世界里它该在的地方）；L / R 拿在那只手里、head 插在头上（都保持此刻在世界里的位置挂上去）；
+   * 换事、回家时收走（东西的几何一并丢掉）。身边最多留四样，多了先收走最早的。
+   */
+  keep(o: THREE.Object3D, at: 'world' | 'L' | 'R' | 'head' = 'world') {
+    const j = at === 'L' ? this.fig.joints.handL : at === 'R' ? this.fig.joints.handR : at === 'head' ? this.fig.joints.head : null;
+    if (j) j.attach(o);
+    if (!this.keeps.includes(o)) this.keeps.push(o);
+    while (this.keeps.length > 4) dropObj(this.keeps.shift()!);
+  }
+  /** 收走收下的东西 */
+  private dropKeeps() { for (const o of this.keeps) dropObj(o); this.keeps.length = 0; }
 
   // —— 脚本里用的小步子 ——
   /** 他自己坐标里的一点（x 是他的左手边、y 朝上、z 朝前，米，按他的身量）在世界里的位置 */
@@ -324,6 +398,9 @@ export class Person {
     const f = this.fig;
     for (const o of this.held) o.visible = false;
     this.held.length = 0;
+    this.stowed.length = 0;
+    if (this.cue) this.endCue();
+    this.dropKeeps();
     f.reach('L', null); f.reach('R', null); f.lookAt(null); f.bow = 0;
     this.rest = null; this.curious = true; this.tilt = 0; this.glance = 0; this.nod = 0; this.glanceAt = null; this.walking = false; this.trip = false; this.waveT = 0;
     if (this.talkTo) { if (this.talkTo.talkTo === this) this.talkTo.talkEnd = 0; this.talkTo = null; }
@@ -394,6 +471,8 @@ export class Person {
       if (!this.seated) { const off = wrap(Math.atan2(this.att.x - this.pos.x, this.att.z - this.pos.z) - this.yaw); this.yaw = wrap(this.yaw + Math.max(-2.4 * dt, Math.min(2.4 * dt, off))); }
       // 给的是脚下的一点，就看那人的脸
       f.lookAt(_v.copy(this.att).setY(this.att.y - this.y < 0.9 ? this.att.y + 1.4 : this.att.y));
+      // 手上的事（接东西、递东西）：以它为准
+      if (this.cue) this.applyCue();
     } else {
       if (this.attOn) { this.attOn = false; f.lookAt(null); }
       // 来人走到三米以内：手里一顿、抬头、点一点头（看过了，人不走开就不再看）

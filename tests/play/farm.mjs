@@ -2,9 +2,12 @@
 //   春：东畦翻地 → 下种（挑谷种）→ 溪边打一担水 → 浇水 → 过一夜出苗 → 锄草
 //   夏：西畦割麦（割几把、捆一捆）→ 挑麦 → 打场 → 扬场（看风）→ 推磨；帮邻家割一截
 //   秋：东畦掐谷穗 → 打谷 → 水碓舂米；打枣、摘柿
+//   挑担子（carry）：挑起麦捆说去晒场、往哪走、约几步，晒场上空立一笔墨；走近了提示跟着变；走到场上站住就打场；
+//                   挑水说去缺水的那一畦；「放下」在脚边、「挑起」再挑；挑进草堂放在门外；过一夜水倒了、麦捆码到场边（打场用它）；挑着走远了水倒了
+//   界面（carry-ui，真界面）：上头那一行、「放下」那一枚（电脑上还有 G 键）、村图上的「你」、去处、路
 // 每一步查：那件事开得起来、按着有进展、做完了田里的账与行囊里的数目对，人站得起来，没有报错。截图在 shots/farm/。
-// 用法：KS_URL=http://localhost:3815/world.html node tests/play/farm.mjs [spring,summer,autumn] [--mobile]
-import { launch, open, dir, Report } from './lib.mjs';
+// 用法：KS_URL=http://localhost:3815/world.html node tests/play/farm.mjs [spring,summer,autumn,carry,carry-ui] [--mobile]
+import { launch, open, dir, Report, BASE } from './lib.mjs';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2), mobile = args.includes('--mobile');
@@ -238,6 +241,115 @@ if (!only || only.includes('autumn')) {
   await shot(p, 'season');
   const errs = errsOf(logs);
   R.ok('秋：没有报错', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+// —————————————————— 挑担子：去处、认路、到了、放下、挑起、进屋、过夜、走远 ——————————————————
+if (!only || only.includes('carry')) {
+  const { page: p, ctx, logs } = await page('summer', 'fields');
+  const view = () => ev(p, () => { const v = window.__farm.farm.guide.view; return v ? JSON.parse(JSON.stringify(v)) : null; });
+  const tp = (x, z, yaw = 0) => ev(p, ([x, z, yaw]) => { const k = window.__ks; if (k.act) k.exitAct(); k.player.teleport(x, z, yaw); k.nav.snapBehind(); }, [x, z, yaw]);
+  const piles = () => ev(p, () => JSON.parse(JSON.stringify(window.__farm.farm.st.piles)));
+  const actNow = async (ms = 7000) => { const t0 = Date.now(); let id = null; while (!id && Date.now() - t0 < ms) { await p.waitForTimeout(200); id = await ev(p, () => window.__ks.act?.id ?? null); } return id; };
+  // 挑起麦捆
+  await tp(1.5, 47.2, Math.PI);
+  await ev(p, () => window.__ks.bag.add('sheaf', 12, { quiet: true }));
+  await p.waitForTimeout(1300);
+  let v = await view();
+  R.ok('挑麦捆：去处是晒场，说了往哪走、约多少步', v?.dest?.key === 'floor' && /^往/.test(v.parts[0]) && /步$/.test(v.parts[v.parts.length - 1]), v && `${v.title}｜${v.line}`);
+  R.ok('挑麦捆：晒场上空立起一笔墨', await ev(p, () => window.__farm.farm.guide.beaconAlpha > 0.5));
+  await shot(p, 'carry-field');
+  // 走近了
+  const left0 = v?.left ?? 0;
+  await tp(62, 36.5, Math.PI); await p.waitForTimeout(1300);
+  v = await view();
+  R.ok('走近了：提示跟着变（剩的路短了）', !!v && v.left < left0 - 25, `${left0.toFixed(0)}米 → ${v?.left?.toFixed(0)}米｜${v?.line}`);
+  await shot(p, 'carry-near');
+  // 到了：站住就打场
+  const sp = await ev(p, () => { const a = window.__ks.acts['farm:thresh']; return { x: a.spot.x, z: a.spot.z }; });
+  await tp(sp.x + 1.2, sp.z + 1.3, Math.PI);
+  R.ok('走到晒场站住：打场自己开始了', (await actNow()) === 'farm:thresh');
+  await p.waitForTimeout(2400);
+  R.ok('打场：挑来的麦捆摊在场上，肩上空了', !(await bag(p)).sheaf && (await ev(p, () => window.__farm.farm.st.floor.spread)) === 12, JSON.stringify(await bag(p)));
+  await standUp(p, '打场（到了自己开始的）');
+  // 挑水：去处是缺水的那一畦；放下、挑起
+  await tp(30, 40, 0);
+  await ev(p, () => window.__ks.bag.add('water', 2, { quiet: true }));
+  await p.waitForTimeout(900);
+  v = await view();
+  R.ok('挑水：去处是缺水的那一畦', /^bed:/.test(v?.dest?.key ?? ''), v && `${v.title}｜${v.line}`);
+  const dropped = await ev(p, () => window.__farm.farm.guide.setDown('drop'));
+  await p.waitForTimeout(600);
+  let ps = await piles();
+  R.ok('放下：担子放在脚边，肩上空了，提示收起', dropped && !(await bag(p)).water && ps.length === 1 && ps[0].item === 'water' && !(await ev(p, () => window.__farm.farm.loaded)) && !(await view()), JSON.stringify(ps));
+  await shot(p, 'carry-drop');
+  R.ok('挑起：担子上立着签', await ev(p, () => window.__ks.acts['farm:lift'].on()));
+  R.ok('挑起：开得起来', await enter(p, 'farm:lift'));
+  await p.waitForTimeout(1900);
+  R.ok('挑起：两桶水又挑在肩上', (await bag(p)).water === 2 && (await piles()).length === 0, JSON.stringify(await bag(p)));
+  await standUp(p, '挑起');
+  // 挑进草堂：放在门外
+  await tp(0, 0.6, Math.PI); await p.waitForTimeout(1000);
+  ps = await piles();
+  const outside = ps.length === 1 ? await ev(p, ([x, z]) => window.__walk.placeAt(x, z).indoor, [ps[0].x, ps[0].z]) : 1;
+  R.ok('挑着担子进草堂：担子放在了门外', !(await bag(p)).water && ps.length === 1 && outside < 0.5, JSON.stringify(ps));
+  // 过一夜
+  await tp(30, 40, 0);
+  await ev(p, () => window.__ks.bag.add('sheaf', 5, { quiet: true }));
+  await p.waitForTimeout(500);
+  await ev(p, () => window.__ks.newDay());
+  await p.waitForTimeout(600);
+  ps = await piles();
+  R.ok('过一夜：门外的水倒了，挑着的麦捆邻家帮着码在场边', !(await bag(p)).sheaf && ps.length === 1 && ps[0].item === 'sheaf' && ps[0].n === 5 && (await ev(p, () => window.__farm.farm.guide.floorPile())) === 0, JSON.stringify(ps));
+  R.ok('场边码着麦捆：打场的签亮着', await ev(p, () => window.__ks.acts['farm:thresh'].on()));
+  // 挑着水走远了
+  await ev(p, () => window.__ks.bag.add('water', 2, { quiet: true }));
+  await tp(-150, 38, Math.PI / 2);
+  await p.waitForTimeout(11000);
+  R.ok('挑着水走远了（桃林里）：过一会儿水就倒了', !(await bag(p)).water, JSON.stringify(await bag(p)));
+  const errs = errsOf(logs);
+  R.ok('挑担子：没有报错', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+// —————————————————— 挑担子的界面（真界面）——————————————————
+if (!only || only.includes('carry-ui')) {
+  const root = BASE.replace(/world\.html.*$/, '');
+  const ctx = await browser.newContext(mobile ? { viewport: { width: 393, height: 714 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => localStorage.setItem('anlewo:v1', JSON.stringify({ v: 1, walked: true, runTold: true, visits: 2, world: {} })));
+  const p = await ctx.newPage(), logs = [];
+  p.on('console', (m) => { if (m.type() === 'error') logs.push(`[error] ${m.text().slice(0, 300)}`); });
+  p.on('pageerror', (e) => logs.push(`[pageerror] ${String(e.message).slice(0, 300)}`));
+  await p.goto(root + '?auto=1&s=fields&t=10&flow=0&season=summer&w=clear&q=mid', { waitUntil: 'load' });
+  await p.waitForFunction(() => window.__ready === true, null, { timeout: 120000 });
+  await p.waitForTimeout(1500);
+  await ev(p, () => { const k = window.__ks; k.player.teleport(1.5, 47.2, Math.PI); k.nav.snapBehind(); k.bag.add('sheaf', 12, { quiet: true }); });
+  await p.waitForTimeout(1600);
+  const hint = await ev(p, () => document.querySelector('[data-testid="carry-hint"]')?.textContent ?? '');
+  R.ok('界面：上头一行说挑到晒场去、往哪走、约几步', /晒场/.test(hint) && /往.+步/.test(hint), hint);
+  await shot(p, 'ui-carry');
+  // 村图：「你」、去处、路
+  await ev(p, () => window.__ui.setUi({ sheet: 'map' }));
+  await p.waitForTimeout(1200);
+  const map = await ev(p, () => ({ me: !!document.querySelector('[data-testid="map-me"] .map-me-body'), dest: document.querySelector('[data-testid="map-dest"] text')?.textContent ?? '', route: !!document.querySelector('[data-testid="map-route"]'), r: document.querySelector('[data-testid="map-me"] .map-me-body')?.getBoundingClientRect().width ?? 0 }));
+  R.ok('村图：「你」是一大滴（屏上十个像素以上）、写着去处「晒场」、有一道路', map.me && map.r >= 10 && map.dest === '晒场' && map.route, JSON.stringify(map));
+  await shot(p, 'ui-map');
+  await ev(p, () => window.__ui.setUi({ sheet: null }));
+  await p.waitForTimeout(600);
+  // 「放下」那一枚
+  await p.locator('[data-testid="carry-drop"]').click();
+  await p.waitForTimeout(900);
+  const after = await ev(p, () => ({ sheaf: window.__ks.bag.count('sheaf'), piles: window.__farm.farm.st.piles.length, hint: !!document.querySelector('.carry:not(.is-hidden) [data-testid="carry-hint"]') }));
+  R.ok('点「放下」：麦捆放在脚边，那一行收起', after.sheaf === 0 && after.piles === 1 && !after.hint, JSON.stringify(after));
+  await shot(p, 'ui-dropped');
+  if (!mobile) {
+    await ev(p, () => window.__ks.bag.add('water', 2, { quiet: true }));
+    await p.waitForTimeout(900);
+    await p.keyboard.press('g');
+    await p.waitForTimeout(600);
+    R.ok('电脑上按 G 也是「放下」', (await ev(p, () => window.__ks.bag.count('water'))) === 0);
+  }
+  R.ok('挑担子的界面：没有报错', logs.length === 0, logs.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

@@ -1,4 +1,4 @@
-import { ITEMS, type ItemDef } from '../../world/bag';
+import { ITEMS, useOf, type ItemDef } from '../../world/bag';
 import { cn } from '../calendar';
 import { getKs } from '../ks';
 import { ui, useStore } from '../store';
@@ -6,8 +6,10 @@ import Sheet from './Sheet';
 
 /**
  * 行囊：身上带着的东西，按收成、种子、吃食、礼物、家什、杂物分几栏；一栏一道细线，一样一行：
- * 名字、有多少（「三捆」），下面一句小字（东西自己的那句 note）。空着的时候是一只扎好的包袱与一句话。
+ * 名字、有多少（「三捆」），下面一句小字（东西自己的那句 note），再一句「用处」——做什么用、在哪儿用、谁要
+ * （world/bag.ts 的 useOf，话在 data/itemUses.ts）。空着的时候是一只扎好的包袱与一句话。
  * 东西是什么、叫什么、论什么登记在 world/bag.ts 的 ITEMS（各路自己添的也在那里）；数目跟着世界报来的 bag 走。
+ * 样式：styles/sheets.css 的 .bag-*；用处那一行在 styles/extra/bag.css。
  */
 const KINDS: Array<[NonNullable<ItemDef['kind']>, string]> = [['crop', '收成'], ['seed', '种子'], ['food', '吃食'], ['gift', '礼物'], ['tool', '家什'], ['thing', '杂物']];
 const qty = (n: number) => (n === 2 ? '两' : cn(n));
@@ -40,18 +42,22 @@ export default function BagSheet() {
           <section className="bag-group" key={g.k}>
             <h4>{g.name}</h4>
             <ul>
-              {g.rows.map(({ def, n }) => (
-                <li key={def.id} data-testid={`bag-${def.id}`}>
-                  <b>{def.name}</b>
-                  <span className="bag-n">{qty(n)}<small>{def.unit}</small></span>
-                  {def.note && <p>{def.note}</p>}
-                </li>
-              ))}
+              {g.rows.map(({ def, n }) => {
+                const use = useOf(def.id);
+                return (
+                  <li key={def.id} data-testid={`bag-${def.id}`}>
+                    <b>{def.name}</b>
+                    <span className="bag-n">{qty(n)}<small>{def.unit}</small></span>
+                    {def.note && <p>{def.note}</p>}
+                    {use && <p className="bag-use" data-testid={`bag-use-${def.id}`}><i>用处</i>{use}</p>}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))
       )}
-      <p className="sheet-note">东西多了带不下的，就不收了；放在这里的都记在这台设备上。</p>
+      <p className="sheet-note">东西多了带不下的，就不收了；放在这里的都记在这台设备上。头一回得到的东西，画面下方会说一句它的用处。</p>
     </Sheet>
   );
 }

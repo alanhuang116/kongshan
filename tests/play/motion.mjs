@@ -453,14 +453,14 @@ console.log('\n九、闲时');
   const r = await av(() => ({ g: window.__ks.player.av.gesturing, h: window.__ks.player.av.hands, act: window.__ks.act?.id }));
   R.ok('做事时：闲时的小动作一概不出', r.act === 'book' && !r.g && r.h === before, `在做 ${r.act}，小动作 ${r.g}，手 ${before} → ${r.h}`);
   await ev(() => window.__ks.exitAct()); await wait(1500);
-  // 下雨天在外面：抬袖遮雨；进了草堂就放下
+  // 下雨天在外面：戴上斗笠、披上蓑衣（一秒多戴好，不再抬袖遮雨）；走进草堂就卸下
   await tp(0, 5.2, Math.PI); await wait(200);
-  await ev(() => window.__ks.setWeather('rain', true)); await wait(1200);
-  const s1 = await av(() => window.__ks.player.av.gesturing);
+  await ev(() => window.__ks.setWeather('rain', true)); await wait(1900);
+  const s1 = await av(() => ({ g: window.__ks.player.av.gearK ?? 0, gest: window.__ks.player.av.gesturing }));
   await ev(() => window.__ks.player.goTo(0, 0.6, { r: 0.2 })); await wait(4500);
-  const s2 = await av(() => window.__ks.player.av.gesturing);
+  const s2 = await av(() => ({ g: window.__ks.player.av.gearK ?? 0, gest: window.__ks.player.av.gesturing }));
   await ev(() => window.__ks.setWeather('clear', true)); await wait(300);
-  R.ok('下雨在外面抬袖遮雨，进屋就放下', s1 === 'shade' && s2 !== 'shade', `院里 ${s1}，屋里 ${s2}`);
+  R.ok('下雨在外面戴笠披蓑，进屋就卸下', s1.g > 0.95 && s1.gest !== 'shade' && s2.g < 0.05, `院里 ${s1.g.toFixed(2)}（${s1.gest}），屋里 ${s2.g.toFixed(2)}`);
   await ev(() => { window.__ks.player.idle.on = false; });
 }
 

@@ -19,6 +19,10 @@ export interface OfflineSpec {
   /** 不管场景，把这些层直接定在给的量（单独量一层时用：auto: false，beds: { brook: 1 }） */
   beds?: Partial<Record<Bed, number>>;
   groups?: Partial<Record<Group, number>>;
+  /** 人声的用户音量（0 不出：书声换成翻书、戒尺；不给是 1） */
+  voiceLevel?: number;
+  /** 照刚进门的头一分钟算（鸟更疏更远、鸡晚一点叫）：量开场那一分钟用 */
+  opening?: boolean;
   loops?: Partial<Record<Loop, number>>;
   /** 旧的四层（诵经、远琴、远钟、风铎）的用户音量 */
   layers?: Partial<Record<Extra, number>>;
@@ -40,11 +44,14 @@ export async function renderOffline(spec: OfflineSpec): Promise<AudioBuffer> {
   const sr = spec.sampleRate ?? 48000;
   const ctx = new OfflineAudioContext(2, Math.ceil(sr * spec.seconds), sr);
   const e = new Engine(ctx, { offline: true });
+  // 头一分钟要在建层之前定下（下面 setGroup / setScene 就会建层）
+  if (spec.opening) e.calmUntil = 60;
   if (spec.master != null) e.setMaster(spec.master);
   if (spec.chant) Object.assign(e.chant, spec.chant);
   if (spec.listener) e.setListener(...spec.listener);
   if (spec.auto === false) e.setAuto(false);
   for (const [g, v] of Object.entries(spec.groups ?? {})) e.setGroup(g as Group, v as number, 0);
+  if (spec.voiceLevel != null) e.setVoices(spec.voiceLevel, 0);
   e.setScene(spec.scene ?? {}, 0);
   if (spec.wet != null) e.setWet(spec.wet);
   for (const [b, v] of Object.entries(spec.beds ?? {})) e.force(b as Bed, v as number, 0);

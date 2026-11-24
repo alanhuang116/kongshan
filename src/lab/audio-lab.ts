@@ -40,7 +40,7 @@ const VARIANTS: Partial<Record<Shot, Array<[string, string]>>> = {
   paper: [['', '拿放'], ['unroll', '展卷'], ['smooth', '抚平']], pour: [['', '注茶'], ['wine', '斟酒'], ['water', '注水']], cup: [['', '木案'], ['stone', '石桌']], bowl: [['', '放下'], ['sip', '啜一口再放下']],
   broom: [['', '土地'], ['stone', '石板']], gate: [['', '开合'], ['open', '只开']], door: [['', '开合'], ['open', '只开']], knock: [['', '门环'], ['knuckle', '指节']], plop: [['', '落物'], ['frog', '蛙'], ['turtle', '龟']],
   rooster: [['', '近'], ['far', '远']], hen: [['', '咯咯'], ['egg', '下蛋']], dog: [['', '远吠'], ['woof', '近处一声']], ox: [['', '哞'], ['breath', '喷气']],
-  cuckoo: [['', '一声'], ['x3', '三声']], goose: [['', '家鹅'], ['hiss', '嘶'], ['wild', '过雁']], recite: [['', '一句'], ['up', '上句'], ['down', '下句'], ['lead', '先生领读']], saw: [['push', '推'], ['pull', '拉']],
+  cuckoo: [['', '一声'], ['x3', '三声']], goose: [['', '家鹅'], ['hiss', '嘶'], ['wild', '过雁']], recite: [['', '一句'], ['up', '上句'], ['down', '下句'], ['lead', '先生领读'], ['still', '不出人声（翻书、戒尺）']], wood: [['', '醒木'], ['ruler', '戒尺']], saw: [['push', '推'], ['pull', '拉']],
   bucket: [['', '入水提起'], ['dip', '入水'], ['lift', '提起'], ['well', '井上全套'], ['creak', '辘轳'], ['splash', '落井']], gust: [['leaf', '叶'], ['bamboo', '竹'], ['pine', '松']],
   grain: [['', '倒进斗'], ['sack', '倒进袋']], cast: [['', '只甩竿'], ['land', '连落水']], crow: [['', '一只'], ['flock', '一群归林']], goat: [['', '羊'], ['kid', '小羊']], snowCrunch: [['', '踩一下'], ['roll', '滚雪球']], greet: [['', '随便'], ['man', '男'], ['woman', '女']],
 };

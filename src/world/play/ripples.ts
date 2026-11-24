@@ -49,7 +49,8 @@ export class Rings {
     g.setAttribute('aRing', new THREE.InstancedBufferAttribute(this.ring, 4));
     g.setAttribute('aAge', new THREE.InstancedBufferAttribute(this.age, 2));
     g.instanceCount = max;
-    this.mat = new THREE.ShaderMaterial({ uniforms: { ...U, uNow: { value: 0 } }, vertexShader: V_SH, fragmentShader: F_SH, transparent: true, depthTest: false, depthWrite: false });
+    // 两面都画：方片的 (x, y) 摆到地上的 (x, z)，绕向就反了，从上往下看是它的背面（只画正面时整个被剔掉，一圈也看不见）
+    this.mat = new THREE.ShaderMaterial({ uniforms: { ...U, uNow: { value: 0 } }, vertexShader: V_SH, fragmentShader: F_SH, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
     this.mesh = new THREE.Mesh(g, this.mat);
     this.mesh.layers.set(FX_LAYER);
     this.mesh.frustumCulled = false;

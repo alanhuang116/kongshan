@@ -219,7 +219,7 @@ export const FAVORS: FavorDef[] = [
 
 /** 说话、托事里用到的新东西（行囊里登记的）：回礼、熟人回赠的 */
 export const FAVOR_ITEMS = [
-  { id: 'whistle', name: '竹哨', unit: '支', kind: 'gift' as const, note: '赵大拿竹子削的哨，一吹就响，孩子们最爱。' },
+  { id: 'whistle', name: '竹哨', unit: '支', kind: 'gift' as const, note: '赵大拿竹子削的哨，一吹就响。' },
   { id: 'bun', name: '麦馍', unit: '个', kind: 'food' as const, note: '灶上蒸的新麦馍，还热着。' },
   { id: 'tofu', name: '豆腐', unit: '块', kind: 'food' as const, note: '孙嫂天不亮点的豆腐，嫩。' },
   { id: 'bowl', name: '陶碗', unit: '只', kind: 'gift' as const, note: '陶大窑里烧的粗碗，敲一敲，声音清亮。' },

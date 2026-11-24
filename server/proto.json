@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "names": {
+    "a": ["伊川", "洛下", "桃林", "嵩阳", "龙门", "白云", "松下", "竹里", "溪上", "南山", "东篱", "北窗", "西园", "春水", "秋山", "明月", "清风", "烟波", "梅边", "柳下", "云外", "石泉", "林下", "山中", "涧边", "槐下", "花间", "半山", "野渡", "江上", "月下", "雪中"],
+    "b": ["散人", "闲人", "客", "居士", "野老", "樵子", "钓叟", "山人", "处士", "书生", "游子", "老圃", "渔父", "过客", "道人", "布衣"]
+  },
+  "robes": ["黛衫", "赭衫", "苍衫", "缃衫", "藕衫", "青衫", "墨衫", "檀衫"],
+  "phrases": [
+    { "id": "meet", "text": "幸会" },
+    { "id": "admire", "text": "久仰" },
+    { "id": "walk", "text": "同游如何" },
+    { "id": "yes", "text": "正有此意" },
+    { "id": "tea", "text": "请茶" },
+    { "id": "thanks", "text": "多谢" },
+    { "id": "view", "text": "好景致" },
+    { "id": "bye", "text": "后会有期" },
+    { "id": "spring", "text": "桃花开了", "when": "spring" },
+    { "id": "summer", "text": "好凉风", "when": "summer" },
+    { "id": "autumn", "text": "菊花黄了", "when": "autumn" },
+    { "id": "winter", "text": "天寒，珍重", "when": "winter" },
+    { "id": "moon", "text": "月色正好", "when": "night" }
+  ],
+  "places": ["grove", "bridge", "yard", "hall", "pavilion", "fields", "village", "ferry"],
+  "poses": ["stand", "kneel", "sit", "crouch", "bench", "lie"],
+  "acts": [
+    ["couplet", "读联"], ["book", "读书"], ["qin", "抚琴"], ["tea", "煮茶"], ["wine", "自斟"], ["nap", "小睡"], ["guan", "观物"], ["dipper", "认北斗"],
+    ["mums", "浇菊"], ["hens", "喂鸡"], ["eggs", "捡蛋"], ["fishFeed", "喂鱼"], ["dog", "摸狗"], ["cat", "逗猫"], ["ducks", "赶鸭"], ["ants", "观蚁"],
+    ["oxHay", "添草"], ["henCatch", "抱鸡"], ["boat", "摇橹"], ["broom", "扫院"], ["chime", "听风铃"], ["farm", "做农活"], ["favor", "替人办事"], ["fishing", "垂钓"],
+    ["couch", "歇息"], ["scroll", "看先天图"], ["kite", "放纸鸢"], ["lantern", "点灯"], ["bagua", "看八卦盘"], ["pitchpot", "投壶"], ["skip", "打水漂"], ["snowman", "堆雪人"],
+    ["stars", "观星"], ["swing", "荡秋千"], ["talk", "和村里人说话"], ["xiang", "观象"], ["cart", "推小车"], ["roadTea", "讨茶"]
+  ],
+  "bounds": { "x": [-200, 160], "y": [-30, 120], "z": [-60, 250], "speed": 9 },
+  "near": 40
+}

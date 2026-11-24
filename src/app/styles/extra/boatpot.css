@@ -1,0 +1,35 @@
+/* 投壶、摇橹（src/world/acts/pitchpot.ts、boat.ts）做事时界面上的几处小补。
+   这两件事把 state.kind 设成 'pitchpot'、'boat'，界面把它落在 .act 的 data-kind 上；这里只认这两样，不碰别的事。 */
+
+/* 投壶：表上的指针一帧一报，不再缓缓挪过去——松手时看见的就是此刻的力道 */
+.act[data-kind='pitchpot'] .meter-needle { transition: none; }
+/* 表上标出的那一段（昼是朱、夜是金）底下两个小字「正好」：提示里说「指针走进「正好」那段就松手」，指的就是它 */
+.act[data-kind='pitchpot'] .meter:has(.meter-zone) { margin-bottom: 13px; }
+.act[data-kind='pitchpot'] .meter-zone::after { content: '正好'; position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%); font-family: var(--kai); font-size: 11.5px; line-height: 1; letter-spacing: 0.14em; text-indent: 0.14em; white-space: nowrap; color: var(--mark); pointer-events: none; }
+
+/* 投壶的签（壶上「对准了」、落点上「远了」）只是说一声，不能点：手指按在签上照样是在拖着瞄 */
+.act[data-kind='pitchpot'] .tag[data-on='1'] .tag-key { pointer-events: none; }
+
+/* 大键头上一行小字，说这一枚怎么按（投壶：按住蓄力；反跃回来要接时：快接。摇橹：按住推、松开拉） */
+.act[data-kind='pitchpot'] .hold-base::before, .act[data-kind='boat'] .hold-base::before { position: absolute; left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%); font-family: var(--kai); font-size: 12.5px; line-height: 1.3; letter-spacing: 0.12em; text-indent: 0.12em; white-space: nowrap; color: var(--ink-2); text-shadow: 0 0 3px var(--wash), 0 0 8px var(--wash), 0 0 14px var(--wash); pointer-events: none; }
+.act[data-kind='pitchpot'] .hold-base::before { content: '按住蓄力'; }
+.act[data-kind='pitchpot'] .hold-base:has(.hold[aria-label='按住：接'])::before { content: '快接'; color: var(--mark); }
+.act[data-kind='boat'] .hold-base::before { content: '按住推 · 松开拉'; }
+/* 屋矮（横着的手机）：大键上头地方紧，字小一点 */
+@media (max-height: 460px) {
+  .act[data-kind='pitchpot'] .hold-base::before, .act[data-kind='boat'] .hold-base::before { font-size: 11.5px; letter-spacing: 0.08em; text-indent: 0.08em; }
+}
+
+/* 转向的两枚键（触屏摇橹）：一圈淡墨的环，按着时转成朱；竖屏在提示上面靠左，宽屏在左下——左手转向，右手按「摇」 */
+.act-steer { display: flex; gap: 14px; justify-self: start; pointer-events: auto; animation: rise 0.6s var(--out) backwards; }
+.steer-key { position: relative; isolation: isolate; width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; font-family: var(--kai); font-size: 19px; color: var(--ink); background: radial-gradient(closest-side, var(--wash) 66%, color-mix(in srgb, var(--wash) 40%, transparent) 90%, transparent); border: 0; box-shadow: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: transform 0.15s var(--out), color 0.15s; }
+.steer-key::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--ink-2); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: background-color 0.15s; pointer-events: none; }
+.steer-key.is-down { transform: scale(0.94); color: var(--mark); }
+.steer-key.is-down::before { background: var(--mark); }
+@media (min-width: 600px) and (min-aspect-ratio: 23/20) {
+  .act-steer { position: absolute; left: calc(var(--sal) + clamp(16px, 2.4vw, 30px)); bottom: calc(var(--sab) + clamp(18px, 3.6vh, 36px)); }
+}
+/* 横着的手机：提示在下面当中，转向键抬到它上面一点 */
+@media (min-width: 600px) and (min-aspect-ratio: 23/20) and (max-height: 520px) {
+  .act-steer { left: calc(var(--sal) + 14px); bottom: calc(var(--sab) + 84px); }
+}

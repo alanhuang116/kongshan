@@ -398,7 +398,10 @@ export function buildBack(l: Look, low: boolean): THREE.BufferGeometry | null {
   return parts.length ? weld(parts) : null;
 }
 
-/** 手：原点在掌心，+y 指尖，+z 手心。右手（s = −1）的拇指在 +x 一侧，左手在 −x。连指的一只手，带一截小臂（袖子褪下去时露出来） */
+/**
+ * 手：原点在掌心，+y 指尖，+z 手心。右手（s = −1）的拇指在 +x 一侧，左手在 −x。连指的一只手。
+ * 腕与一截小臂（袖子褪下去时露出来）另是一块（buildWrist），顺着小臂摆——手攥着东西、腕折着的时候，那一截不跟着手歪出袖子去
+ */
 export function buildHand(l: Look, low: boolean, s: number): THREE.BufferGeometry {
   const T = tones(l), seg = low ? 7 : 10;
   const g = weld([
@@ -406,7 +409,6 @@ export function buildHand(l: Look, low: boolean, s: number): THREE.BufferGeometr
     // 四指并拢，略向手心蜷
     piece(new THREE.SphereGeometry(1, seg, seg - 2).scale(0.03, 0.043, 0.0115).rotateX(0.3).translate(0, 0.046, 0.0075), T.skin),
     piece(new THREE.SphereGeometry(1, 6, 5).scale(0.0105, 0.03, 0.0105).rotateZ(-0.62).rotateX(0.2).translate(0.036, 0.004, 0.008), T.skin),
-    piece(new THREE.CylinderGeometry(0.021, 0.027, 0.15, 7, 1, true).translate(0, -0.114, 0), T.skin),
   ]);
   if (s > 0) {
     // 左手是右手的镜像：翻过去之后把每个三角的绕向调回来
@@ -415,6 +417,78 @@ export function buildHand(l: Look, low: boolean, s: number): THREE.BufferGeometr
     for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; }
   }
   return g;
+}
+
+// —— 雨具：下雨下雪在外头时戴的斗笠、披的蓑衣（谁都一样的草色，不随这一身的衣色；figure.ts 按 gear 的成数摆上、卸下） ——
+/** 斗笠的篾色、蓑衣的草色（都压着一点，在水墨里不跳）：颜料与浓度 */
+const STRAW: RGB = [0.9, 0.85, 0.7], STRAW_D = 1.25, COIR: RGB = [0.84, 0.78, 0.64], COIR_D = 1.55;
+/**
+ * 雨天的斗笠：尖顶、宽沿，比背着、戴着的那种深一些（髻、巾顶都容得下）。原点在笠沿的圆心，尖朝 +y。
+ * 篾纹用顶点色画：一圈圈的篾（隔行深浅）、几道放射的骨；里面一层压暗。只用贴图上的白处，所以谁戴都是草色
+ */
+export const RAIN_HAT = { r: 0.272, h: 0.17 };
+export function buildRainHat(low: boolean): THREE.BufferGeometry {
+  const R = RAIN_HAT.r, Hh = RAIN_HAT.h, seg = low ? 16 : 28, base = tone(STRAW, STRAW_D);
+  const outer: Array<[number, number]> = [[0.0001, Hh + 0.006], [0.018, Hh + 0.004], [0.034, Hh - 0.006], [R * 0.3, Hh * 0.74], [R * 0.55, Hh * 0.47], [R * 0.8, Hh * 0.2], [R - 0.012, 0.012], [R, 0.0], [R + 0.004, -0.005]];
+  const top = new THREE.LatheGeometry(outer.map(([x, y]) => new THREE.Vector2(x, y)).reverse(), seg);
+  top.computeVertexNormals();
+  const inner: Array<[number, number]> = [[R + 0.004, -0.005], [R - 0.006, -0.009], [R * 0.7, Hh * 0.2], [R * 0.3, Hh * 0.62], [0.0001, Hh - 0.014]];
+  const under = new THREE.LatheGeometry(inner.map(([x, y]) => new THREE.Vector2(x, y)).reverse(), seg);
+  under.computeVertexNormals();
+  const a = piece(top, base), b = piece(under, mul(base, 0.52));
+  // 篾：按高度一圈深一圈浅；按经度每隔几格一道深的骨；笠沿一道深边
+  const p = a.attributes.position as THREE.BufferAttribute, c = a.attributes.color as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), lon = Math.atan2(x, z), r = Math.hypot(x, z);
+    const ring = Math.floor((y / Hh) * 9) % 2 ? 0.93 : 1.02, rib = Math.abs(Math.sin(lon * 8)) > 0.97 ? 0.8 : 1, rim = r > R - 0.016 ? 0.66 : 1;
+    const k = ring * rib * rim * (1 - 0.08 * (y / Hh));
+    c.setXYZ(i, base[0] * k, base[1] * k, base[2] * k);
+  }
+  return weld([a, b]);
+}
+
+/**
+ * 雨天的蓑衣：棕草编的一领披，三层，一层压着一层（上一层的下沿参差地盖住下一层的上头）；领口一圈围着颈，往下前面敞开，
+ * 披过肩、盖着背与两胁，下沿到胯下一点。坐标是「胸」的坐标（原点在胸心，x 朝左、y 沿脊向上、z 朝前）。
+ * 草的一道道丝用顶点色画（隔几格一道深的），每层下沿深、上头浅。两面都画（衣的材质两面都画）。
+ */
+export const CAPE = { top: 0.135, bottom: -0.4 };
+export function buildRainCape(low: boolean): THREE.BufferGeometry {
+  const seg = low ? 18 : 30, base = tone(COIR, COIR_D), parts: THREE.BufferGeometry[] = [];
+  // 一层：自 t0 到 t1（0 领口 … 1 下沿）。半径按 t 取（左右宽、前后窄），盖住的角度自领口的整圈到下面前襟敞开
+  const radX = (t: number) => (t < 0.18 ? 0.078 + (0.215 - 0.078) * (t / 0.18) : t < 0.4 ? 0.215 + (0.305 - 0.215) * ((t - 0.18) / 0.22) : 0.305 + (0.37 - 0.305) * ((t - 0.4) / 0.6));
+  const radZ = (t: number) => (t < 0.18 ? 0.074 + (0.15 - 0.074) * (t / 0.18) : t < 0.4 ? 0.15 + (0.215 - 0.15) * ((t - 0.18) / 0.22) : 0.215 + (0.29 - 0.215) * ((t - 0.4) / 0.6));
+  const half = (t: number) => Math.PI * (t < 0.1 ? 1 : t < 0.35 ? 1 - 0.27 * ((t - 0.1) / 0.25) : 0.73);
+  const Y = (t: number) => CAPE.top + (CAPE.bottom - CAPE.top) * t;
+  const tier = (t0: number, t1: number, grow: number, seed: number) => {
+    const rows = 4, pos: number[] = [], col: number[] = [], idx: number[] = [];
+    for (let j = 0; j < rows; j++) {
+      const u = j / (rows - 1), t = t0 + (t1 - t0) * u, last = j === rows - 1;
+      const k = 1 + grow * u, hf = half(t);
+      for (let i = 0; i <= seg; i++) {
+        const v = i / seg, a = Math.PI + (v - 0.5) * 2 * hf;
+        // 下沿参差：一绺长一绺短
+        const rag = last ? ((i + seed) % 2 ? 1.04 : 0.97) : 1, drop = last ? ((i + seed) % 3 === 0 ? -0.035 : (i + seed) % 2 ? -0.012 : 0.008) : 0;
+        pos.push(Math.sin(a) * radX(t) * k * rag, Y(t) + drop, Math.cos(a) * radZ(t) * k * rag);
+        const strand = (i + seed) % 3 === 0 ? 0.8 : (i + seed) % 3 === 1 ? 0.95 : 1.04, shadeK = (1.06 - 0.32 * u * u) * strand;
+        col.push(base[0] * shadeK, base[1] * shadeK, base[2] * shadeK);
+      }
+    }
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < seg; i++) { const a = j * (seg + 1) + i, b = a + 1, c = a + seg + 2, d = a + seg + 1; idx.push(a, c, b, a, d, c); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const out = piece(g, null); (out.attributes.color as THREE.BufferAttribute).array.set(col);
+    return out;
+  };
+  parts.push(tier(0, 0.42, 0.06, 0));
+  parts.push(tier(0.34, 0.74, 0.05, 1));
+  parts.push(tier(0.66, 1, 0.04, 2));
+  return weld(parts);
+}
+
+/** 腕与一截小臂：原点在腕上，+y 顺着小臂指向手（自腕往前探进掌根 3 厘米，往后 12 厘米），两头敞着（藏在掌里、袖里） */
+export function buildWrist(l: Look, low: boolean): THREE.BufferGeometry {
+  return piece(new THREE.CylinderGeometry(0.021, 0.027, 0.15, low ? 6 : 7, 1, true).translate(0, -0.045, 0), tones(l).skin);
 }
 
 /** 脚：一只布鞋（或草鞋、光脚——只是颜色不同）。原点在踝的正下方的地面，脚尖朝 +z */

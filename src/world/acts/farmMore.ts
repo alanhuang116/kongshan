@@ -74,7 +74,7 @@ function dip(k: Anlewo, F: Farm, d: (typeof DIPS)[number]): Act {
           if (k.bag.count('water') >= 2) {
             phase = 'done'; av.reach('R', null); av.bow = 0;
             F.worked();
-            set({ title: '打水', text: '打满了一担水，挑去浇地。', done: true, choices: [BYE] });
+            set({ title: '打水', text: `打满了一担水。\n${F.guide.tell('water', 2)}`, done: true, choices: waterGo(F) });
             return;
           }
           phase = 'dip'; ui();
@@ -96,10 +96,16 @@ function dip(k: Anlewo, F: Farm, d: (typeof DIPS)[number]): Act {
       } else { av.reach('R', loc(k, -0.25, 0.4, 0.4), { rate: 6 }); av.bow = 0.2; }
     },
     input: { tap() { return true; } },
-    cmd(c, arg) { if (c === 'dip') press.cmd(arg); else if (c === 'done') k.exitAct(); },
+    cmd(c, arg) { if (c === 'dip') press.cmd(arg); else if (c === 'go') goWater(k, F); else if (c === 'done') k.exitAct(); },
   };
   return act;
 }
+/** 打满了水：有哪一畦缺水，就给一枚「挑去浇某畦」（顺着认好的路走过去，到了就浇） */
+function waterGo(F: Farm) {
+  const d = F.guide.plan('water');
+  return d ? [{ id: 'go', label: `挑去浇${d.name}`, main: true }, BYE] : [BYE];
+}
+function goWater(k: Anlewo, F: Farm) { k.exitAct(); setTimeout(() => F.guide.walkThere(), 120); }
 
 // ———————————————————————————— 井上打水（辘轳） ————————————————————————————
 function well(k: Anlewo, F: Farm): Act {
@@ -163,7 +169,7 @@ function well(k: Anlewo, F: Farm): Act {
           if (k.bag.count('water') >= 2) {
             phase = 'done'; av.reach('R', null); av.reach('L', null);
             F.worked();
-            set({ title: '打水', text: '一担水打满了。井水凉，浇地、煮茶都好。', done: true, choices: [BYE] });
+            set({ title: '打水', text: `一担水打满了。井水凉，浇地、煮茶都好。\n${F.guide.tell('water', 2)}`, done: true, choices: waterGo(F) });
             return;
           }
           up = 0; phase = 'crank'; k.sfx('bucket', { variant: 'splash', vel: 0.4 } as unknown as { vel: number });
@@ -177,7 +183,7 @@ function well(k: Anlewo, F: Farm): Act {
       rope.position.copy(top); rope.scale.set(1, len, 1);
     },
     input: { tap() { return true; } },
-    cmd(c, arg) { if (c === 'crank') press.cmd(arg); else if (c === 'done') k.exitAct(); },
+    cmd(c, arg) { if (c === 'crank') press.cmd(arg); else if (c === 'go') goWater(k, F); else if (c === 'done') k.exitAct(); },
   };
   return act;
 }

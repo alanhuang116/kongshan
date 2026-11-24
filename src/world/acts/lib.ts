@@ -7,6 +7,7 @@ import type { Anlewo } from '../Anlewo';
 import type { Season } from '../env/atmos';
 import type { PoseName, Seat } from '../avatar/types';
 import type { Spot } from './types';
+import { blocked, boom } from '../walk';
 
 // —— 文字 ——
 export interface Verse { id: string; title: string; author: string; lines: string[]; source: string; gloss?: string }
@@ -73,6 +74,27 @@ export function behindSeat(a: THREE.Object3D, back: number): Spot {
 /** 以 c 为中心的一个机位：从 dirYaw 那一侧（0 是南边）退 dist 米、高 h 米，看着 c 抬高 lookUp 的地方 */
 export function shot(c: THREE.Vector3, dirYaw: number, dist: number, h: number, lookUp = 0, fov = 40, o: { yaw?: number; up?: number; down?: number } = {}) {
   return { pos: new THREE.Vector3(c.x + Math.sin(dirYaw) * dist, c.y + h, c.z + Math.cos(dirYaw) * dist), look: new THREE.Vector3(c.x, c.y + lookUp, c.z), fov, yaw: o.yaw ?? 18, up: o.up ?? 10, down: o.down ?? 8 };
+}
+/**
+ * 一个看得清的机位：从想要的方向（prefYaw）起，左右各转一转找一处——镜头与看的那一点之间没有墙、柱、篱笆挡着，镜头也不在东西里头。
+ * 都挡着时退而求其次：只要没有高墙；再不行就取挡得最少的那一处。返回值同 shot（多一个 orbit：拖动时绕着看的那一点转）。
+ */
+export function openShot(c: THREE.Vector3, prefYaw: number, dist: number, h: number, lookUp = 0, fov = 40, o: { yaw?: number; up?: number; down?: number; orbit?: number } = {}) {
+  const lineClear = (a: number) => {
+    const n = Math.ceil(dist / 0.2);
+    for (let i = 2; i <= n; i++) { const t = (i / n) * dist, x = c.x + Math.sin(a) * t, z = c.z + Math.cos(a) * t; if (blocked(x, z, 'ground', 0.06)) return (i - 1) / n; }
+    return 1;
+  };
+  let best = prefYaw, bestScore = -1;
+  for (let i = 0; i < 24; i++) {
+    const a = prefYaw + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
+    const all = lineClear(a), tall = boom(c.x, c.z, c.x + Math.sin(a) * dist, c.z + Math.cos(a) * dist);
+    // 全不挡的最好，其次只要高墙不挡，再其次看挡在多远；离想要的方向越近越好
+    const off = Math.abs(Math.atan2(Math.sin(a - prefYaw), Math.cos(a - prefYaw)));
+    const score = (all >= 0.999 ? 3 : tall >= 0.999 ? 1.5 + all : all + tall) - off * 0.05;
+    if (score > bestScore) { bestScore = score; best = a; }
+  }
+  return { ...shot(c, best, dist, h, lookUp, fov, o), orbit: o.orbit };
 }
 /** 小人会不会「坐凳」（坐在凳上、腿垂下）：有就用，没有就盘腿坐 */
 export function canBench(k: Anlewo): boolean {

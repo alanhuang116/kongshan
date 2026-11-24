@@ -36,6 +36,13 @@ export interface Bed {
 }
 /** 晒场：摊着几捆（或几把谷穗）、打到几成、打下来还没扬的有几升、秸秆堆在边上 */
 export interface Floor { crop: 'wheat' | 'millet' | null; spread: number; beaten: number; heap: number; straw: number }
+/** 担子挑的三样：麦捆、谷穗、水 */
+export type Load = 'sheaf' | 'milletEar' | 'water';
+export const LOADS: Load[] = ['sheaf', 'milletEar', 'water'];
+/** 放在地上的一副担子（「放下」的、进屋前放在门外的、邻家帮着码在场边的）：挑的什么、几、在哪、扁担顺着哪个方向 */
+export interface Pile { item: Load; n: number; x: number; z: number; yaw: number }
+/** 地上最多放几副担子（再多就并到最近的那一副里） */
+export const PILES_MAX = 6;
 export interface FarmState {
   v: 1;
   /** 这份账是照哪一季记的 */
@@ -53,6 +60,8 @@ export interface FarmState {
   /** 一共做过几件农活；帮邻家割过几垄 */
   work: number;
   helped: number;
+  /** 放在地上的担子 */
+  piles: Pile[];
 }
 
 /** 行者的几畦：名字、哪一类、几垄（位置在 layout.ts） */
@@ -140,7 +149,7 @@ export function freshState(season: Season, day = 0): FarmState {
     beds.east = stubble('east', 'millet');
     beds.vegE = { ...emptyBed('vegE'), weed: 0.4 };
   }
-  return { v: 1, season, day, beds, village: new Array(VILLAGE_ROWS).fill(0), floor: { crop: null, spread: 0, beaten: 0, heap: 0, straw: 0 }, gift: false, pantry: { wheat: false, gu: false }, work: 0, helped: 0 };
+  return { v: 1, season, day, beds, village: new Array(VILLAGE_ROWS).fill(0), floor: { crop: null, spread: 0, beaten: 0, heap: 0, straw: 0 }, gift: false, pantry: { wheat: false, gu: false }, work: 0, helped: 0, piles: [] };
 }
 
 const num = (v: unknown, d: number, a = 0, b = 1) => (typeof v === 'number' && Number.isFinite(v) ? clamp(v, a, b) : d);
@@ -177,6 +186,12 @@ export function loadState(raw: unknown, season: Season, day = 0): FarmState {
   if (!st.floor.crop) { st.floor.spread = 0; st.floor.beaten = 0; }
   st.gift = !!r.gift;
   { const pa = (r.pantry ?? {}) as Partial<FarmState['pantry']>; st.pantry = { wheat: !!pa.wheat, gu: !!pa.gu }; } st.work = Math.floor(num(r.work, 0, 0, 1e9)); st.helped = Math.floor(num(r.helped, 0, 0, 1e9));
+  st.piles = (Array.isArray(r.piles) ? r.piles : []).flatMap((p): Pile[] => {
+    const o = p as Partial<Pile> | null;
+    if (!o || !LOADS.includes(o.item as Load) || ![o.x, o.z].every((v) => typeof v === 'number' && Number.isFinite(v))) return [];
+    const n = Math.floor(num(o.n, 0, 0, 99));
+    return n > 0 ? [{ item: o.item as Load, n, x: o.x as number, z: o.z as number, yaw: num(o.yaw, 0, -10, 10) }] : [];
+  }).slice(0, PILES_MAX);
   if (st.season !== season) changeSeason(st, season);
   return st;
 }
@@ -409,6 +424,29 @@ export function winnow(st: FarmState, wind: 'good' | 'weak' | 'strong'): number 
   f.heap--;
   if (f.heap <= 0) f.straw = Math.max(0, f.straw - 0.5);
   return wind === 'good' ? 1 : 0;
+}
+
+// —— 放在地上的担子 ——
+/**
+ * 放下一副担子：离同一样东西的那一副不到 near 米，就并进去；地上已经放满了（PILES_MAX），并到最近的那一副同样的里，
+ * 没有同样的就把最早放下的那一副挪掉（返回挪掉的，好叫画面与界面知道）。返回放下后那一副的下标与挪掉的
+ */
+export function addPile(st: FarmState, p: Pile, near = 1.5): { i: number; out: Pile | null } {
+  const same = st.piles.map((q, i) => ({ q, i, d: Math.hypot(q.x - p.x, q.z - p.z) })).filter((o) => o.q.item === p.item).sort((a, b) => a.d - b.d);
+  if (same.length && (same[0].d < near || st.piles.length >= PILES_MAX)) { same[0].q.n += p.n; return { i: same[0].i, out: null }; }
+  let out: Pile | null = null;
+  if (st.piles.length >= PILES_MAX) out = st.piles.shift() ?? null;
+  st.piles.push({ ...p });
+  return { i: st.piles.length - 1, out };
+}
+/** 从第 i 副担子里拿走 n（拿空了就没有这一副了）。返回拿了几 */
+export function takePile(st: FarmState, i: number, n: number): number {
+  const p = st.piles[i];
+  if (!p) return 0;
+  const got = Math.max(0, Math.min(p.n, Math.floor(n)));
+  p.n -= got;
+  if (p.n <= 0) st.piles.splice(i, 1);
+  return got;
 }
 
 /** 这一畦此刻该做哪一步（农事链上的第几步；给界面的 steps 用） */

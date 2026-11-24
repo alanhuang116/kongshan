@@ -10,7 +10,8 @@
  *   audio.qin()                          抚琴的一下（不给参数就顺着一条现编的旋律弹下一个音）
  *   audio.setLoop('kettle', 1)           一直响着的声音（煮水、研墨、拉锯、犁地），0 即停
  *   audio.duck(0.5, 1.5)                 做事时把环境声压低
- *   audio.setGroup('insects', 0.5)       用户音量：风、水、鸟、虫、雨雪、村里（0…1，默认 1）
+ *   audio.setGroup('insects', 0.5)       用户音量：风、水、鸟、虫、雨雪、村里（0…1，默认 1）；也管世界里出的鸟兽禽畜、别人的活计
+ *   audio.setVoices(0)                   人声（合成的书声、说话、孩子笑）：0 不出（书声换成翻书、戒尺）… 1 原样；界面上默认 0
  *
  * 做法与校准数值见 docs/AUDIO.md；每种声音可在 /audio-lab.html 上单独听、单独看频谱。
  */
@@ -51,6 +52,7 @@ function sane(o: PlayOpts): PlayOpts {
 class AnlewoAudio {
   private e: Engine | null = null;
   private groups: Record<Group, number> = { ...DEFAULT_GROUPS };
+  private voiceLevel = 1;
   private user: Record<Layer, number> = { ...DEFAULT_LAYERS };
   private loops = Object.fromEntries(LOOP_NAMES.map((l) => [l, { level: 0, opts: {} }])) as Record<Loop, { level: number; opts: LoopOpts }>;
   private sc: Scene = { ...DEFAULT_SCENE };
@@ -84,12 +86,15 @@ class AnlewoAudio {
       // iOS：静音拨片拨下时也照常出声（Safari 16.4 起）
       try { const s = (navigator as unknown as { audioSession?: { type: string } }).audioSession; if (s) s.type = 'playback'; } catch { /* 没有这个接口 */ }
       const e = new Engine(ctx);
+      // 刚进门的头一分钟静一些：鸟隔几秒才叫、先在远处，鸡也晚一点（各层建起来时自己看 calmUntil，所以要在建层之前定下）
+      e.calmUntil = ctx.currentTime + 60;
       e.setMaster(this.masterVol);
       e.setMuted(this.muted);
       Object.assign(e.chant, clean(this.chantOpts));
       e.onSyllable = (i, time) => this.emit(i, time);
       e.setListener(this.ear.x, this.ear.z, this.ear.fx, this.ear.fz);
       for (const g of GROUP_NAMES) e.setGroup(g, this.groups[g], 0);
+      e.setVoices(this.voiceLevel, 0);
       if (!this.auto) e.setAuto(false);
       // 头一回：各层从无到有，两三秒里慢慢起来
       e.setScene(this.sc);
@@ -194,6 +199,15 @@ class AnlewoAudio {
     this.e?.setGroup(group, this.groups[group], fade);
   }
   getGroup(group: Group): number { return this.groups[group]; }
+  /**
+   * 人声（合成的书声、远处说话、孩子笑、一声「嗯」）：0 不出 … 1 原样（引擎这边默认 1；界面上默认 0，见 src/app/sound.ts）。
+   * 书声关着时，村塾那里换成不出人声的动静：偶尔翻一页书，先生的戒尺在案上嗒两下。
+   */
+  setVoices(level: number, fade?: number): void {
+    this.voiceLevel = clamp(level);
+    this.e?.setVoices(this.voiceLevel, fade);
+  }
+  getVoices(): number { return this.voiceLevel; }
   /**
    * 旧的九层的用户音量（界面上的声音面板还在用）：wind / birds / stream / rain / insects 是上面那几组的别名；
    * qin 是远远的几声琴；chant / bellfar / eaves 是旧的寺里的声音，默认关着。

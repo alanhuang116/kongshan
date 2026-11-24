@@ -13,10 +13,10 @@
  */
 import { BEARING_OF, FADE, mergeScene, mixScene, resolveScene, sceneSig, TRIM } from './scene';
 import {
-  BED_NAMES, DEFAULT_GROUPS, DEFAULT_SCENE, GROUP_OF, LOOP_NAMES, RANGE, RANGE_DEFAULT,
+  BED_NAMES, DEFAULT_GROUPS, DEFAULT_SCENE, GROUP_OF, LOOP_GROUP, LOOP_NAMES, RANGE, RANGE_DEFAULT, SHOT_GROUP, VOICE_SHOTS, WORK_SHOTS,
   type Bed, type ChantOpts, type Extra, type Group, type Loop, type PlayOpts, type Scene, type SceneState, type Shot, type SlotId,
 } from './types';
-import { brownBuffer, clamp, ctrlBuffer, distCut, distGain, hallIR, openIR, pinkBuffer, rand, roomIR, softClipCurve, whiteBuffer } from './util';
+import { brownBuffer, clamp, ctrlBuffer, distCut, distGain, hallIR, openIR, pinkBuffer, rand, roomIR, smooth, softClipCurve, whiteBuffer } from './util';
 import { SHOTS } from './shots';
 import { createLayer } from './layers';
 import { XINJING_PHRASES } from './xinjing';
@@ -143,6 +143,9 @@ function farRule(shot: Shot, variant: string | undefined): readonly [number, num
 const NEAR_VEL = 0.25, FOLD_VEL = 0.6, FOLD_REF = 9, FOLD_D0 = FOLD_REF * Math.sqrt(FOLD_VEL / NEAR_VEL - 1);
 /** 一击至少要有这么响（相对它在身边时），村里那几层才算「世界自己放过了」而让路——远得听不见的不算 */
 const HEARD = 0.3;
+/** 离听的人这么近（米）的一击不跟着用户的组音量走：是你自己在做的、摸到跟前的那一样 */
+const OWN_REACH = 3.5;
+const VOICE_SET: ReadonlySet<Shot> = new Set(VOICE_SHOTS);
 const isBed = (id: SlotId): id is Bed => id in GROUP_OF;
 const isLoop = (id: SlotId): id is Loop => (LOOP_NAMES as string[]).includes(id);
 
@@ -156,6 +159,10 @@ export class Engine {
   mix: Record<Bed, number>;
   /** 用户音量：几组、四个旧的层 */
   group: Record<Group, number> = { ...DEFAULT_GROUPS };
+  /** 人声（书声、远处说话、孩子笑）的用户音量：0 不出（书声换成不出人声的动静）… 1 原样。界面上默认 0 */
+  voiceLevel = 1;
+  /** 刚进门的头一分钟到哪一刻为止（ctx 的秒）：这之前鸟叫得更疏、更远，鸡也晚一点叫。实时引擎由 index.ts 在头一回解锁时定 */
+  calmUntil = -Infinity;
   user: Record<Extra, number> = { chant: 0, qin: 0, bellfar: 0, eaves: 0 };
   loops: Record<Loop, number> = perLoop(0);
   /** 旧：诵经层的设置 */
@@ -367,9 +374,12 @@ export class Engine {
     let o = opts.far != null && opts.dist == null ? { ...opts, dist: opts.far } : opts;
     // 远近：明说了的照它的；给了位置的按位置算；都没有，就看力度——比 NEAR_VEL 还小的是「远处的」
     const given = o.dist != null, range = RANGE[shot] ?? RANGE_DEFAULT;
+    /** 给了位置时：离听的人几米 */
+    let metres: number | undefined;
     if (opts.at) {
       const loc = this.locate(opts.at[0], opts.at[1], range);
       if (loc.dist >= 1) return 0;
+      metres = Math.hypot(opts.at[0] - this.listener.x, opts.at[1] - this.listener.z);
       o = { ...o, pan: opts.pan ?? loc.pan, dist: o.dist ?? loc.dist };
     } else if (!given) {
       const vel = o.vel ?? 0.7;
@@ -385,19 +395,41 @@ export class Engine {
     }
     const ind = this.scene.indoor, d = clamp(o.dist ?? 0);
     if (Math.min(1, (o.vel ?? 0.7) / NEAR_VEL) * distGain(d) >= HEARD) this.heard.set(shot, t);
+    // 用户的音量也管世界里出的声音（见 userGain）。书声关着时，村塾那里换成不出人声的动静（翻书、戒尺），跟着「村」走
+    let gain = this.userGain(shot, o.variant, !!opts.at, metres);
+    if (shot === 'recite' && this.voiceLevel <= 0.001 && o.variant !== 'still') {
+      gain = metres != null && metres < OWN_REACH ? 1 : this.group.village;
+      o = { ...o, variant: 'still' };
+    }
+    if (gain <= 0.001) return 0;
+    // 隔着墙：人在屋里、声音在外头（给了位置、比屋子还远）——与外头的环境声一样，闷一些、轻一些
+    const wall = metres != null && ind > 0.05 ? ind * smooth(5, 9, metres) : 0;
     let mix: Mix;
     if (o.space === 'near') mix = { dry: 1, hall: 0, room: 0.05 * ind, open: 0.025 * (1 - ind) };
     else if (o.space === 'room') mix = { dry: 0.9, hall: 0, room: 0.3, open: 0 };
     else if (o.space === 'hall') mix = { dry: 0.88, hall: 0.4, open: 0 };
     else if (o.space === 'open') mix = { dry: 0.92, hall: 0, open: 0.2 + 0.2 * d };
     else mix = { dry: 0.92, hall: 0, room: 0.3 * ind * (1 - d), open: (0.15 + 0.2 * d) * (1 - ind * (1 - d)) * (1 - 0.45 * this.scene.cover) };
-    return this.voice(shot, o, t, { dry: this.shotBus, hall: mix.hall > 0 ? this.hallIn : undefined, open: this.openIn, room: this.roomIn }, mix);
+    return this.voice(shot, o, t, { dry: this.shotBus, hall: mix.hall > 0 ? this.hallIn : undefined, open: this.openIn, room: this.roomIn }, mix, false, gain, wall);
+  }
+  /**
+   * 世界里的这一声跟着哪一样用户音量走（返回乘数，1 是不跟）：
+   *   人声（书声、说话、孩子笑）跟着人声的开关；鸟、虫、禽畜、牧笛、别人的活计跟着各自那一组（types.ts 的 SHOT_GROUP）；
+   *   离听的人三米半以内的（摸到跟前的那只狗、自己脚边的鸡）、没给位置的活计（玩家自己手上那一下）不跟。
+   */
+  private userGain(shot: Shot, variant: string | undefined, placed: boolean, metres: number | undefined): number {
+    if (VOICE_SET.has(shot)) return this.voiceLevel;
+    const g = shot === 'goose' && variant === 'wild' ? 'birds' : SHOT_GROUP[shot];
+    if (!g) return 1;
+    if (metres != null && metres < OWN_REACH) return 1;
+    if (!placed && WORK_SHOTS.has(shot)) return 1;
+    return Math.min(1.5, this.group[g]);
   }
   /**
    * 一击的声音接到任意去处（层里的檐滴、鸡叫、锤声、旧的远钟与风铎都走这里）。
-   * soft：层里自己排的——同时在响的太多时先不出这一声。
+   * soft：层里自己排的——同时在响的太多时先不出这一声。gain：再乘上的用户音量；wall：隔着几成墙（人在屋里、声音在外头）。
    */
-  voice(shot: Shot, opts: PlayOpts, t: number, route: Route, mix: Mix, soft = false): number {
+  voice(shot: Shot, opts: PlayOpts, t: number, route: Route, mix: Mix, soft = false, gain = 1, wall = 0): number {
     const c = this.ctx, now = c.currentTime;
     const fn = SHOTS[shot];
     if (!fn) return 0;
@@ -410,11 +442,13 @@ export class Engine {
     let head: AudioNode = out;
     // 力度在 0.25 以上只管「轻重与明暗」（最轻也有一半的量）；再往下就整个淡出去。
     //（外头来的一击到不了这里：play 已经把 0.25 以下的力度换成了远近。这是给层里自己排的声音留的）
-    out.gain.value = Math.min(1, vel / NEAR_VEL);
-    if (dist > 0.01) {
+    out.gain.value = Math.min(1, vel / NEAR_VEL) * gain;
+    if (dist > 0.01 || wall > 0.01) {
+      // 远近与墙合用一个低通：截在两者里低的那一个（墙的那一道与屋外环境声过的一样：18k → 2.2kHz）
       const lp = c.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = distCut(dist); lp.Q.value = 0.5;
-      out.gain.value *= distGain(dist);
+      lp.type = 'lowpass'; lp.frequency.value = Math.min(dist > 0.01 ? distCut(dist) : 18000, wall > 0.01 ? 18000 * Math.pow(2200 / 18000, Math.pow(wall, 0.8)) : 18000); lp.Q.value = 0.5;
+      if (dist > 0.01) out.gain.value *= distGain(dist);
+      if (wall > 0.01) out.gain.value *= 1 - 0.45 * wall;
       out.connect(lp); head = lp; made.push(lp);
     }
     const pan = opts.pan ?? 0;
@@ -464,6 +498,12 @@ export class Engine {
   setGroup(g: Group, v: number, fade?: number) {
     this.group[g] = clamp(v, 0, 1.5);
     for (const b of BED_NAMES) if (GROUP_OF[b] === g) this.applyLayer(b, fade ?? 1.2);
+    for (const l of LOOP_NAMES) if (LOOP_GROUP[l] === g) this.applyLayer(l, fade ?? 1.2);
+  }
+  /** 人声的用户音量（书声、远处说话、孩子笑；连着一直响着的 murmur）：0 不出 … 1 原样 */
+  setVoices(v: number, fade = 1.2) {
+    this.voiceLevel = clamp(v);
+    for (const l of LOOP_NAMES) if (LOOP_GROUP[l] === 'voices') this.applyLayer(l, fade);
   }
   /** 旧的四层（诵经、远琴、远钟、风铎）的用户音量 */
   setExtra(l: Extra, v: number, fade = 1.2) {
@@ -495,7 +535,10 @@ export class Engine {
       const m = this.auto ? this.mix[id] * this.group[GROUP_OF[id]] : 0;
       return m < FAINT ? 0 : m * TRIM[id];
     }
-    if (isLoop(id)) return this.loops[id] * this.loopGain[id] * TRIM[id];
+    if (isLoop(id)) {
+      const g = LOOP_GROUP[id], u = g === 'voices' ? this.voiceLevel : g ? this.group[g] : 1;
+      return this.loops[id] * this.loopGain[id] * TRIM[id] * u;
+    }
     return this.user[id] * TRIM[id];
   }
   /** 场景自己带出来的声音要不要（关掉后只剩用户开的旧层、loop 与一击） */

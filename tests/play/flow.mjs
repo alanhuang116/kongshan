@@ -1,4 +1,5 @@
-// 真的走一遍：题名页 → 入 → 进门的话 → 走几步（「Shift 跑」/「疾」）→ 走近一件事按 E → 毕 → 简册 → 行囊 → 村图换处 → 天时（时辰流转）
+// 真的走一遍：题名页 → 入 → 进门的话 → 「初到」几页 → 走几步（「Shift 跑」/「疾」）→ 走近一件事按 E → 毕 → 简册 → 行囊 → 村图换处 → 天时（时辰流转）
+//   → 再来一回：题名页上写着上回停在哪，「入」回到那里
 //   → 画面下方浮一句话 → 重开看记没记住
 // 用法：node tests/play/flow.mjs [desk|phone|land|<uikit 里的尺寸名>]（网址默认 http://localhost:3801/，或 KS_URL=…；截图在 shots/flow/）
 import { launch, open, shot, report, overflow, SIZES } from './uikit.mjs';
@@ -23,6 +24,13 @@ await wait(3400);
 ok('入了：在桃林、雾收尽、人看得见', await ev(() => { const k = window.__ks; return window.__ui.ui.get().phase === 'roam' && k.nav.cur === 'grove' && k.veil < 0.02 && k.player.av.root.visible !== false; }), await ev(() => `place=${window.__ks.nav.cur} veil=${window.__ks.veil.toFixed(2)} visits=${window.__ui.saved.get().visits}`));
 await shot(page, `flow-${size}-2-roam`);
 await overflow(page, 'roam');
+// 头一回：「初到」几页（画显出来以后才出），一页一页翻完就收起、记下
+await page.waitForSelector('[data-testid="guide"]', { timeout: 9000 }).catch(() => {});
+ok('头一回：「初到」浮出来', await ev(() => !!document.querySelector('[data-testid="guide"]')));
+await shot(page, `flow-${size}-2b-guide`);
+await overflow(page, 'guide');
+for (let i = 0; i < 6 && (await ev(() => !!document.querySelector('[data-testid="guide"]'))); i++) { await tapSel('[data-testid="guide-next"]'); await wait(450); }
+ok('翻完「初到」：收起、记下（以后不再自己出）', await ev(() => !document.querySelector('[data-testid="guide"]') && window.__ui.saved.get().guided === true));
 ok('右上写着第几日', await ev(() => document.querySelector('[data-testid="hud-day"]')?.textContent === `第${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][window.__ks.day] ?? ''}日`), await ev(() => `${document.querySelector('[data-testid="hud-day"]')?.textContent} day=${window.__ks.day}`));
 if (touch) {
   // 「疾」：点一下一直跑，亮起来；再点放开
@@ -142,6 +150,26 @@ ok('重开（auto）：直接在桃林，秋夜有雾（记着上回选的）', 
 ok('重开：时辰流转还是「停」、行囊里还有三个桃', await ev(() => window.__ks.flow === 0 && window.__ks.bag.count('peach') === 3));
 ok('重开：不再出走法提示', await ev(() => !document.querySelector('.walk-hint')));
 await shot(page, `flow-${size}-7-again`);
+// —— 再来一回（走题名页）：题名页上写着上回停在哪；「入」回到那里，「初到」不再出 ——
+{
+  await ev(() => { const k = window.__ks; k.player.teleport(4.2, 18.6, 0.6, 'ground'); k.nav.snapBehind(); });
+  await wait(4600);
+  const sp = await ev(() => window.__ui.saved.get().spot);
+  await page.goto(page.url().split('?')[0], { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__ui?.ui.get().phase === 'title', null, { timeout: 120000 }).catch(() => {});
+  await wait(900);
+  const recap = await ev(() => document.querySelector('[data-testid="recap"]')?.textContent ?? '');
+  ok('再来：题名页上写着上回停在哪', /上回停在/.test(recap), recap);
+  await shot(page, `flow-${size}-8-recap`);
+  await overflow(page, 'recap');
+  await tapSel('[data-testid="enter"]');
+  await page.waitForFunction(() => window.__ui.ui.get().phase === 'roam', null, { timeout: 20000 }).catch(() => {});
+  await wait(2400);
+  const at = await ev(() => [window.__ks.player.pos.x, window.__ks.player.pos.z]);
+  ok('「入」：回到上回停下的地方', !!sp && Math.hypot(at[0] - sp.x, at[1] - sp.z) < 1.5, `记的 (${sp?.x}, ${sp?.z}) → 在 (${at.map((v) => v.toFixed(1)).join(', ')})`);
+  await wait(4200);
+  ok('再来：「初到」不再自己出', await ev(() => !document.querySelector('[data-testid="guide"]')));
+}
 report(`flow ${size}`, logs.filter((l) => !/没能备好|Failed to load|    at |声音没能打开/.test(l)));
 await ctx.close();
 

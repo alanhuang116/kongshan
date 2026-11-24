@@ -1,11 +1,12 @@
 /**
  * 鸟、燕、蝉、蛙、蟋蟀、雁。
  *
- *   鸟（birds）     同时在场零到五只（看时辰、季节、天气、离树多近）。每只是一种叫法、一个固定的音高与方位、远近，
+ *   鸟（birds）     同时在场零到三只（看时辰、季节、天气、离树多近），大多在远处。每只是一种叫法、一个固定的音高与方位、远近，
  *                   而且有它自己的那一句（生成一次，之后每回都唱这一句，只在快慢轻重上略有出入——真的鸟就是这样）；
- *                   叫上二三十秒到一分多钟就飞走，换一只来。远的更轻、高处少、回声多。
- *                   黄鹂是圆润的几个哨音带滑；树莺是长长一声然后一个急转；麻雀短而带毛；山雀一高一低地来回；
- *                   斑鸠「咕咕——咕」；布谷只在春夏、很远、很少，一叫是连着几声。
+ *                   叫上二三十秒到一分多钟就飞走，换一只来。远的更轻、高处少、隔着枝叶忽强忽弱。
+ *                   怎么合成的见 song.ts：一声是几个很短的音素，音高在音素里走得快，带谐波与气声——不是一个正弦一路唱下去
+ *                  （头一版那样做，量下来七成是纯音，听着像口哨、像电子音，在静处瘆人）。
+ *                   刚进门的头一分钟更静：头一只鸟隔几秒才叫、在远处，过二十来秒才有第二只（engine.calmUntil）。
  *   燕（swallows）  一只燕子掠过：一串又细又急的呢喃从一边到另一边。
  *   蝉（cicadas）   三处蝉声各自一涨一落（不同步），叫的时候音高一扬一落；远处另有薄薄的一层底。只取远听的那种，不刺耳。
  *                   鼓膜每秒一百来下的开合是算在噪声的波形里的（pulsedNoise），每处只要「声源 → 窄带 → 涨落 → 方位」四个节点。
@@ -17,156 +18,74 @@ import { chorusOf } from './animals';
 import { Base } from './base';
 import type { Engine, LayerBus } from './engine';
 import { birdDensity, frogAmount, gooseAmount, swallowAmount } from './scene';
+import { playSong, songBuffer, SPECIES, swallowSong, type BirdKind, type El } from './song';
 import { clamp, lerp, pick, pulsedNoise, rand } from './util';
 
 // ———————————————————————————— 鸟 ————————————————————————————
-/** 一个音：[起, 长, 起频, 止频, 幅度, 中途的频率?] */
-type Note = [number, number, number, number, number, number?];
-interface SingO { type?: OscillatorType; fm?: { rate: number; depth: number }; /** 音高上细细的抖（音分）：纯正弦太「电子」 */ breath?: number; /** 起落都软（斑鸠、布谷） */ soft?: boolean }
+/** 一只鸟叫一回的响度（再乘这一种自己的 level、远近） */
+const BIRD_GAIN = 0.125;
 
-/** 一次鸣叫：一个振荡器，音高按每个音的折线走，幅度一段段开合；长音是慢慢涨起来的 */
-function sing(e: Engine, dest: AudioNode, t: number, notes: Note[], o: SingO = {}): number {
-  const c = e.ctx, osc = c.createOscillator(), g = c.createGain();
-  osc.type = o.type ?? 'sine';
-  g.gain.setValueAtTime(0, t);
-  let end = t;
-  for (const [at, len, f0, f1, amp, mid] of notes) {
-    const a = t + at, att = len > 0.35 ? len * 0.55 : Math.min(o.soft ? 0.03 : 0.012, len * 0.3), rel = Math.min(o.soft ? 0.07 : 0.03, len * 0.4);
-    osc.frequency.setValueAtTime(f0, a);
-    if (mid) { osc.frequency.exponentialRampToValueAtTime(mid, a + len * 0.4); osc.frequency.exponentialRampToValueAtTime(f1, a + len); }
-    else if (f1 !== f0) osc.frequency.exponentialRampToValueAtTime(f1, a + len);
-    g.gain.setValueAtTime(0, a);
-    g.gain.linearRampToValueAtTime(amp, a + att);
-    g.gain.linearRampToValueAtTime(amp * 0.85, a + len - rel);
-    g.gain.linearRampToValueAtTime(0, a + len);
-    end = Math.max(end, a + len);
-  }
-  if (o.fm) {
-    const m = c.createOscillator(), md = c.createGain();
-    m.frequency.value = o.fm.rate; md.gain.value = o.fm.depth;
-    m.connect(md); md.connect(osc.frequency);
-    m.start(t); m.stop(end + 0.05);
-  }
-  if (o.breath) {
-    const j = e.ctrlSrc('fast', t, rand(0.3, 0.6), end - t + 0.1), jd = c.createGain();
-    jd.gain.value = o.breath;
-    j.connect(jd); jd.connect(osc.detune);
-  }
-  osc.connect(g); g.connect(dest);
-  osc.start(t); osc.stop(end + 0.05);
-  return end - t;
+/** 检查用：有哪几种叫法；某一种叫一回（干声，接到 dest），返回多长 */
+export const BIRD_KINDS = Object.keys(SPECIES) as BirdKind[];
+export function birdCall(e: Engine, dest: AudioNode, t: number, kind: BirdKind): number {
+  const sp = SPECIES[kind], g = e.ctx.createGain();
+  g.gain.value = BIRD_GAIN * sp.level;
+  g.connect(dest);
+  return playSong(e.ctx, g, t, sp.motif(rand(sp.pitch[0], sp.pitch[1])));
 }
-
-type BirdKind = 'oriole' | 'warbler' | 'sparrow' | 'tit' | 'dove' | 'cuckoo' | 'trill' | 'phrase';
-interface Species {
-  /** 叫完一次歇多久（秒） */
-  rest: [number, number];
-  sing: SingO;
-  level: number;
-  far: [number, number];
-  pitch: [number, number];
-  /** 每回都重新编（麻雀）；否则每只鸟只编一次，之后都唱自己那一句 */
-  fresh?: boolean;
-  motif(p: number): Note[];
-}
-const SPECIES: Record<BirdKind, Species> = {
-  // 黄鹂：三到五个圆润的哨音，高高低低，各自带滑
-  oriole: { rest: [6, 13], sing: { type: 'triangle', breath: 8 }, level: 1.2, far: [0.2, 0.8], pitch: [0.92, 1.1], motif: (p) => {
-    const out: Note[] = [];
-    let at = 0, f = rand(1500, 1900) * p;
-    for (let i = 0, n = 3 + Math.floor(rand(0, 3)); i < n; i++) {
-      const len = rand(0.12, 0.24), f1 = clamp(f * pick([1.25, 1.33, 0.8, 0.75, 1.5, 0.67]), 1200 * p, 2800 * p);
-      out.push([at, len, f, f1, rand(0.7, 1), Math.random() < 0.4 ? f * rand(0.85, 1.2) : undefined]);
-      at += len + rand(0.03, 0.09);
-      f = clamp(f1 * pick([1, 1, 1.12, 0.9]), 1200 * p, 2800 * p);
-    }
-    return out;
-  } },
-  // 树莺：长长一声慢慢涨起来，然后一个急转的小花
-  warbler: { rest: [7, 15], sing: { breath: 6 }, level: 1, far: [0.15, 0.8], pitch: [0.9, 1.12], motif: (p) => {
-    const f = rand(1900, 2300) * p, len = rand(0.5, 0.8), out: Note[] = [[0, len, f * 0.97, f * 1.03, 1]];
-    let at = len + 0.04;
-    for (let k = 0; k < 3; k++) { const f2 = f * pick([1.5, 1.33, 1.68, 1.26]), l = rand(0.06, 0.1); out.push([at, l, f2 * pick([1.15, 0.85]), f2, 0.9]); at += l + 0.02; }
-    return out;
-  } },
-  // 麻雀：一到三声短促的啾，先扬后抑，带一点毛
-  sparrow: { rest: [2, 6], sing: { fm: { rate: 220, depth: 380 } }, level: 0.9, far: [0, 0.6], pitch: [0.9, 1.15], fresh: true, motif: (p) => {
-    const out: Note[] = [];
-    let at = 0;
-    for (let i = 0, n = 1 + Math.floor(rand(0, 3)); i < n; i++) { const len = rand(0.05, 0.08); out.push([at, len, 3600 * p, 3300 * p, rand(0.6, 1), 4700 * p]); at += len + rand(0.09, 0.16); }
-    return out;
-  } },
-  // 山雀：一高一低地来回——「吱呗、吱呗」
-  tit: { rest: [4, 9], sing: { breath: 5 }, level: 0.9, far: [0.1, 0.8], pitch: [0.88, 1.15], motif: (p) => {
-    const out: Note[] = [], hi = rand(4100, 4600) * p, lo = hi * rand(0.76, 0.82), per = rand(0.3, 0.36);
-    for (let i = 0, n = 3 + Math.floor(rand(0, 2)); i < n; i++) { out.push([i * per, 0.11, hi, hi * 0.98, 1]); out.push([i * per + 0.14, 0.13, lo, lo * 0.985, 0.85]); }
-    return out;
-  } },
-  // 斑鸠：「咕咕——咕」，低而圆
-  dove: { rest: [7, 16], sing: { type: 'triangle', soft: true }, level: 1.5, far: [0.4, 0.95], pitch: [0.94, 1.08], motif: (p) => [[0, 0.2, 470 * p, 480 * p, 0.8], [0.3, 0.42, 500 * p, 478 * p, 1, 522 * p], [0.84, 0.22, 452 * p, 430 * p, 0.7]] },
-  // 布谷：两个音，下行小三度；很远
-  cuckoo: { rest: [14, 34], sing: { type: 'triangle', soft: true }, level: 1.5, far: [0.6, 1], pitch: [0.96, 1.05], motif: (p) => [[0, 0.17, 642 * p, 630 * p, 1], [0.31, 0.27, 512 * p, 498 * p, 0.9]] },
-  // 一串颤音：每秒十七到二十二个下滑的小音，中间响两头轻
-  trill: { rest: [6, 12], sing: {}, level: 0.8, far: [0.2, 0.9], pitch: [0.85, 1.1], motif: (p) => {
-    const n = 9 + Math.floor(rand(0, 8)), per = 1 / rand(17, 22), out: Note[] = [];
-    for (let i = 0; i < n; i++) out.push([i * per, per * 0.66, 5000 * p, 4300 * p, 0.25 + 0.75 * Math.pow(Math.sin((Math.PI * (i + 0.5)) / n), 0.6)]);
-    return out;
-  } },
-  // 清晨的一句（白头鹎一类）：四到七个音，高高低低，各自带滑
-  phrase: { rest: [5, 11], sing: { breath: 6 }, level: 1, far: [0, 0.8], pitch: [0.85, 1.2], motif: (p) => {
-    const out: Note[] = [];
-    let at = 0;
-    for (let i = 0, n = 4 + Math.floor(rand(0, 4)); i < n; i++) { const len = rand(0.07, 0.14), f = rand(2300, 4400) * p; out.push([at, len, f, f * rand(0.78, 1.28), rand(0.5, 1)]); at += len + rand(0.03, 0.08); }
-    return out;
-  } },
-};
-interface Bird { kind: BirdKind; pitch: number; pan: number; far: number; next: number; until: number; notes: Note[]; run: number }
+interface Bird { kind: BirdKind; pitch: number; pan: number; far: number; next: number; until: number; notes: El[]; run: number }
 
 export class Birds extends Base {
   private flock: Bird[] = [];
   private nextSpawn: number;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
-    this.nextSpawn = t + rand(0.1, 0.8);
+    // 刚进门（头一分钟）隔五到十秒才来头一只；平时层建起来也隔一两秒——鸟不会因为人出了门就一齐叫起来
+    this.nextSpawn = t + (t < e.calmUntil ? rand(5, 10) : rand(1.2, 3.5));
   }
   private spawn(t: number): Bird {
     const s = this.e.scene, warm = s.season === 'spring' || s.season === 'summer';
     let bag: BirdKind[];
     if (s.season === 'winter') bag = ['sparrow', 'sparrow', 'sparrow', 'tit'];
-    else if (s.season === 'autumn') bag = ['sparrow', 'sparrow', 'sparrow', 'tit', 'tit', 'dove', 'phrase'];
-    else if (s.dawn > 0.25) bag = ['oriole', 'oriole', 'warbler', 'warbler', 'phrase', 'phrase', 'phrase', 'sparrow', 'sparrow', 'tit', 'tit', 'dove', 'trill'];
-    else if (s.dusk > 0.3) bag = ['sparrow', 'sparrow', 'sparrow', 'dove', 'phrase', 'oriole'];
-    else bag = ['sparrow', 'sparrow', 'sparrow', 'phrase', 'phrase', 'tit', 'dove', 'dove', 'warbler', 'oriole'];
+    else if (s.season === 'autumn') bag = ['sparrow', 'sparrow', 'sparrow', 'tit', 'tit', 'bulbul', 'whiteeye', 'dove'];
+    else if (s.dawn > 0.25) bag = ['bulbul', 'bulbul', 'bulbul', 'whiteeye', 'whiteeye', 'tit', 'tit', 'sparrow', 'sparrow', 'oriole', 'trill', 'dove'];
+    else if (s.dusk > 0.3) bag = ['sparrow', 'sparrow', 'sparrow', 'bulbul', 'tit', 'dove'];
+    else bag = ['sparrow', 'sparrow', 'sparrow', 'bulbul', 'bulbul', 'whiteeye', 'whiteeye', 'tit', 'oriole', 'trill', 'dove'];
     // 布谷要稀：十几只里才有一只，而且同时只有一只
     if (warm && s.dusk < 0.3 && !this.flock.some((b) => b.kind === 'cuckoo')) bag.push('cuckoo');
     const kind = pick(bag), sp = SPECIES[kind], pitch = rand(sp.pitch[0], sp.pitch[1]);
-    return { kind, pitch, pan: rand(-0.9, 0.9), far: rand(sp.far[0], sp.far[1]), next: t + rand(0, 1.5), until: t + rand(20, 80), notes: sp.motif(pitch), run: 0 };
+    // 刚进门的头一只总在远处
+    const far = Math.max(rand(sp.far[0], sp.far[1]), t < this.e.calmUntil && !this.flock.length ? 0.6 : 0);
+    return { kind, pitch, pan: rand(-0.85, 0.85), far, next: t + rand(0.4, 2.5), until: t + rand(20, 80), notes: sp.motif(pitch), run: 0 };
   }
   private call(b: Bird, t: number): number {
     const c = this.c, sp = SPECIES[b.kind];
     const out = c.createGain(), lp = c.createBiquadFilter(), pan = c.createStereoPanner(), dry = c.createGain(), wet = c.createGain();
-    out.gain.value = 0.085 * sp.level * lerp(1, 0.3, b.far);
-    lp.type = 'lowpass'; lp.frequency.value = lerp(9500, 4300, b.far); lp.Q.value = 0.5;
+    out.gain.value = BIRD_GAIN * sp.level * lerp(1, 0.32, b.far);
+    lp.type = 'lowpass'; lp.frequency.value = lerp(10000, 4200, Math.pow(b.far, 0.9)); lp.Q.value = 0.5;
     pan.pan.value = b.pan;
-    dry.gain.value = 1 - 0.4 * b.far; wet.gain.value = 0.15 + 0.7 * b.far;
+    // 回声少：野外的散尾送多了，远处一声鸟叫后面拖着一片「嗡」，反倒像空谷里的哨子
+    dry.gain.value = 1 - 0.3 * b.far; wet.gain.value = (0.05 + 0.2 * b.far) * (b.kind === 'dove' || b.kind === 'cuckoo' ? 0.5 : 1);
     out.connect(lp); lp.connect(pan); pan.connect(dry); pan.connect(wet); dry.connect(this.bus.dry); wet.connect(this.bus.open);
     // 自己那一句，每回快慢轻重略有出入；偶尔只唱前半句
     let notes = sp.fresh ? sp.motif(b.pitch) : b.notes;
     if (!sp.fresh) {
       const k = rand(0.96, 1.05), a = rand(0.8, 1.05), cut = notes.length > 3 && Math.random() < 0.15 ? notes.length - 1 - Math.floor(rand(0, 2)) : notes.length;
-      notes = notes.slice(0, cut).map(([at, len, f0, f1, amp, mid]) => [at * k, len * k, f0, f1, amp * a, mid] as Note);
+      notes = notes.slice(0, cut).map((n) => ({ ...n, at: n.at * k, len: n.len * k, amp: n.amp * a }));
     }
-    const d = sing(this.e, out, t, notes, sp.sing);
+    const d = playSong(c, out, t, notes, { fade: 0.4 * b.far });
     this.later(t + d, () => { dry.disconnect(); wet.disconnect(); });
     return d;
   }
   schedule(from: number, to: number) {
-    const dens = birdDensity(this.e.scene);
-    const want = dens <= 0.015 ? 0 : Math.max(1, Math.round(dens * 3.6));
+    const dens = birdDensity(this.e.scene), calm = this.e.calmUntil;
+    let want = dens <= 0.015 ? 0 : Math.max(1, Math.round(dens * 3.4));
+    // 头一分钟：二十来秒里只一只，再过一阵才到两只
+    if (from < calm) want = Math.min(want, calm - from > 35 ? 1 : 2);
     while (this.nextSpawn < to) {
       const t = Math.max(from, this.nextSpawn);
       if (this.flock.length < want) this.flock.push(this.spawn(t));
-      this.nextSpawn = t + rand(1, 4.5) / Math.max(0.3, dens);
+      this.nextSpawn = t + rand(2, 6) / Math.max(0.3, dens);
     }
     for (const b of this.flock) {
       const sp = SPECIES[b.kind];
@@ -187,27 +106,20 @@ export class Swallows extends Base {
   private next: number;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
-    this.next = t + rand(0.5, 3);
+    // 刚进门的头一分钟里燕子也晚一点来
+    this.next = t + (t < e.calmUntil ? rand(14, 30) : rand(1.5, 5));
   }
   /** 一只燕子掠过：一串又细又急的呢喃，从一边到另一边；有时末尾带一串更密的「唧唧唧」 */
   private pass(t: number): number {
-    const c = this.c, far = rand(0.15, 0.8), p = rand(0.9, 1.15), notes: Note[] = [];
-    let at = 0;
-    for (let i = 0, n = 6 + Math.floor(rand(0, 9)); i < n; i++) {
-      const len = rand(0.03, 0.06), f = rand(3200, 5600) * p;
-      notes.push([at, len, f, f * rand(0.75, 1.3), rand(0.4, 1)]);
-      at += len + rand(0.02, 0.07) + (Math.random() < 0.15 ? rand(0.08, 0.2) : 0);
-    }
-    if (Math.random() < 0.35) {
-      const per = 1 / rand(55, 70);
-      for (let i = 0, n = 8 + Math.floor(rand(0, 7)); i < n; i++) notes.push([at + i * per, per * 0.6, 4600 * p, 4300 * p, 0.6]);
-    }
+    const c = this.c, far = rand(0.25, 0.85), b = songBuffer(c, swallowSong(rand(0.9, 1.15)), { fade: 0.3 * far }), s = c.createBufferSource();
     const out = c.createGain(), lp = c.createBiquadFilter(), pan = c.createStereoPanner(), dry = c.createGain(), wet = c.createGain();
-    out.gain.value = 0.05 * lerp(1, 0.35, far);
-    lp.type = 'lowpass'; lp.frequency.value = lerp(8500, 5000, far); lp.Q.value = 0.5;
-    dry.gain.value = 1 - 0.4 * far; wet.gain.value = 0.1 + 0.5 * far;
+    out.gain.value = 0.045 * lerp(1, 0.35, far);
+    lp.type = 'lowpass'; lp.frequency.value = lerp(9000, 5000, far); lp.Q.value = 0.5;
+    dry.gain.value = 1 - 0.3 * far; wet.gain.value = 0.06 + 0.3 * far;
+    s.buffer = b; s.connect(out);
     out.connect(lp); lp.connect(pan); pan.connect(dry); pan.connect(wet); dry.connect(this.bus.dry); wet.connect(this.bus.open);
-    const d = sing(this.e, out, t, notes, { breath: 10 }), p0 = rand(-0.9, 0.9);
+    s.start(t);
+    const d = b.duration, p0 = rand(-0.9, 0.9);
     pan.pan.setValueAtTime(p0, t);
     pan.pan.linearRampToValueAtTime(clamp(p0 + (p0 > 0 ? -1 : 1) * rand(0.5, 1.3), -1, 1), t + d);
     this.later(t + d, () => { dry.disconnect(); wet.disconnect(); });
@@ -217,7 +129,7 @@ export class Swallows extends Base {
     while (this.next < to) {
       const t = Math.max(from, this.next), amt = swallowAmount(this.e.scene);
       const d = amt > 0.02 ? this.pass(t) : 0;
-      this.next = t + d + rand(4, 13) / (0.35 + amt);
+      this.next = t + d + rand(5, 15) / (0.35 + amt);
     }
   }
 }
@@ -381,7 +293,7 @@ export class Geese extends Base {
   private next: number;
   constructor(e: Engine, bus: LayerBus, t: number) {
     super(e, bus);
-    this.next = t + (e.offline ? rand(1, 2) : rand(8, 40));
+    this.next = t + (e.offline && t >= e.calmUntil ? rand(1, 2) : rand(8, 40));
   }
   schedule(from: number, to: number) {
     while (this.next < to) {

@@ -88,8 +88,14 @@ export function create(k: Anlewo): Act | null {
   applyDay();
 
   // —— 扫的时候 ——
+  // 握法：左手在上，握在竿顶下一点、胯前；右手在下，隔十几二十厘米握着竿（够不着就往上挪）；竿斜着伸出去，帚头落在身前的地上。
+  // 一扫是腰带着走：帚头贴着地自左前方划到右前方，竿顶像撬棍一样往反方向带，上身跟着扭一点、俯着，头看着帚头。
+  const TOP = Number(broom.userData.top ?? 0.62), S_UP = TOP - 0.1, LS = tipL + S_UP;
   let phase: 'sweep' | 'done' | 'off' = 'off', t = 0, ph = 0, holding = false, putBack: (() => void) | null = null, lastSwish = 0, idleT = 0;
-  const head = V(), grip = V(), dir = V(), side = V(), tmp = V(), prevHead = V(), walkV = V(), prevPos = V();
+  const head = V(), dir = V(), side = V(), tmp = V(), prevHead = V(), walkV = V(), prevPos = V();
+  const DOWN = V(0, -1, 0), upHand = V(), shaftD = V(), grip0 = V(), loHand = V(), shR = V(), tan = V(), bx = V(), bz = V(), hv = V(), look = V();
+  const basis = new THREE.Matrix4();
+  let fresh = true;
   const count = () => (mode() === 'leaf' ? leaves.filter((l) => l.piled).length : segDone.filter(Boolean).length);
   const total = () => (mode() === 'leaf' ? leaves.length : SEG);
   const show = (hint?: string) => set({ title: mode() === 'snow' ? '扫雪' : '扫叶', hint: hint ?? (mode() === 'snow' ? '从堂前往柴门扫出一条路' : '把叶子都扫到老梅底下'), progress: count() / total(), hold: { id: 'sweep', label: '扫' }, keys: [{ key: 'W A S D', label: '走' }, { key: '空格', label: '原地扫' }], tags: mode() === 'leaf' ? [{ id: 'pile', text: '扫到这里', x: PILE.x, y: PILE.y + 0.5, z: PILE.z, kind: 'hot' }] : [], choices: [{ id: 'done', label: '放下竹帚' }] });
@@ -98,36 +104,35 @@ export function create(k: Anlewo): Act | null {
     id: 'broom', name: '扫院', anchor: broom.getWorldPosition(V()).add(V(0, 0.2, 0.3)), spot: { x: broom.getWorldPosition(V()).x + 0.2, z: SITE.hall.z + SITE.hall.d / 2 + 0.95, yaw: Math.PI }, radius: 2.4, state, free: true,
     on: () => { const m = mode(); return !!m && sweptToday !== m; },
     enter() {
-      phase = 'sweep'; t = 0; ph = 0; holding = false; idleT = 0; prevPos.copy(k.player.pos);
+      phase = 'sweep'; t = 0; ph = 0; holding = false; idleT = 0; prevPos.copy(k.player.pos); fresh = true;
       applyDay();
       if (mode() === 'snow') { pathMesh.visible = true; pathGeo.setDrawRange(0, 0); segDone.fill(false); }
       putBack = lift(k.world.scene, broom);
       k.player.av.setHands('free');
+      // 从墙边拿起竹帚，转过身来对着院子（帚头不戳进墙里）
+      k.player.faceTo = 0;
       show();
     },
     exit() {
       putBack?.(); putBack = null; broom.visible = true;
-      const av = k.player.av; av.reach('L', null); av.reach('R', null); av.bow = 0;
+      const av = k.player.av; av.reach('L', null); av.reach('R', null); av.bow = 0; av.twist = 0; av.lookAt(null);
       phase = 'off';
     },
     update(dt) {
       t += dt; flush();
       if (phase !== 'sweep') return;
       const p = k.player;
-      // 帚：走着的时候一下一下地扫，站着按住「扫」也扫
+      // 帚：走着的时候一下一下地扫，站着按住「扫」也扫（竹帚长，一扫比手帚从容）
       const going = p.speed > 0.25 || holding;
-      if (going) ph += dt * (holding && p.speed < 0.25 ? 5.5 : 3 + p.speed * 1.6);
+      if (going) ph += dt * (holding && p.speed < 0.25 ? 4.2 : 2.6 + p.speed * 1.3);
       idleT = going ? 0 : idleT + dt;
-      const sw = Math.sin(ph);
-      dir.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)); side.set(-dir.z, 0, dir.x);
-      prevHead.copy(head);
-      head.copy(p.pos).addScaledVector(dir, 0.72 + 0.12 * Math.cos(ph)).addScaledVector(side, 0.42 * sw);
-      head.y = (groundAt(head.x, head.z) ?? p.pos.y) + 0.03;
-      grip.copy(p.pos).addScaledVector(side, -0.18).addScaledVector(dir, 0.18); grip.y = p.pos.y + 0.95;
+      // 帚头在哪由每帧摆竹帚的那一段算（onFrame）；这里只看它这一帧挪了多少
       // 扫一下，「唰」一声
       if (going && Math.floor(ph / Math.PI) !== lastSwish) { lastSwish = Math.floor(ph / Math.PI); sfx(k, 'broom', { vel: 0.35, variant: mode() === 'snow' ? 'stone' : undefined, dur: 0.45 }); }
-      const vel = tmp.subVectors(head, prevHead).setY(0).divideScalar(Math.max(dt, 1e-3));
-    walkV.subVectors(p.pos, prevPos).setY(0).divideScalar(Math.max(dt, 1e-3)); prevPos.copy(p.pos);
+      // （帚头的速度另用一个量：sweepLeaves 里 tmp 要拿去指堆的方向）
+      const vel = hv.subVectors(head, prevHead).setY(0).divideScalar(Math.max(dt, 1e-3));
+      prevHead.copy(head);
+      walkV.subVectors(p.pos, prevPos).setY(0).divideScalar(Math.max(dt, 1e-3)); prevPos.copy(p.pos);
       if (mode() === 'leaf') sweepLeaves(vel, dt);
       else sweepSnow();
       if (Math.floor(t * 4) !== Math.floor((t - dt) * 4)) put({ progress: count() / total() });
@@ -146,8 +151,9 @@ export function create(k: Anlewo): Act | null {
       const d = Math.hypot(l.x - head.x, l.z - head.z);
       const tp = tmp.set(PILE.x - l.x, 0, PILE.z - l.z), dl = tp.length() || 1;
       if (d < 0.6 && sp > 0.3) {
-        // 帚梢扫过：叶子往扫的方向扑一下，偏一点往堆那边去；人往前走，帚前头的叶子就被一路推着走
-        l.vx += vel.x * 0.35 + (tp.x / dl) * 3.4; l.vz += vel.z * 0.35 + (tp.z / dl) * 3.4;
+        // 帚梢扫过：叶子往堆那边扑一下（离堆越远扑得越远——一帚一帚往堆里赶）；人往前走，帚前头的叶子就被一路推着走
+        // （从前这里写的是帚的速度，可那个量与 tp 是同一个，算出来一直就是这样；扫的快慢、测试里的时长都按它定的）
+        l.vx += tp.x * 0.35 + (tp.x / dl) * 3.4; l.vz += tp.z * 0.35 + (tp.z / dl) * 3.4;
         l.x += wx * dt * 0.95; l.z += wz * dt * 0.95; moved = true;
       } else if (dl < 2.6 && !l.vx && !l.vz && sp > 0.3 && d < 2.6) {
         // 堆边上的几片，顺手一带就进去了
@@ -199,15 +205,48 @@ export function create(k: Anlewo): Act | null {
       return;
     }
     if (phase === 'off') return;
-    const av = k.player.av;
-    broom.visible = k.world.camera.position.distanceTo(k.player.pos) > 1.6;
-    // 竹帚：握处在右手，帚梢在地上来回扫
-    const d = tmp.subVectors(grip, head).normalize();
-    broom.position.copy(head).addScaledVector(d, tipL);
-    broom.quaternion.setFromUnitVectors(V(0, 1, 0), d);
-    av.reach('R', broom.position, { dir: d, rate: 20 });
-    av.reach('L', tmp.copy(broom.position).addScaledVector(d, 0.38), { dir: d, rate: 20 });
-    av.bow = 0.16;
+    const p = k.player, av = p.av;
+    broom.visible = k.world.camera.position.distanceTo(p.pos) > 1.6;
+    // —— 这一刻帚在哪：左手（上手）在左胯前握着竿顶下一点，帚梢落在右前方的地上，离左手正好一根竿长 ——
+    // 帚头偏右多少：约 −18°…41°（正前是 0）——自左前方扫到右前方，走着扫时脚前那一片都扫得着
+    const sw = Math.sin(ph), th = 0.2 + 0.52 * sw;
+    dir.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)); side.set(-dir.z, 0, dir.x);   // 他的前、右
+    // （竿像一根撬棍：帚头往右扫，竿顶就往左带；帚头往左扫，竿顶带到身子右前——下手才够得着）
+    upHand.copy(p.pos).addScaledVector(side, 0.06 - 0.11 * sw).addScaledVector(dir, 0.3 + 0.03 * Math.cos(ph));
+    upHand.y = p.pos.y + 0.9;
+    let gy = p.pos.y + 0.02;
+    for (let i = 0; i < 2; i++) {
+      // 竿斜着落到地上：高差定了，平着伸出去多远也就定了（地面不平时再量一次）
+      const rh = Math.sqrt(Math.max(0.05, LS * LS - (upHand.y - gy) ** 2));
+      head.copy(upHand).addScaledVector(side, Math.sin(th) * rh).addScaledVector(dir, Math.cos(th) * rh);
+      gy = (groundAt(head.x, head.z) ?? p.pos.y) + 0.02;
+    }
+    head.y = gy;
+    if (fresh) { prevHead.copy(head); fresh = false; }
+    shaftD.subVectors(upHand, head).normalize();                       // 顺着竿往上
+    grip0.copy(head).addScaledVector(shaftD, tipL);                    // 竹帚的原点（握处）
+    // 帚面（扁的那一面）朝着扫的方向：弧的切线
+    tan.copy(side).multiplyScalar(Math.cos(th)).addScaledVector(dir, -Math.sin(th));
+    bz.copy(tan).addScaledVector(shaftD, -tan.dot(shaftD)).normalize();
+    bx.crossVectors(shaftD, bz).normalize();
+    basis.makeBasis(bx, shaftD, bz);
+    broom.position.copy(grip0);
+    broom.quaternion.setFromRotationMatrix(basis);
+    // —— 两手：上手在竿顶下一点；下手隔一小臂长，够不着就往上挪一点（这副身子臂短，竿又斜着伸出去） ——
+    av.joints.chest.updateWorldMatrix(true, false);
+    shR.set(-0.138, 0.063, 0).applyMatrix4(av.joints.chest.matrixWorld);   // 右肩（胸的坐标里 +x 是左）
+    let sLo = S_UP - 0.4;
+    // （肩是按胸量的约数，俯身、扭腰时偏几厘米：留些余量）
+    for (; sLo < S_UP - 0.16; sLo += 0.02) { loHand.copy(grip0).addScaledVector(shaftD, sLo); if (loHand.distanceTo(shR) < 0.46) break; }
+    loHand.copy(grip0).addScaledVector(shaftD, sLo);
+    // 握（满把攥着，两手都是正握、手背朝上）：竿横在掌心前，手指顺着小臂伸过去绕过竿（avatar 的 reach.grip）
+    av.reach('L', upHand.copy(grip0).addScaledVector(shaftD, S_UP), { grip: shaftD, palm: DOWN, rate: 18 });
+    av.reach('R', loHand, { grip: shaftD, palm: DOWN, rate: 18 });
+    // 腰带着帚走：上身随这一扫扭一点，俯着（竿长、臂短，下手要够得着竿），眼睛跟着帚头
+    av.bow = 0.5;
+    av.twist = -0.2 * sw - 0.08;
+    look.copy(head).lerp(p.pos, 0.35); look.y = gy;
+    av.lookAt(look);
   });
   return act;
 }

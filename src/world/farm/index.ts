@@ -7,9 +7,10 @@
  *   acts/farm*.ts  各件事（翻地、下种、浇水、锄草、割麦、捆麦、挑、打场、扬场、推磨、舂米、打水、摘果、采桑……）
  *
  * 这里把它们装在一起：从 k.mem 的 'farm' 读出账、换季跟着走、过夜与时辰流转时庄稼长、改了就画、隔一会儿存一次；
- * 行囊里有麦捆、水、谷穗时，人肩上挑着扁担（不跑，走得慢些）。
+ * 行囊里有麦捆、水、谷穗时，人肩上挑着扁担（不跑，走得慢些）；挑到哪儿去、怎么走、怎么放下，见 guide.ts。
  *
- * 给别人的（见 docs/FARM.md）：farmPlotState(i)、farmPlots()、farmReapSpot()、farmReapStep()、FARM_SITE。
+ * 给别人的（见 docs/FARM.md）：farmPlotState(i)、farmPlots()、farmReapSpot()、farmReapStep()、FARM_SITE；
+ * 界面读 farm()?.guide（担子往哪儿挑：view、beaconTop()、mapView()、setDown('drop')）。
  */
 import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
@@ -24,6 +25,7 @@ import { Soil } from './soil';
 import { Bits, DabPool, drawField, drawYard, fieldMat, h3 } from './paint';
 import { FARM_TILES, T } from './tiles';
 import { carryPole, COL, heap, millstone } from './props';
+import { Guide } from './guide';
 import { peach as growPeach } from '../env/flora/peach';
 import { Sink } from '../env/flora/sink';
 import { rand } from '../env/flora/kit';
@@ -36,6 +38,8 @@ defineItems([
 
 export { FARM_SITE };
 export type { FarmState, Bed };
+export type { CarryView, Dest } from './guide';
+export type { Load, Pile } from './model';
 
 /** 夜里长得快些：过一夜另加的（按天算） */
 const NIGHT_BONUS = 1.0;
@@ -59,8 +63,11 @@ export class Farm {
   private lastHour = -1; private hourAcc = 0;
   private carrying = false;
   private marginSeason: Season | null = null;
-  /** 正在做的那件农事要不要肩上的扁担（做事时由那件事自己管家什） */
+  /** 正在做的那件农事要不要肩上的扁担（做事时由那件事自己管家什）；holdKind 是那时扁担上挑的什么（不给就看行囊） */
   holdPole = false;
+  holdKind: 'sheaf' | 'water' | 'ear' | null = null;
+  /** 担子往哪儿挑、放下、挑起（guide.ts） */
+  guide: Guide;
   /** 正在锄草的那一畦：草在哪、拔了没有（锄草那件事给） */
   weedOverride = new Map<string, Array<{ x: number; y: number; z: number; alive: boolean }>>();
 
@@ -84,6 +91,7 @@ export class Farm {
     for (const h of Object.values(this.heaps)) this.group.add(h);
     this.heaps.mixed.position.set(HEAP.x, FLOOR.y, HEAP.z);
     k.world.scene.add(this.group);
+    this.guide = new Guide(k, this);
     this.peaches = peachSpots(k.q.density < 0.7);
     this.resetFruit();
     for (const b of BEDS) this.dirtyBeds.add(b.id);
@@ -127,9 +135,13 @@ export class Farm {
     return true;
   }
   save() { this.k.mem.set('farm', Mo.save(this.st)); this.wantSave = false; this.saveT = 0; }
+  /** 账改了（地上放的担子之类，不必重画田）：过一会儿存 */
+  saveSoon() { this.wantSave = true; }
 
   // —— 时间 ——
   private onDay(day: number) {
+    // 过了一夜：肩上、路边的担子先安顿好（水倒了，麦捆谷穗邻家帮着挑到场边）
+    this.guide.overnight();
     Mo.advance(this.st, NIGHT_BONUS, { rain: this.k.atmos.w.rain });
     this.st.day = day;
     this.resetFruitDaily();
@@ -218,8 +230,10 @@ export class Farm {
       } else { this.pole.group.removeFromParent(); k.player.av.reach('R', null); }
     }
     if (show) {
-      // 挑什么：麦捆、水、谷穗（挑麦那件事里刚上肩、行囊还没记上时先挑两捆的样子）
-      if (sheaf > 0 || (this.holdPole && !water && !ear)) this.pole.set('sheaf', Math.max(2, sheaf)); else if (water > 0) this.pole.set('water', water); else this.pole.set('ear', ear);
+      // 挑什么：麦捆、水、谷穗（挑麦、挑起那几件事里刚上肩、行囊还没记上时，照那件事说的挑）
+      const hk = this.holdPole ? this.holdKind : null;
+      if (hk === 'water') this.pole.set('water', Math.max(1, water)); else if (hk === 'ear') this.pole.set('ear', Math.max(2, ear));
+      else if (sheaf > 0 || (this.holdPole && !water && !ear)) this.pole.set('sheaf', Math.max(2, sheaf)); else if (water > 0) this.pole.set('water', water); else this.pole.set('ear', ear);
       this.pole.bob(t, k.player.speed);
       // 右手扶着扁担前头
       const front = this.pole.group.localToWorld(new THREE.Vector3(0, 0, 0.42));
@@ -239,6 +253,7 @@ export class Farm {
     this.syncSeason();
     this.grow(dt);
     this.updateCarry(t);
+    this.guide.update(dt, t);
     const w = U.uWind.value;
     this.bits.wind.set(w.x, Math.min(1, this.k.atmos.wind * 5), w.y);
     this.bits.update(dt);

@@ -6,17 +6,23 @@
  * 签上的字是先生说的那一句，他接一句；有时他也回问先生一句，先生再答。
  * 熟了以后不一样：招呼的话、叫法变了，话多了，会主动说家里的事，见面塞东西给你，远远看见会招手（人情账在 favor.ts）。
  *
+ * 东西是真的过手的（gift.ts）：送人时先生从袖里取出来、走近一步递过去，他伸手接住的那一刻才算交出（行囊里少了、他记下了），
+ * 他那句话也在那一刻出来；递的那一会儿面板上还是方才那句问话，签先收着。他给先生的（回赠、见面塞的、讨来的、回礼）也一样递过来，
+ * 「得……」在先生接住的那一刻浮出来。送人时一回送多少、哪些不送人（水、铜钱、没打的麦捆）在 src/data/itemUses.ts。
+ *
  * 话在 src/data/talk2.ts（各人自己的话）、talk.ts（原先的家常话 LINES、渔樵问对）、almanac.ts（节气农事）；托事在 favors.ts。
  * 这里不问吉凶——有人问年景，先生只说「春种秋收，便是大吉」。
  */
 import * as THREE from 'three';
 import type { Anlewo, NpcLike } from '../Anlewo';
 import type { Season } from '../env/atmos';
-import { ITEMS } from '../bag';
+import { ITEMS, giftN, giftOf, qtyCn } from '../bag';
 import { blocked, groundAt, setDynamic, standable } from '../walk';
+import { Person as Folk } from '../life/person';
 import type { Act } from './types';
 import { reveal } from './xiang';
 import { POEMS } from './lib';
+import { Exchange } from './gift';
 import { fill, folkOf, people, person, stepAt, wetNow, type Person, type Turn } from './favor';
 import { BOOKS, type Book, type L, type O } from '../../data/talk2';
 import { LINES, YUQIAO, YUQIAO_SCENE } from '../../data/talk';
@@ -92,13 +98,20 @@ function talkShot(k: Anlewo, npc: Npc) {
     [mx + nx * 4.4 * s, mz + nz * 4.4 * s, 1.9, 0], [mx - nx * 4.4 * s, mz - nz * 4.4 * s, 1.9, 0],
     [mx + (nx * 3.6 - ux * 1.8) * s, mz + (nz * 3.6 - uz * 1.8) * s, 1.85, 0.3], [mx - (nx * 3.6 + ux * 1.8) * s, mz - (nz * 3.6 + uz * 1.8) * s, 1.85, 0.3],
     [mx + nx * 2.9 * s, mz + nz * 2.9 * s, 1.7, 0], [mx - nx * 2.9 * s, mz - nz * 2.9 * s, 1.7, 0],
-    [p.x - ux * 2.3 + nx * 1.0, p.z - uz * 2.3 + nz * 1.0, 1.75, 0.6], [p.x - ux * 2.3 - nx * 1.0, p.z - uz * 2.3 - nz * 1.0, 1.75, 0.6],
+    // 从先生肩后看过去：往旁边让开一米半，递东西时两人之间的手不叫先生的背挡住
+    [p.x - ux * 2.4 + nx * 1.5, p.z - uz * 2.4 + nz * 1.5, 1.75, 0.6], [p.x - ux * 2.4 - nx * 1.5, p.z - uz * 2.4 - nz * 1.5, 1.75, 0.6],
   ];
   let best = C[0], bs = Infinity;
+  // 他朝着哪（坐着干活的不转身）：镜头别在他背后，递东西时他的手、他的脸才看得见
+  const fy = npc.root?.rotation.y ?? 0, fx = Math.sin(fy), fz = Math.cos(fy);
   setDynamic([]);                                                   // 只看不动的东西：人自己不算挡
   try {
     C.forEach((c, i) => {
       let s = i * 0.05;
+      const cx = c[0] - q.x, cz = c[1] - q.z, cl = Math.hypot(cx, cz) || 1;
+      s += 2.5 * Math.max(0, -(cx * fx + cz * fz) / cl);
+      // 先生的身子挡在镜头与他之间（从先生正背后看过去）：他的脸、两人之间的手都看不见
+      { const ax = q.x - c[0], az = q.z - c[1], al = ax * ax + az * az || 1, t = Math.max(0, Math.min(1, ((p.x - c[0]) * ax + (p.z - c[1]) * az) / al)), od = Math.hypot(c[0] + ax * t - p.x, c[1] + az * t - p.z); if (t > 0.05 && t < 0.97 && od < 0.5) s += (0.5 - od) * 14; }
       if (blocked(c[0], c[1], 'ground', 0.3)) s += 40;
       const g = groundAt(c[0], c[1]);
       if (g != null && g > y + c[2] - 0.7) s += 25;
@@ -110,6 +123,15 @@ function talkShot(k: Anlewo, npc: Npc) {
   } finally { setDynamic(k.life?.blockers ?? []); }
   const lx = mx + (q.x - mx) * best[3], lz = mz + (q.z - mz) * best[3];
   return { pos: new THREE.Vector3(best[0], y + best[2], best[1]), look: new THREE.Vector3(lx, y + 1.15, lz), fov, yaw: 30, up: 12, down: 8 };
+}
+
+/** 先生递东西时说的那句：「这四个鸡蛋，给你。」「这一升麦粒，给你。」（data/itemUses.ts 里给了的照它说） */
+function giftSaid(item: string, n: number): string {
+  const g = giftOf(item), d = ITEMS[item];
+  if (g?.say && n === g.n) return g.say;
+  if (!d) return '这个给你。';
+  const cnt = n > 1 ? qtyCn(n) : /^[升捧把捆包]$/.test(d.unit) ? '一' : '';
+  return `这${cnt}${d.unit}${d.name}，给你。`;
 }
 
 /** 这一句之后，先生怎么告辞（签上的字） */
@@ -125,6 +147,9 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
   const used = new Set<string>();
   let asked = new Set<string>(), backQ: [string, string] | null = null, yesno: Turn['yesno'] | null = null, gifting = false;
   let ai = 0, sub = 0, chatN = 0, turns = 0, yq = Math.floor(Math.random() * Math.max(1, YUQIAO.length)), frame = Math.floor(Math.random() * 8);
+  /** 东西过手（这一场说话里）：他是村人那一路的人才有；没有就照旧一下子交了 */
+  const folk = Folk.of(npc.root);
+  let ex: Exchange | null = null;
   const ctx = (): Ctx => ({ tags: tagsOf(k), lv: F.level(id), family: P.family, act: actNow() });
   const actNow = (): string | null => (typeof npc.act === 'string' ? npc.act : stepAt(P, k.atmos.hour, k.season, wetNow(k))?.act ?? null);
   const you = () => B.calls?.[Math.max(0, F.level(id) - 1)] ?? P.you;
@@ -143,7 +168,7 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
     if (backQ) cs.push({ id: 'back', label: fill(backQ[0], you()), main: true });
     for (const c of F.favorChoices(id, asked)) if (cs.length < 3) cs.push(c);
     if (cs.length < 3 && !asked.has('offer')) { const o = F.offer(id); if (o) cs.push({ id: `fv:${o.id}:ask`, label: lv >= 3 ? '什么事？' : '可要帮手？' }); }
-    const giftable = !asked.has('gift') && k.bag.list().some((x) => x.def.id !== 'coin');
+    const giftable = !asked.has('gift') && k.bag.list().some((x) => giftN(x.def.id, x.n) > 0);
     const room = 3 - (giftable ? 1 : 0);
     const topics: Choice[] = [];
     if (!asked.has('busy')) topics.push({ id: 'busy', label: busyLabel() });
@@ -169,6 +194,25 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
     act.state = { kind: 'talk', title: P.name, who: `${P.tag} · ${F.bondName(id)}`, said, text, choices: yesno ? [{ id: `fv:${yesno.fid}:yes`, label: yesno.yes, main: true }, { id: `fv:${yesno.fid}:no`, label: yesno.no }] : menu(), ...extra };
     k.emitAct();
   };
+  /** 东西正递着：话不变（方才那句还在），签与行囊先收着 */
+  const hush = () => { act.state = { ...act.state, items: undefined, choices: [] }; k.emitAct(); };
+  /** 他接着说一句（递东西时；先生已经说起别的了就不接） */
+  const append = (line: string, seq: number) => {
+    if (!line || seq !== turns || k.act !== act) return;
+    act.state = { ...act.state, text: [String(act.state.text ?? ''), line].filter(Boolean).join('\n') };
+    k.emitAct();
+  };
+  /**
+   * 他这一阵给先生的东西（回赠、见面塞的、讨来的、托事的回礼）：一样样递过来，接住了才浮「得……」。
+   * line：他递头一样时接着说的那句；wait：先等几秒（见面就塞的，等他转过身来）
+   */
+  const takeGot = (line: string | null = null, wait = 0) => {
+    const list = F.drainGot(), seq = turns;
+    if (!ex) { for (const g of list) k.bag.announce(g.item, g.n); if (line) append(line, seq); return; }
+    if (!list.length) { if (line) append(line, seq); return; }
+    if (wait > 0) ex.pause(wait);
+    list.forEach((g, i) => ex!.take(g.item, g.n, { onStart: i === 0 && line ? () => append(line, seq) : undefined, onTake: () => k.bag.announce(g.item, g.n) }));
+  };
 
   // —— 头一句：招呼 ——
   const greet = () => {
@@ -185,6 +229,8 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
     // 相得以后，有求于你的会自己开口
     if (lv >= 3 && F.offer(id)) parts.push(fill(B.favorHint ?? '{先生}，正好有件事想求你。', you()));
     show(null, parts.join('\n'));
+    // 见面塞的那一样：等他转过身来，取出来递给先生
+    takeGot(null, 0.9);
   };
 
   // —— 各样话 ——
@@ -242,30 +288,46 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
     const pool: L[] = [...kindLines.map((l) => [l.reply ? `${l.text}\n——${l.reply}` : l.text, { when: l.when }] as L), ...(B.idle ?? [])];
     show(chatN > 1 ? '再说说' : '说会儿闲话', say(pool, spare(P, 'idle')) ?? '……');
   };
+  /** 挑一样送他：只列送得出去的（水、铜钱、没打的麦捆不列），签上是这一回送多少（「鸡蛋 四个」「麦粒 一升」） */
   const gift = () => {
     gifting = true;
-    const items = k.bag.list().filter((x) => x.def.id !== 'coin').map((x) => ({ id: x.def.id, n: x.n }));
+    const items = k.bag.list().map((x) => ({ id: x.def.id, n: giftN(x.def.id, x.n) })).filter((x) => x.n > 0);
     const ask = B.giftAsk ?? ((P.age ?? 30) < 14 ? '给我的？是什么？' : '{先生}太客气了。是什么？');
     act.state = { kind: 'talk', title: P.name, who: `${P.tag} · ${F.bondName(id)}`, said: '带了样东西给你', text: fill(ask, you()), items, choices: [{ id: 'menu', label: '先不了' }] };
     k.emitAct();
   };
+  /** 送出去：先生取出来递过去；他接住（或推辞）的那一刻才真的交出、话才出来 */
   const give = (item: string) => {
     if (!gifting) return;
+    const n = giftN(item, k.bag.count(item));
+    if (n <= 0) return;
     gifting = false; asked.add('gift');
-    const d = ITEMS[item], r = F.give(id, item), parts: string[] = [];
-    const said = d ? `这${d.unit}${d.name}，给你。` : '这个给你。';
-    if (r.kind === 'favor' && r.turn) { show(said, r.turn.text, r.turn.lines?.length ? { lines: r.turn.lines, source: r.turn.source } : {}); return; }
-    if (r.kind === 'no') parts.push(say(B.no, spare(P, 'no')) ?? '');
-    else {
-      const kind = r.kind === 'like' ? 'like' : 'ok';
-      parts.push(say(B.got?.[item]) ?? say(kind === 'like' ? B.like : B.ok, spare(P, kind)) ?? '');
-      if (r.learned) k.note(`${P.name}喜欢${d?.name ?? item}`, 'folk');
-      if (r.back) parts.push(fill((say(B.back, ['{先生}拿着这个，别嫌弃。']) ?? '').replace(/\{物\}/g, ITEMS[r.back.item]?.name ?? ''), you()));
-    }
-    const extra = item === 'poem' && r.kind !== 'no' && F.poem ? { lines: F.poem.lines, source: F.poem.source } : {};
-    show(said, parts.filter(Boolean).join('\n'), extra);
+    const plan = F.plan(id, item, n), said = giftSaid(item, plan.n);
+    const run = () => {
+      const d = ITEMS[item], r = F.give(id, item, n), parts: string[] = [];
+      if (r.kind === 'favor' && r.turn) { show(said, r.turn.text, r.turn.lines?.length ? { lines: r.turn.lines, source: r.turn.source } : {}); takeGot(); return; }
+      if (r.kind === 'no') parts.push(say(B.no, spare(P, 'no')) ?? '');
+      else {
+        const kind = r.kind === 'like' ? 'like' : 'ok';
+        parts.push(say(B.got?.[item]) ?? say(kind === 'like' ? B.like : B.ok, spare(P, kind)) ?? '');
+        if (r.learned) k.note(`${P.name}喜欢${d?.name ?? item}`, 'folk');
+      }
+      const extra = item === 'poem' && r.kind !== 'no' && F.poem ? { lines: F.poem.lines, source: F.poem.source } : {};
+      show(said, parts.filter(Boolean).join('\n'), extra);
+      // 回赠：他放好了先生的东西，再取一样递过来，递的时候接一句
+      takeGot(r.back ? fill((say(B.back, ['{先生}拿着这个，别嫌弃。']) ?? '').replace(/\{物\}/g, ITEMS[r.back.item]?.name ?? ''), you()) : null);
+    };
+    if (!ex) { run(); return; }
+    hush();
+    ex.give(item, plan.n, { refuse: plan.kind === 'no', onTake: run });
   };
+  /** 托事的一枚签。交东西的那一枚：东西真递过去，他接住了才算交到 */
   const favor = (c: string) => {
+    const h = ex && c.endsWith(':hand') ? F.handInfo(c, id) : null;
+    if (h && ex) { hush(); ex.give(h.item, h.n, { onTake: () => runFavor(c) }); return; }
+    runFavor(c);
+  };
+  const runFavor = (c: string) => {
     const t = F.run(c, id);
     // 签是旧的（事已经变了）：话不变，签重新排一遍
     if (!t) { yesno = null; show(typeof act.state.said === 'string' ? act.state.said : null, String(act.state.text ?? '')); return; }
@@ -273,6 +335,8 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
     if (c.endsWith(':where')) asked.add(c);
     yesno = t.yesno ?? null;
     show(t.said, t.text, t.lines?.length ? { lines: t.lines, source: t.source } : {});
+    // 讨来的、办成了回的礼：他递过来
+    takeGot();
   };
   const bye = () => {
     // 朋友讲习：与客说过话，显出「丽泽，兑」
@@ -293,17 +357,23 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
       npc.attend(k.player.pos);
       const p = k.player, av = p.av;
       av.setHands('sleeve'); av.bow = 0.32; av.lookAt(tmp.copy(npc.pos).setY(npc.pos.y + 1.3));
-      window.setTimeout(() => { if (k.act === act) av.bow = 0; }, 900);
-      // 机位：两个人的侧面（挑一处看得见两个人的）
-      k.nav.setPose(talkShot(k, npc));
+      window.setTimeout(() => { if (k.act === act && !ex?.busy) av.bow = 0; }, 900);
+      // 机位：两个人的侧面（挑一处看得见两个人的）；递东西时先生走近，不挡在这个镜头与他之间
+      let shot = talkShot(k, npc);
+      k.nav.setPose(shot);
+      ex = folk ? new Exchange(k, folk, () => shot.pos, () => { if (k.act !== act) return; shot = talkShot(k, npc); k.nav.setPose(shot, 1.5); }) : null;
       // 他转过来，「嗯」一声（声音那一路的 greet；没有这一声就不出）
       k.sfxAt('greet', { vel: 0.5, x: npc.pos.x, z: npc.pos.z });
       greet();
     },
-    exit() { npc.attend(null); k.player.av.lookAt(null); k.player.av.bow = 0; gifting = false; yesno = null; },
-    update() {
-      // 说着话他走了（回家了、走远了）：就作罢。说着话的时候站位不动
-      if (k.act === act) { if (!npc.present) k.exitAct(); return; }
+    exit() {
+      // 正递着东西：一下子收到头（没递到手的作罢，递到了的放好、「得……」浮出来）；先生走近过的，就站在那里起身，不滑回去
+      if (ex) { if (ex.busy) { act.spot.x = k.player.pos.x; act.spot.z = k.player.pos.z; } ex.finish(); ex = null; }
+      npc.attend(null); k.player.av.lookAt(null); k.player.av.bow = 0; gifting = false; yesno = null;
+    },
+    update(dt: number) {
+      // 说着话他走了（回家了、走远了）：就作罢。说着话的时候站位不动（递东西时先生自己走近一步）
+      if (k.act === act) { if (!npc.present) k.exitAct(); else ex?.update(dt); return; }
       act.anchor.set(npc.pos.x, npc.pos.y + 1.95, npc.pos.z);
       const p = k.player.pos, q = npc.pos, dx = p.x - q.x, dz = p.z - q.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
       // 已经在他跟前（三米以内；他被人围着、骑在牛上时四米多）：就近站着说，不必再挤过去（听书时人挤在一起，走不进去）。
@@ -328,6 +398,8 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
       act.spot.x = sx; act.spot.z = sz; act.spot.yaw = Math.atan2(q.x - sx, q.z - sz);
     },
     cmd(name, arg) {
+      // 东西正往他手里递：先递完再说别的（别过、走开照常）
+      if (ex?.pending && name !== 'bye' && name !== 'done') return;
       if (name !== 'menu' && name !== 'bye' && name !== 'done') k.sfx('page', { vel: 0.2 });
       // 他回问的那一句，先生没接、说起别的了：就不再等
       const pending = backQ;
@@ -344,6 +416,8 @@ function make(k: Anlewo, P: Person, npc: Npc, B: Book): Act {
       else if (name === 'bye' || name === 'done') bye();
     },
   };
+  // 测试、截图看得见东西正在谁手上（act.ex.holder / act.ex.prop）
+  Object.defineProperty(act, 'ex', { get: () => ex, enumerable: false });
   act.update!(0, 0);
   return act;
 }

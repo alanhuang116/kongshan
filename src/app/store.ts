@@ -56,7 +56,15 @@ export interface Saved {
   flow: number;
   /** 第几日（头一回来是第 0 日；界面上写作「第一日」） */
   day: number;
+  /** 上回停在哪：下回「入」时从这里接着走（题名页上也可以选从桃林走进来）；t 是记下的时刻 */
+  spot: Spot | null;
+  /** 头一回进来时那几页「初到」已经看过（或说了不看） */
+  guided: boolean;
+  /** 时辰流转的快慢是自己在天时页上挑过的（没挑过的跟着默认走，默认改了也跟着改） */
+  flowChosen: boolean;
 }
+/** 一处落脚的地方：位置、朝向、在哪一层（地上、亭上……）、是哪一处 */
+export interface Spot { x: number; z: number; yaw: number; zone: string; place: string; t: number }
 const KEY = 'anlewo:v1';
 /** 时辰流转的四档：停、缓、常、疾（天时页上选） */
 export const FLOWS: Array<[number, string, string]> = [
@@ -65,11 +73,19 @@ export const FLOWS: Array<[number, string, string]> = [
   [1 / 60, '常', '画里一个钟头，这里一分钟'],
   [1 / 20, '疾', '画里一个钟头，这里二十秒'],
 ];
-// 寻常的一次来访：春天的上午，晴，从桃林走进来；时辰慢慢地走。之后改过的天时都记着
+// 寻常的一次来访：春天的上午，晴，从桃林走进来；时辰慢慢地走（缓：画里一个钟头是这里两分钟——试玩的人说「跑着跑着就黑天了」）。之后改过的天时都记着
 const DEFAULT: Saved = {
   v: 1, time: 'day', weather: 'clear', season: 'spring', master: 0.8, muted: false, sound: {}, haptics: true, quality: 'auto',
-  visits: 0, journal: [], found: [], walked: false, runTold: false, world: {}, flow: 1 / 60, day: 0,
+  visits: 0, journal: [], found: [], walked: false, runTold: false, world: {}, flow: 1 / 120, day: 0, spot: null, guided: false, flowChosen: false,
 };
+/** 落脚处：一样一样认过（数在合理的范围里，名字是短字串） */
+function spotOf(v: unknown): Spot | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>, num = (x: unknown, lim: number) => (typeof x === 'number' && Number.isFinite(x) && Math.abs(x) < lim ? x : null);
+  const x = num(o.x, 2000), z = num(o.z, 2000), yaw = num(o.yaw, 100), t = num(o.t, 1e14);
+  const zone = typeof o.zone === 'string' && o.zone.length < 24 ? o.zone : 'ground', place = typeof o.place === 'string' && o.place.length < 24 ? o.place : '';
+  return x == null || z == null || yaw == null ? null : { x, z, yaw, zone, place, t: t ?? 0 };
+}
 const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T => (list.includes(v as T) ? (v as T) : fallback);
 const unit = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback);
 /** 世界的存档：只认「名字 → 能 JSON 的东西」的一张表（数组、空的、不是对象的都不要） */
@@ -100,9 +116,12 @@ function load(): Saved {
         walked: o.walked === true,
         runTold: o.runTold === true,
         world: worldOf(o.world),
-        // 流转的快慢：0（停）到每秒一个钟头；没存过、存坏了的用默认
-        flow: typeof o.flow === 'number' && Number.isFinite(o.flow) && o.flow >= 0 ? Math.min(1, o.flow) : DEFAULT.flow,
+        // 流转的快慢：0（停）到每秒一个钟头；自己没挑过的（以前存的多半是旧的默认）跟着现在的默认走
+        flow: o.flowChosen === true && typeof o.flow === 'number' && Number.isFinite(o.flow) && o.flow >= 0 ? Math.min(1, o.flow) : DEFAULT.flow,
         day: typeof o.day === 'number' && Number.isFinite(o.day) && o.day > 0 ? Math.floor(o.day) : 0,
+        spot: spotOf(o.spot),
+        guided: o.guided === true,
+        flowChosen: o.flowChosen === true,
       };
     }
   } catch { /* 读不到就用默认 */ }
@@ -135,7 +154,7 @@ export function saveWorld(ns: string, v: unknown) {
   });
 }
 
-export type Sheet = null | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars';
+export type Sheet = null | 'today' | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars';
 /** 画面下方浮着的一句话（「得麦三捆」「王婶记下了你的好」）；kind 是世界给的种类（bag 收得、folk 人情……），样式据此略有不同 */
 export interface Note { id: number; text: string; kind?: string }
 /** 星笺：夜里点了天上一处，它是什么（题、方位、原话与出处、白话；月是两句诗） */

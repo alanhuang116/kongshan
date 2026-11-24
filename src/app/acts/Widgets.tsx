@@ -34,6 +34,34 @@ export function MeterBar({ m }: { m: Meter }) {
  * 按住的大键：落在一圈下凹的底座里；按下发 cmd(id, 'down')，松开发 cmd(id, 'up')。键盘上空格同。
  * 手指滑出去、切到别的窗口、这一枚换了 id、整个收起来，都补发一次 'up'——那件事不会以为还按着。
  */
+/**
+ * 转向的两枚键（触屏上摇橹时，state.steer 为真）：按住「左」「右」转，松开回正；两枚都按着时以后按下的那一枚为准。
+ * 发给那件事的是 cmd('steer', 'L' | 'R' | 0)。竖屏在提示上面靠左、宽屏在左下——左手转向，右手按「摇」。
+ */
+export function SteerKeys() {
+  const down = useRef<Array<'L' | 'R'>>([]);
+  const on = (s: 'L' | 'R', v: boolean, el: HTMLElement) => {
+    const was = down.current.includes(s);
+    if (was === v) return;
+    down.current = v ? [...down.current.filter((x) => x !== s), s] : down.current.filter((x) => x !== s);
+    el.classList.toggle('is-down', v);
+    const d = down.current;
+    actCmd('steer', d.length ? d[d.length - 1] : 0);
+  };
+  useEffect(() => () => { if (down.current.length) { down.current = []; actCmd('steer', 0); } }, []);
+  const key = (s: 'L' | 'R', label: string) => (
+    <button
+      className="steer-key" data-testid={`act-steer-${s}`} aria-label={`按住：往${label}转`}
+      onPointerDown={(e) => { if (e.button !== 0 && e.pointerType === 'mouse') return; e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 无妨 */ } on(s, true, e.currentTarget); }}
+      onPointerUp={(e) => on(s, false, e.currentTarget)} onPointerCancel={(e) => on(s, false, e.currentTarget)} onLostPointerCapture={(e) => on(s, false, e.currentTarget)}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <span>{label}</span>
+    </button>
+  );
+  return <div className="act-steer" role="group" aria-label="转向">{key('L', '左')}{key('R', '右')}</div>;
+}
+
 export function HoldKey({ hold, kb }: { hold: Hold; kb: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   // 正按着的是哪一枚（id）；没按着是 null

@@ -1,0 +1,92 @@
+/*
+ * 同游（app/plugins/Together.tsx）：右上时辰那一条下面一枚纸签，点开一张纸；画里别人头上的小名签、说的话。
+ * 料都取 base.css / ink.css 的：纸（.board）、签（.key）、几选一（.seg）、墨环（--m-ring）、印（--m-seal）。
+ */
+.tg { position: absolute; inset: 0; pointer-events: none; }
+.tg > * { pointer-events: auto; }
+
+/* —— 右上的那一枚：「同游 · 三」 —— */
+.tg-key { position: absolute; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 56px + var(--tg-shift, 0px)); display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-width: 64px; height: 40px; padding: 0 14px 0 15px; border-radius: 2px; font-family: var(--kai); font-size: 14.5px; letter-spacing: 0.16em; white-space: nowrap; color: var(--ink); background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); backdrop-filter: blur(18px) saturate(1.04); -webkit-backdrop-filter: blur(18px) saturate(1.04); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); transition: color 0.25s, background-color 0.25s, transform 0.3s var(--out), opacity 0.5s; animation: rise 0.9s 0.4s var(--out) backwards; }
+.tg-key > span { padding-left: 0.16em; }
+/* 同屋另有几位：一笔淡墨隔开，小一号的字 */
+.tg-key small { position: relative; padding-left: 10px; font-size: 13px; letter-spacing: 0.1em; color: var(--ink-2); }
+.tg-key small::before { content: ''; position: absolute; left: 0; top: 50%; width: 1px; height: 14px; margin-top: -7px; background: var(--rule); }
+/* 还没连上：一点淡墨慢慢呼吸 */
+.tg-wait { width: 6px; height: 6px; margin-right: -2px; border-radius: 50%; background: var(--ink-3); animation: tg-wait 1.6s ease-in-out infinite; }
+@keyframes tg-wait { 50% { opacity: 0.25; } }
+.tg-key.is-off { color: var(--ink-2); }
+.tg-key.is-on { background: var(--tex) 0 0 / var(--tex-size), linear-gradient(var(--wash-ink), var(--wash-ink)), var(--glass-2); }
+@media (hover: hover) { .tg-key:hover { color: var(--ink-max); transform: translateY(-1px); } }
+.tg-key:active { transform: translateY(1px); }
+
+/* —— 点开的那张纸 —— */
+.tg-panel { position: absolute; z-index: 3; right: calc(var(--sar) + clamp(14px, 2.2vw, 30px)); top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 104px + var(--tg-shift, 0px)); width: min(372px, calc(100vw - var(--sal) - var(--sar) - 24px)); max-height: calc(100dvh - var(--sat) - clamp(14px, 2.6vh, 28px) - 104px - var(--tg-shift, 0px) - var(--sab) - 14px); display: flex; flex-direction: column; overflow: hidden; animation: rise 0.45s var(--out) backwards; }
+.tg-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px 18px; border-bottom: 1px solid var(--rule-2); }
+.tg-title { font-family: var(--brush); font-size: 22px; line-height: 1.2; letter-spacing: 0.14em; color: var(--title); white-space: nowrap; }
+.tg-seg { flex: 0 1 150px; min-width: 0; margin-left: auto; border-bottom: 0; }
+.tg-seg > button { font-size: 14.5px; }
+/* 「收」：一圈墨环 */
+.tg-close { position: relative; isolation: isolate; flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--kai); font-size: 15px; color: var(--ink-2); transition: color 0.25s, transform 0.3s var(--out); }
+.tg-close::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--ink-3); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; transition: transform 0.5s var(--out), background-color 0.25s; pointer-events: none; }
+@media (hover: hover) { .tg-close:hover { color: var(--ink-max); } .tg-close:hover::before { background: var(--ink); transform: rotate(-18deg) scale(1.05); } }
+.tg-close:active { transform: scale(0.94); }
+.tg-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; display: grid; align-content: start; gap: 10px; padding: 12px 18px 14px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); }
+.tg-me { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; font-family: var(--kai); font-size: 14.5px; line-height: 1.6; letter-spacing: 0.08em; color: var(--ink-2); }
+.tg-me b { font-weight: 400; margin-left: 0.35em; letter-spacing: 0.12em; color: var(--ink-max); }
+.tg-me small { font-size: 12.5px; letter-spacing: 0.04em; color: var(--ink-2); }
+.tg-me .link { margin-left: auto; }
+.tg-status { font-family: var(--kai); font-size: 13.5px; line-height: 1.75; letter-spacing: 0.06em; color: var(--ink-2); text-wrap: pretty; overflow-wrap: anywhere; }
+.tg-swatch { flex: none; display: inline-block; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 1px var(--rule), inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.tg-list { display: grid; }
+.tg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 7px 0 8px; border-top: 1px solid var(--rule-2); }
+.tg-row.is-hidden .tg-name { color: var(--ink-2); }
+.tg-who { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 1px; min-height: 44px; text-align: left; border-radius: 2px; }
+.tg-who .tg-swatch { grid-row: span 2; }
+.tg-name { font-family: var(--kai); font-size: 15.5px; line-height: 1.35; letter-spacing: 0.1em; color: var(--ink); overflow-wrap: anywhere; }
+.tg-where { font-size: 13px; line-height: 1.45; letter-spacing: 0.04em; color: var(--ink); overflow-wrap: anywhere; }
+@media (hover: hover) { .tg-who:hover .tg-name { color: var(--ink-max); } }
+.tg-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.tg-acts .key, .tg-ph { min-height: 36px; padding: 0 12px; font-size: 14px; letter-spacing: 0.12em; text-indent: 0.12em; }
+.tg-acts .key.is-main { padding: 0 14px; }
+.tg-say { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 2px 20px; }
+.tg-hint { grid-column: 1 / -1; padding-left: 20px; font-size: 12.5px; line-height: 1.6; letter-spacing: 0.04em; color: var(--ink-2); }
+.tg-foot { margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--rule-2); font-size: 12px; line-height: 1.75; letter-spacing: 0.04em; color: var(--ink-2); text-wrap: pretty; overflow-wrap: anywhere; }
+
+/* —— 画里的名签、说的话 —— */
+.tg-tags { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.tg-tag-list { position: absolute; inset: 0; pointer-events: none; }
+.tg-tag { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 1px; opacity: 0; transition: opacity 0.4s; will-change: transform, opacity; pointer-events: none; }
+.tg-tag-key { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 12px; border-radius: 50%; background: radial-gradient(closest-side, var(--wash) 30%, color-mix(in srgb, var(--wash) 72%, transparent) 62%, transparent); font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.16em; text-indent: 0.16em; white-space: nowrap; color: var(--ink); text-shadow: 0 0 3px var(--wash), 0 0 8px var(--wash); pointer-events: none; transition: height 0.3s var(--out), font-size 0.3s var(--out), color 0.25s; }
+.tg-tag-key i { width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--wash); }
+/* 走到了跟前：签实一些，点得着（点了打开同游的那张纸，翻到他） */
+.tg-tag.is-close .tg-tag-key { height: 28px; font-size: 13.5px; color: var(--ink-max); pointer-events: auto; cursor: pointer; }
+.tg-tag.is-close .tg-tag-key::after { content: ''; position: absolute; inset: -9px -6px; }
+.tg.is-act .tg-tag-key, .tg.is-act .tg-tag.is-close .tg-tag-key { pointer-events: none; }
+.tg-line { position: relative; isolation: isolate; max-width: min(16em, 70vw); padding: 3px 14px 4px; font-family: var(--kai); font-size: 15.5px; line-height: 1.5; letter-spacing: 0.14em; text-indent: 0.14em; text-align: center; color: var(--ink-max); animation: tg-say 0.5s var(--out) backwards; }
+.tg-line::before { content: ''; position: absolute; inset: -2px -8px; z-index: -1; background: var(--wash); filter: blur(7px); border-radius: 50%; opacity: 0.95; }
+.tg-line[hidden] { display: none; }
+@keyframes tg-say { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* —— 手机 —— */
+@media (pointer: coarse) {
+  .tg-key { height: 44px; min-width: 64px; }
+  .tg-panel { top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 108px + var(--tg-shift, 0px)); max-height: calc(100dvh - var(--sat) - clamp(14px, 2.6vh, 28px) - 108px - var(--tg-shift, 0px) - var(--sab) - 12px); }
+  .tg-acts .key, .tg-ph, .tg-seg > button { min-height: 44px; }
+  .tg-close { width: 44px; height: 44px; }
+}
+/* 高的手机竖屏：纸停在摇杆上面（开着纸也能推着走） */
+@media (pointer: coarse) and (min-height: 641px) and (max-width: 700px) {
+  .tg-panel { max-height: calc(100dvh - var(--sat) - clamp(14px, 2.6vh, 28px) - 108px - var(--tg-shift, 0px) - var(--sab) - clamp(22px, 6vh, 56px) - clamp(108px, 28vw, 132px) - 16px); }
+}
+@media (max-width: 560px) {
+  .tg-panel { left: calc(var(--sal) + 12px); right: calc(var(--sar) + 12px); width: auto; }
+  .tg-head { padding-left: 16px; }
+  .tg-body { padding: 11px 16px 13px; }
+}
+/* 横着的手机、矮屏：纸从上沿起、靠右（压住时辰那一条与「同游」那一枚——开着时用不着它们，纸上有「收」） */
+@media (max-height: 460px) {
+  .tg-key { top: calc(var(--sat) + clamp(14px, 2.6vh, 28px) + 54px + var(--tg-shift, 0px)); }
+  .tg-key.is-on { opacity: 0; pointer-events: none; }
+  .tg-panel { top: calc(var(--sat) + 8px); width: min(372px, calc(100vw - var(--sal) - var(--sar) - 2 * clamp(14px, 2.2vw, 30px))); max-height: calc(100dvh - var(--sat) - var(--sab) - 16px); }
+  .tg-body { gap: 8px; padding-top: 9px; }
+}

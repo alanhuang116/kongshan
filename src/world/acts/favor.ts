@@ -5,7 +5,9 @@
  *   const F = folkOf(k);
  *   F.level('farmer')              // 0 未识 1 初识 2 相熟 3 相得 4 知交
  *   F.meet('farmer')               // 说了一回话（一天里头一回说话，情分添一分）
- *   F.give('farmer', 'egg')        // 送他一样东西（合心意的添两分，平常的一分；一天只算一回）
+ *   F.plan('farmer', 'egg', 4)     // 送这个会怎样（先不动行囊：递东西的动作要先知道他收不收、交几个）
+ *   F.give('farmer', 'egg', 4)     // 送他四个鸡蛋（合心意的添两分，平常的一分；一天只算一回）
+ *   F.drainGot()                   // 他这一阵给先生的东西（回赠、见面塞的、讨来的、回礼）：已经在行囊里了，说话那一路拿去一样样递过来、到手再浮字
  *   F.favorChoices('farmer', …)    // 此刻跟他说得上的托事（交东西、讨东西、带话、回话、打听人）
  *   folkView(k)                    // 村人簿：全村的人，各人此刻在哪做什么、今天的日程、情分、喜好、托事
  *
@@ -24,6 +26,7 @@ import { PLACES, SITE, placeId } from '../site';
 import { groundAt, standable } from '../walk';
 import { FAVORS, FAVOR_ITEMS, type FavorDef } from '../../data/favors';
 import { META, type Meta } from '../../data/talk2';
+import { backN } from '../../data/itemUses';
 import type { Act } from './types';
 
 defineItems(FAVOR_ITEMS);
@@ -211,6 +214,8 @@ export class FolkBook {
   private cur: { act: Act; t0: number; night: boolean; tea: number; poem: number; brewed: boolean; wrote: boolean } | null = null;
   /** 托事要的东西带上了没有（带上那一刻提一句） */
   private had = new Map<string, boolean>();
+  /** 村里人这一阵给先生的东西：已经进了行囊（先不浮字），等说话那一路真递到先生手里再说「得……」 */
+  private recv: Array<{ item: string; n: number; t: number }> = [];
   private t = 0; private acc = 0;
   constructor(private k: Anlewo) {
     this.m = cleanMem(k.mem.get<unknown>('folk', null));
@@ -253,16 +258,26 @@ export class FolkBook {
   learn(id: string, item: string): boolean { const p = this.own(id); if (p.know.includes(item)) return false; p.know.push(item); this.save(); return true; }
 
   /**
-   * 送他一样东西：东西从行囊里拿出去（推辞的不拿），记下来，添情分；熟了的多半回赠一样。
-   * 是他托你找的那样东西，就当托事办成（kind 为 favor）。
+   * 送这样东西会怎样（先不动行囊、不记账）：递东西的动作要先知道他收不收、到底交几个。
+   * kind 与 give 的一样；n 是真要交出去几个（正是托他找的，就交托事要的那么多：两尾鱼就是两尾）
    */
-  give(id: string, item: string): GiveResult {
+  plan(id: string, item: string, n = 1): { kind: GiveResult['kind']; n: number } {
+    for (const d of FAVORS) if (this.handable(d, id) && this.wants(d, item)) return { kind: 'favor', n: this.needN(d) };
+    const P = person(id);
+    if (P?.no.includes(item) || !this.k.bag.has(item)) return { kind: 'no', n };
+    return { kind: P?.likes.includes(item) ? 'like' : 'ok', n: Math.max(1, Math.min(n, this.k.bag.count(item))) };
+  }
+  /**
+   * 送他东西（n 个，不够就有多少送多少）：从行囊里拿出去（推辞的不拿），记下来，添情分；熟了的多半回赠一样。
+   * 是他托你找的那样东西，就当托事办成（kind 为 favor）。回赠的已经进了行囊，先不浮字（见 drainGot）。
+   */
+  give(id: string, item: string, n = 1): GiveResult {
     const k = this.k, P = person(id);
     for (const d of FAVORS) {
       if (this.handable(d, id) && this.wants(d, item)) { const turn = this.hand(d, item); if (turn) return { kind: 'favor', back: null, turn, learned: false }; }
     }
     if (P?.no.includes(item) || !k.bag.has(item)) return { kind: 'no', back: null, turn: null, learned: false };
-    k.bag.take(item, 1, { verb: '送出' });
+    k.bag.take(item, Math.max(1, Math.min(Math.floor(n) || 1, k.bag.count(item))), { verb: '送出' });
     const p = this.own(id), like = !!P?.likes.includes(item);
     p.gift[item] = (p.gift[item] ?? 0) + 1;
     if (p.gd !== this.day) { p.gd = this.day; this.addV(id, like ? 2 : 1); }
@@ -271,22 +286,41 @@ export class FolkBook {
     let back: GiveResult['back'] = null;
     const lv = this.level(id), gives = (P?.gives ?? []).filter((g) => ITEMS[g] && g !== item);
     if (lv >= 2 && gives.length && p.rd !== this.day && Math.random() < (like ? 0.75 : 0.3)) {
-      const g = gives[Math.floor(Math.random() * gives.length)];
-      if (k.bag.add(g, 1) > 0) { back = { item: g, n: 1 }; p.got[g] = (p.got[g] ?? 0) + 1; p.rd = this.day; }
+      const g = gives[Math.floor(Math.random() * gives.length)], got = this.receive(g, backN(g));
+      if (got > 0) { back = { item: g, n: got }; p.got[g] = (p.got[g] ?? 0) + 1; p.rd = this.day; }
     }
     this.save();
     return { kind: like ? 'like' : 'ok', back, turn: null, learned };
   }
-  /** 相得以上的人，见面就塞一样东西给你（一天至多一回）：给了返回那样东西的 id */
+  /** 相得以上的人，见面就塞一样东西给你（一天至多一回）：给了返回那样东西的 id（已在行囊里，先不浮字） */
   treat(id: string): string | null {
     const P = person(id), p = this.own(id);
     if (this.level(id) < 3 || p.rd === this.day || Math.random() > 0.45) return null;
     const gives = (P?.gives ?? []).filter((g) => ITEMS[g]);
     if (!gives.length) return null;
     const g = gives[Math.floor(Math.random() * gives.length)];
-    if (this.k.bag.add(g, 1) <= 0) return null;
+    if (this.receive(g, backN(g)) <= 0) return null;
     p.rd = this.day; p.got[g] = (p.got[g] ?? 0) + 1; this.save();
     return g;
+  }
+  /** 村里人给先生的东西收进行囊：先不浮「得……」，记下来等说话那一路递到手里（返回收了几个） */
+  private receive(item: string, n: number): number {
+    const got = this.k.bag.add(item, n, { quiet: true, later: true });
+    if (got > 0) this.recv.push({ item, n: got, t: this.t });
+    return got;
+  }
+  /** 交出这一阵村里人给先生的东西（说话那一路拿去一样样递过来；递到手时它调 bag.announce） */
+  drainGot(): Array<{ item: string; n: number }> {
+    const out = this.recv.map(({ item, n }) => ({ item, n }));
+    this.recv.length = 0;
+    return out;
+  }
+  /** 托事里「交东西」那一枚签（fv:某事:hand）要交的是哪一样、几个；此刻交不了是 null */
+  handInfo(cmd: string, id: string): { item: string; n: number } | null {
+    const [, fid, what] = cmd.split(':'), d = this.def(fid);
+    if (!d || what !== 'hand' || !this.handable(d, id)) return null;
+    const item = this.needItem(d);
+    return item ? { item, n: this.needN(d) } : null;
   }
 
   // —— 托事 ——
@@ -408,7 +442,7 @@ export class FolkBook {
     }
     if (what === 'hand') return this.hand(d);
     if (what === 'fetch' && g.kind === 'fetch') {
-      if (k.bag.add(g.item, g.n) <= 0) return { said: fill(g.ask), text: '先生手上满了，腾出空再来拿。' };
+      if (this.receive(g.item, g.n) <= 0) return { said: fill(g.ask), text: '先生手上满了，腾出空再来拿。' };
       this.m.f[fid] = { s: 'half', d: this.day }; this.addV(id, 1); this.save();
       if (d.note.half) k.note(fill(d.note.half), 'favor');
       return { said: fill(g.ask), text: fill(g.reply) };
@@ -450,7 +484,7 @@ export class FolkBook {
     const p = this.own(d.from);
     if (!p.help.includes(d.id)) p.help.push(d.id);
     this.addV(d.from, 3);
-    for (const g of d.gift ?? []) if (ITEMS[g.item]) { this.k.bag.add(g.item, g.n); p.got[g.item] = (p.got[g.item] ?? 0) + g.n; }
+    for (const g of d.gift ?? []) if (ITEMS[g.item]) { this.receive(g.item, g.n); p.got[g.item] = (p.got[g.item] ?? 0) + g.n; }
     this.save();
     this.k.note(fill(d.note.done), 'favor');
     this.k.log({ kind: 'favor', text: fill(d.name) });
@@ -462,6 +496,8 @@ export class FolkBook {
     if (this.acc < 0.25) return;
     this.acc = 0;
     const k = this.k, a = k.act;
+    // 村里人给的东西没人拿去递（不在说话里给的）：过一会儿照常浮「得……」
+    if (this.recv.length && this.t - this.recv[0].t > 1.2) { for (const r of this.drainGot()) k.bag.announce(r.item, r.n); }
     if (a !== this.cur?.act) {
       if (this.cur) this.left(this.cur);
       this.cur = a ? { act: a, t0: this.t, night: k.atmos.night > 0.5, tea: k.bag.count('tea'), poem: k.bag.count('poem'), brewed: false, wrote: false } : null;
