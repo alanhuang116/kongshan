@@ -1,0 +1,23 @@
+# 加进 /etc/caddy/Caddyfile 里现有的 kongshan 那一块（kongshan.169-58-39-104.nip.io { … }）里头，
+# 放在 handle /ws* 旁边、file_server 之前；先备份，在 /tmp 的副本上 caddy validate，再 systemctl reload caddy。
+# 同步服务只听 127.0.0.1:3830（默认），这里把 /api/anlewo 与它下面的一切转过去；别的路径照旧走 file_server。
+# 注意匹配式用 /api/anlewo*（**不是** /api/anlewo/*）：后者匹配不到没有尾斜杠的 /api/anlewo，
+# 那种请求会落到 file_server 上回一整页 404 HTML。
+	handle /api/anlewo* {
+		reverse_proxy 127.0.0.1:3830
+	}
+
+# 加好以后整块大致是这样（root、缓存头、manifest 的类型都是原来就有的，不动）：
+#
+# kongshan.169-58-39-104.nip.io {
+# 	root * /opt/yiwen/kongshan/current
+# 	encode zstd gzip
+# 	handle /ws* {
+# 		reverse_proxy 127.0.0.1:3820
+# 	}
+# 	handle /api/anlewo* {
+# 		reverse_proxy 127.0.0.1:3830
+# 	}
+# 	…（原来的 header 几行）…
+# 	file_server
+# }

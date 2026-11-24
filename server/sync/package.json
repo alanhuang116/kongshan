@@ -1,0 +1,19 @@
+{
+  "name": "kongshan-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "安乐窝的同步与身份对接服务：存档整包 + 笔迹 + 匿名凭证，挂在 /api/anlewo。与同游的 relay 完全独立（不同进程、不同依赖、不同 unit）。",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.mjs",
+    "migrate": "node migrate.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "redis": "^4.7.0"
+  }
+}

@@ -3,6 +3,12 @@ import App from './app/App';
 
 createRoot(document.getElementById('root')!).render(<App />);
 
+// 同步（存档 + 笔迹）：关着的时候这一行什么都不做——连这个模块都不会加载
+if (import.meta.env.VITE_ANLEWO_SYNC === '1') void import('./app/sync').then((m) => m.start());
+
+// 首页五连击调试面板：仅开发态加载；正式构建两个条件都为假，整块连模块一起被摇掉
+if (import.meta.env.DEV || import.meta.env.VITE_ANLEWO_DEV === '1') void import('./app/sync/devtools').then((m) => m.mount());
+
 // 正式版才装离线缓存（开发时会碍事）
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

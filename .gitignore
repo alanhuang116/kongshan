@@ -2,5 +2,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env*
+# 模板可以进仓库（只有占位符）；真实的 .env.local / .env.*.local 仍旧被上面的 .env* 挡住
+!.env.example
+!**/.env.example
 .vite/
 shots/
+# IDE
+.idea/

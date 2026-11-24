@@ -1,0 +1,45 @@
+# /etc/systemd/system/yiwen-anlewo-sync.service —— 安乐窝的同步（存档 + 笔迹）：只听本机 3830，由 Caddy 把 /api/anlewo/* 转进来
+# 与同游的 relay（yiwen-kongshan-relay）是两个进程、两份配置：这个要连库，那个什么都不存。
+[Unit]
+Description=yiwen anlewo sync (安乐窝·存档与笔迹)
+After=network.target
+
+[Service]
+Type=simple
+User=kongshan
+Group=kongshan
+WorkingDirectory=/opt/yiwen/kongshan-sync/current
+Environment=NODE_ENV=production
+# 真实配置（含连接串）只在这个文件里：chmod 600、属主 kongshan、不在版本库里
+EnvironmentFile=/opt/yiwen/kongshan-sync/current/.env.local
+# 服务器上的 node 在 /usr/local/bin（与别的几个单元一致；用发行版包则是 /usr/bin/node）
+ExecStart=/usr/local/bin/node /opt/yiwen/kongshan-sync/current/index.mjs
+Restart=always
+RestartSec=2
+# 停的时候先把在途请求收完（进程自己也监听 SIGTERM，最多等 3s），超时由 systemd 收尾
+KillSignal=SIGTERM
+TimeoutStopSec=10
+MemoryMax=200M
+TasksMax=64
+LimitNOFILE=4096
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+ReadWritePaths=/var/log/yiwen
+StandardOutput=append:/var/log/yiwen/yiwen-anlewo-sync.log
+StandardError=append:/var/log/yiwen/yiwen-anlewo-sync.log
+
+[Install]
+WantedBy=multi-user.target
