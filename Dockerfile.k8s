@@ -1,0 +1,15 @@
+# 安乐窝正式镜像：同步模式前端构建 + nginx 静态站
+FROM docker.m.daocloud.io/library/node:22-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund --registry=https://registry.npmmirror.com
+COPY . .
+# 同步模式：API 走同源 /api/anlewo（由 Ingress 反代到 anlewo-sync）
+ENV VITE_ANLEWO_SYNC=1
+ENV VITE_ANLEWO_SYNC_API=
+RUN npm run build
+
+FROM docker.m.daocloud.io/library/nginx:stable-alpine
+COPY deploy/k8s/nginx-kongshan.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
