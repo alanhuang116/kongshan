@@ -7,8 +7,7 @@
  *     前端只拿到「我是谁」（`{id,name,email}`）；
  *   · 用安乐窝自己的纸墨样式（内联样式，不新增全局类名，避免碰玩法侧的样式表）。
  *
- * 由 `index.ts` 在需要时打开（如用户主动点击「登录/同步」）。登录成功后起同步。
- * 点击遮罩层可关闭弹窗；未登录时以访客模式进入，本地存档照旧。
+ * 未登录时由 `index.ts` 打开；登录成功后才起同步。点击遮罩层可关闭弹窗。
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
