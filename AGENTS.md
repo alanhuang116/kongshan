@@ -49,6 +49,12 @@
 - 合并后逐路径核对 `db/**`、`server/sync/**`、`docs/DB_SPLIT_FINAL.md`、`src/app/sync/**`、`tests/sync-*.test.ts`：`git diff <合并前提交> -- <上面这些路径>` 必须为空。出现冲突时保留同步/数据库一侧并逐行核对，**不许整段接受 main**。
 - `db/V1__anlewo_core.sql`、`V2__anlewo_sync_key.sql`、`V3__anlewo_payload_limit.sql` 不得改名、删减、重排；`.env.local`、口令、连接串不得进版本库。
 - 合并后跑 `npm run typecheck`、`npm test`，并对本地库做一次结构核对（6 张 `anlewo_*` 表、存档上限 1MB）或请求 `/api/anlewo/health`。
+
+### 分支纪律（2026-11-25 起）
+- **本地开发不合并 `main`**：`main` 只作为上游玩法来源，开发分支（`dev_link_portal` 及后续 `dev_*`）不向 `main` 合并、不推送 `main`。
+- **正式环境只发 `master`**：开发分支验证通过后合并到 `master`；正式 Jenkins 任务 `kongshan` 只从 `master` 构建，发布前确认 `master` 已包含本次上线提交。
+- 发布从 `master` 最新提交全量构建（静态站 + 同步服务两段），不从开发分支直接发正式。
+
 - **main 新增存档字段**（`Saved` 顶层字段或 `world` 之外的结构变化）：先给方案再动手——是否升版本（`v`）、老档迁移怎么写、`payload` 上限与服务端校验是否要跟着改、`docs/DB_SPLIT_FINAL.md` 怎么更新；方案确认后改代码，不许合完就当没看见。
 - **main 新增数据表或表字段**：先给方案（表用途、与现有 6 张表的关系、索引/约束、是否涉及身份锚点），再按 `V1→V2→V3` 的顺序续写幂等脚本 `db/V4__*.sql`（可重复执行、`IF NOT EXISTS`/`DROP … IF EXISTS` 先删后加），把建表/改表语句一并提交。
 - 新增的 SQL **必须在本地 `yiwen_anlewo` 库真实执行并验收**（表、字段、约束、索引都在），验收结果写进合并说明；只改代码不建库、或把 DDL 只写在文档里，都算没做完。
@@ -197,6 +203,7 @@ curl -s http://127.0.0.1:3830/api/anlewo/health
 4. 没有提交 `.env*`、口令、连接串、`dist/`；没有碰第 1 节列出的禁改文件；
 5. 改动只在你自己的分支；合并冲突时保留同步入口那两行；
 6. 从 `main` 合并进带数据库/同步的分支后，按第 1 节「合并纪律」逐路径核对，数据库与同步部分零改动；
-7. main 带来的新存档字段或新数据表，已先给方案、再给 `db/V4__*.sql` 建表/改表语句，并在本地 `yiwen_anlewo` 库建好验收。
+7. main 带来的新存档字段或新数据表，已先给方案、再给 `db/V4__*.sql` 建表/改表语句，并在本地 `yiwen_anlewo` 库建好验收；
+8. 没有把开发分支合并回 `main`；需要上线时只合并到 `master`，并从 `master` 发正式。
 
 **如果以上任何一条做不到，停下来问我，不要自己放宽标准。**
