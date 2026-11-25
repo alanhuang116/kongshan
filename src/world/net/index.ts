@@ -22,7 +22,7 @@ import { Remote, type Line } from './remote';
 import type { State, WireIn } from './wire';
 import { cnNum, farText, labels, relayUrl } from './words';
 
-export { DEFAULT_RELAY, cnNum, farText, labels, relayUrl } from './words';
+export { DEFAULT_RELAY, SAME_ORIGIN_HOSTS, defaultRelay, cnNum, farText, labels, relayUrl } from './words';
 
 /** 作揖、说话、同行要走到多近（米；中转那边宽一些，按 NEAR） */
 export const CLOSE = 12;
@@ -81,8 +81,8 @@ export class Together {
   /** 没有界面（?ui=0、world.html 那个台子）又明说了要连：画一淡开就算走动着 */
   private autoPlay: boolean;
 
-  constructor(private k: Anlewo, loc: { search: string; dev: boolean; webdriver: boolean; path?: string }) {
-    const r = relayUrl(loc.search, loc.dev, loc.webdriver);
+  constructor(private k: Anlewo, loc: { search: string; dev: boolean; webdriver: boolean; path?: string; host?: string; secure?: boolean }) {
+    const r = relayUrl(loc.search, loc.dev, loc.webdriver, loc.host, loc.secure);
     this.url = r.url; this.explicit = r.explicit;
     this.autoPlay = r.explicit && (new URLSearchParams(loc.search).get('ui') === '0' || /world\.html$/.test(loc.path ?? ''));
     this.budget = k.q.tier === 'low' || k.q.mobile ? 3 : 5;
@@ -393,7 +393,7 @@ export const getTogether = () => current;
 export function startNet(k: Anlewo): Together {
   current?.dispose();
   const loc = typeof location === 'undefined' ? null : location;
-  const tg = new Together(k, { search: loc?.search ?? '', path: loc?.pathname ?? '', dev: !!import.meta.env?.DEV, webdriver: typeof navigator !== 'undefined' && !!navigator.webdriver });
+  const tg = new Together(k, { search: loc?.search ?? '', path: loc?.pathname ?? '', dev: !!import.meta.env?.DEV, webdriver: typeof navigator !== 'undefined' && !!navigator.webdriver, host: loc?.host ?? '', secure: loc?.protocol === 'https:' });
   current = tg;
   // 出错三次就停掉它自己（断开连接：别人那边他就走了，不会站成一个不动的人），园子照常
   let errs = 0;

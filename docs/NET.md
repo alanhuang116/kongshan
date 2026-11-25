@@ -23,8 +23,10 @@
 
 ## 连哪里
 
-- 正式的一版（打包出来的，Pages 与服务器同一份）默认连 `wss://kongshan.169-58-39-104.nip.io/ws`（`words.ts` 的 `DEFAULT_RELAY`）。
-- 网址：`?ws=ws://localhost:3820/ws` 连本机的中转（试的时候）；`?ws=0` 不连；`?ws=1` 连默认的。
+- **国内正式站（`https://anlewo.iwenxuai.com`，K8s）连同源的 `wss://anlewo.iwenxuai.com/ws`**：Ingress 把 `/ws` 反代到集群里的 `kongshan-relay`（`deploy/k8s/relay.yaml.tmpl`），不出国，延迟二三十毫秒。
+- GitHub Pages 那一份与法国服务器上的那一份仍连法国的中转 `wss://kongshan.169-58-39-104.nip.io/ws`（`words.ts` 的 `DEFAULT_RELAY`），在法国那台机器的 Caddy 后面。
+- 默认连哪个由 `words.ts` 的 `defaultRelay(host, secure)` 定：网址的 host 在 `SAME_ORIGIN_HOSTS`（目前只有 `anlewo.iwenxuai.com`）里就同源，否则连法国的。加一个新的域名时两边都要动：这里加进名单，中转的 `ORIGINS` 也要放行（`server/relay.mjs`）。
+- 网址：`?ws=ws://localhost:3820/ws` 连本机的中转（试的时候）；`?ws=0` 不连；`?ws=1` 连默认的（在哪个站上就是哪个站的默认）。
 - **开发服务器（vite dev）与自动测试（`navigator.webdriver`）默认不连**，要连就在网址上给 `?ws=`：几个人同时在一台机器上跑检查，连不上线上中转时浏览器会在控制台报一句，别人的检查是收报错的。不连的时候界面上同游的那一枚也不出。
 - 题名页上不连：走进园子（界面到了走动的那一段，plugins 画出来）才连。`?ui=0` 或 `world.html` 又明说了 `?ws=` 的，画一淡开就连（截图用）。
 

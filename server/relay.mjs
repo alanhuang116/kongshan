@@ -9,7 +9,7 @@
  *   KS_RELAY_ROOM=24        一间屋子至多几人
  *   KS_RELAY_MAX=240        总共至多几个连接
  *   KS_RELAY_PER_IP=12      同一个地址至多几个连接
- *   KS_RELAY_ORIGINS=…      另外放行的来源（逗号分开，如 http://10.0.0.10:3817）；两个正式的站与 localhost、127.0.0.1 总是放行
+ *   KS_RELAY_ORIGINS=…      另外放行的来源（逗号分开，如 http://10.0.0.10:3817）；下面那几个正式的站与 localhost、127.0.0.1 总是放行
  *   KS_RELAY_LOG=1          多打几行日志（谁连、谁断，不记地址）
  *
  * 地址：GET /health（与 /ws/health）回人数；/ws 是 WebSocket。别的一律 404。
@@ -24,7 +24,8 @@ const int = (v, d, lo, hi) => { const n = Number.parseInt(v ?? '', 10); return N
 const PORT = int(env.KS_RELAY_PORT, 3820, 1, 65535);
 const HOST = env.KS_RELAY_HOST || '127.0.0.1';
 const VERBOSE = env.KS_RELAY_LOG === '1';
-const ORIGINS = new Set(['https://alanhuang116.github.io', 'https://kongshan.169-58-39-104.nip.io', ...(env.KS_RELAY_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean)]);
+// 放行的来源：GitHub Pages 那一份、法国那一份、国内正式 K8s 那一份（anlewo.iwenxuai.com，同源 /ws 反代到这里）
+const ORIGINS = new Set(['https://alanhuang116.github.io', 'https://kongshan.169-58-39-104.nip.io', 'https://anlewo.iwenxuai.com', ...(env.KS_RELAY_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean)]);
 const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/;
 const originOk = (o) => typeof o === 'string' && (ORIGINS.has(o) || LOCAL.test(o));
 

@@ -1,0 +1,115 @@
+# 安乐窝「同游」中转（Deployment + Service）
+#
+# 网页那一半是静态站（deploy/k8s/deployment.yaml.tmpl），这一半只做一件事：同屋的人互相看得见、作揖、说一句话。
+# Ingress 把 https://anlewo.iwenxuai.com/ws 转到本 Service 的 3820（见 deployment.yaml.tmpl 的 `/ws` 那一条），
+# 前端在 anlewo.iwenxuai.com 上默认连同源的 wss://<本站>/ws（src/world/net/words.ts 的 defaultRelay）。
+#
+# 不存任何东西、没有任何密钥：进程停了，屋子与人都没了，客户端过一会儿自己重连（1、2、4……至多 60 秒）。
+#
+# 为什么只有 1 个副本：屋子（至多 24 人）在进程内，多副本会把同一时刻进来的人分到不同的 Pod，
+# 彼此看不见。真要扩容，得先按屋子把人粘到同一个 Pod（或改成分区），不是把 replicas 调大就行。
+# 单副本 240 连接的上限对现在的人数足够（超过就分屋子，见 server/core.mjs）。
+#
+# 关于同一个地址的连接数上限（KS_RELAY_PER_IP）：集群里连接由入口 nginx → Ingress → 本 Pod，
+# 中转看到的对端是 Ingress 的地址而不是玩家的地址（relay.mjs 的 ipOf 只在 loopback 时才信 X-Forwarded-For），
+# 所以这里把它放到与总量同宽——否则「同一个地址至多 12 个」会把所有玩家算成一个人，第 13 位就被挡在门外。
+# 真正挡滥用的仍是：一间屋子 24 人、总量 240、每个连接每秒 25 条 / 位置每秒 12 条、消息至多 512 字节。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kongshan-relay
+  namespace: yiwen
+  labels:
+    app: kongshan-relay
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: kongshan-relay
+  template:
+    metadata:
+      labels:
+        app: kongshan-relay
+    spec:
+      automountServiceAccountToken: false
+      # 停的时候先给各人发「要走了」（1001）再退出，客户端不会看到一次无由的断线
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: yiwen/kongshan-relay:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3820
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            # 集群里必须听全部网卡（本机那份默认只听 127.0.0.1，由 Caddy 同机反代）
+            - name: KS_RELAY_HOST
+              value: 0.0.0.0
+            - name: KS_RELAY_PORT
+              value: "3820"
+            - name: KS_RELAY_ROOM
+              value: "24"
+            - name: KS_RELAY_MAX
+              value: "240"
+            # 见文件头：集群里对端地址是 Ingress 的，按地址分桶会把所有人算成一个
+            - name: KS_RELAY_PER_IP
+              value: "240"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kongshan-relay
+  namespace: yiwen
+spec:
+  type: ClusterIP
+  selector:
+    app: kongshan-relay
+  ports:
+    - name: http
+      port: 3820
+      targetPort: http
+      protocol: TCP

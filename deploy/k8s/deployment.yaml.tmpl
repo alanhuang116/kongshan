@@ -105,6 +105,14 @@ spec:
                 name: anlewo-sync
                 port:
                   number: 3830
+          # 同游的中转（deploy/k8s/relay.yaml.tmpl）：前端在 anlewo.iwenxuai.com 上同源连着它
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: kongshan-relay
+                port:
+                  number: 3820
           - path: /
             pathType: Prefix
             backend:

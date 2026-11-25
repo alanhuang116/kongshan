@@ -291,6 +291,22 @@ describe('客户端：连哪里、怎么称呼', () => {
     expect(relayUrl('?ws=javascript:alert(1)', false, false).url).toBeNull();
     expect(relayUrl('?ws=wss://a.b/ws"><x>', false, false).url).toBeNull();
   });
+  it('国内正式站连同源的 /ws（Ingress 反代到 kongshan-relay），别处仍连法国的中转', () => {
+    // 网址上给了 host：anlewo.iwenxuai.com 走同源，GitHub Pages、法国、别的域名都还是默认的
+    expect(relayUrl('', false, false, 'anlewo.iwenxuai.com')).toEqual({ url: 'wss://anlewo.iwenxuai.com/ws', explicit: false });
+    expect(relayUrl('', false, false, 'alanhuang116.github.io')).toEqual({ url: DEFAULT_RELAY, explicit: false });
+    expect(relayUrl('', false, false, 'kongshan.169-58-39-104.nip.io')).toEqual({ url: DEFAULT_RELAY, explicit: false });
+    expect(relayUrl('', false, false, 'evil-anlewo.iwenxuai.com.evil.tld')).toEqual({ url: DEFAULT_RELAY, explicit: false });
+    // 明文（本机用 IP 试）不该拼出 wss://anlewo.iwenxuai.com 以外的怪东西：http 就是 ws
+    expect(relayUrl('', false, false, 'anlewo.iwenxuai.com', false).url).toBe('ws://anlewo.iwenxuai.com/ws');
+    // ?ws=1、?ws= 与「没说」同一个默认
+    expect(relayUrl('?ws=1', false, false, 'anlewo.iwenxuai.com').url).toBe('wss://anlewo.iwenxuai.com/ws');
+    expect(relayUrl('?ws=', false, false, 'anlewo.iwenxuai.com').url).toBe('wss://anlewo.iwenxuai.com/ws');
+    // 明说了别的地址就连那个，不受上面这一条影响
+    expect(relayUrl('?ws=ws://localhost:3820/ws', false, false, 'anlewo.iwenxuai.com').url).toBe('ws://localhost:3820/ws');
+    // 开发服务器照旧不连（哪怕在 anlewo.iwenxuai.com 上）
+    expect(relayUrl('', true, false, 'anlewo.iwenxuai.com').url).toBeNull();
+  });
   it('中文数、离多远', () => {
     expect([0, 3, 10, 12, 20, 35, 99].map(cnNum)).toEqual(['零', '三', '十', '十二', '二十', '三十五', '九十九']);
     expect(farText(1, 2)).toBe('就在身边');

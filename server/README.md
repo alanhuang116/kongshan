@@ -46,7 +46,7 @@ node server/check.mjs                         # 另开一个窗口：ok … 进�
 
 消息的样子见 `core.mjs`（客户端那边 `src/world/net/wire.ts` 一一对应）。
 
-## 部署（2026-11-24 已上线，b7c4cd1；再部署要用户当次明说）
+## 部署（法国服务器；2026-11-24 已上线，b7c4cd1；再部署要用户当次明说）
 
 服务器（与一念、时藏等同机）：用户 `kongshan`，代码在 `/opt/yiwen/kongshan-relay/<commit>/`，`current` 指着当前那一版；systemd `yiwen-kongshan-relay.service` 只听 `127.0.0.1:3820`；Caddy 在现有的 kongshan 站点那一块里把 `/ws*` 转过去（加在 `encode` 那一行之后；加之前的原文件备份为 `/etc/caddy/Caddyfile.bak-20261124-135459`）。静态站那一半（`/opt/yiwen/kongshan/current`）照旧。服务器上的 node 是 22。
 
@@ -89,6 +89,46 @@ curl -s -o /dev/null -w "%{http_code}\n" https://kongshan.169-58-39-104.nip.io/ 
 更新：解到新的 `/opt/yiwen/kongshan-relay/<新c>/`，`npm ci --omit=dev`，`ln -sfn` 指过去，`systemctl restart yiwen-kongshan-relay`（各人断一下，一两秒后自己连回来）。单元改了才要重新 `cp` 与 `daemon-reload`。回滚：`current` 指回旧目录再 restart。旧目录留两三个。
 
 `proto.json` 改了（单子添了几项）：中转与网页最好同时更新——中转先更新也不妨（旧网页报的序号仍在范围里）；网页先更新、用了新添的序号，旧中转会当作不对丢掉那一条。只有改了消息的样子才把 `v` 加一（旧网页会被请去重开）。
+
+## 国内 K8s（集群里的那一份，2026-11-25 起）
+
+国内正式站 `https://anlewo.iwenxuai.com` 上的网页连同源的 `wss://anlewo.iwenxuai.com/ws`，由 Ingress 反代到集群里的中转，不绕法国。两个（法国、国内）各连各的，互不相干；`proto.json` 的 `v` 两边要一致，否则会互相踢（各自只服务自己那个站的人，所以只要两端都从同一个 commit 发布就不会不一致）。
+
+| 文件 | 管什么 |
+| --- | --- |
+| `server/relay.Dockerfile` | 镜像 `yiwen/kongshan-relay:<tag>`：`node:22-bookworm-slim` + `ws`，构建上下文是仓库根 |
+| `deploy/k8s/relay.yaml.tmpl` | Deployment + Service（`kongshan-relay:3820`，1 副本，探活 `/health`） |
+| `deploy/k8s/deployment.yaml.tmpl` | 静态站那一份清单，Ingress 里多了 `/ws` → `kongshan-relay:3820` |
+| `src/world/net/words.ts` | 前端在 `anlewo.iwenxuai.com` 上默认连同源（`SAME_ORIGIN_HOSTS`） |
+
+发布（Worker `154.8.235.34` 上，两段依次）：
+
+```bash
+# 镜像清单要认这个应用：/opt/yiwen/bin/yiwen-release-app.sh 里要有 kongshan-relay 那一段
+sudo /opt/yiwen/bin/yiwen-release-app.sh kongshan-relay   # 先：Deployment + Service
+sudo /opt/yiwen/bin/yiwen-release-app.sh kongshan         # 后：静态站（这次带上了 /ws 那一条 Ingress）
+```
+
+Jenkins 上的任务名同为 `kongshan-relay`（参数与 `kongshan` 一样：`BRANCH=master`、`EXPECTED_COMMIT` 传完整 SHA）。
+
+验收（本机）：
+
+```bash
+curl -s https://anlewo.iwenxuai.com/ws/health                     # {"ok":true,"v":1,...}：反代通了
+curl -sI -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  -H 'Origin: https://anlewo.iwenxuai.com' https://anlewo.iwenxuai.com/ws   # 101 Switching Protocols
+curl -s https://anlewo.iwenxuai.com/ | grep -o '/assets/index-[^"]*\.js'   # 取包，确认里面有 SAME_ORIGIN 那一支
+```
+
+再开两页（一页普通、一页隐身）看右上「同游」那一枚：两人互相看得见、走得跟得上。
+
+集群里的几处与法国不同：
+
+- **`KS_RELAY_HOST=0.0.0.0`**：本机那份默认只听 `127.0.0.1`（由 Caddy 同机反代），集群里没有同机反代，必须听全部网卡。
+- **只有 1 个副本**：屋子在进程内，多副本会把同一时刻进来的人分到不同 Pod，互相看不见。要扩容得先按屋子粘人，不是改 `replicas` 就行。
+- **`KS_RELAY_PER_IP=240`**（与总量同宽，等于关掉按地址分桶）：集群里连接经入口 nginx → Ingress → Pod，中转看到的是 Ingress 的地址而不是玩家的地址（`ipOf` 只在 loopback 时才信 `X-Forwarded-For`），保留「同一地址 12 个」会把所有玩家算成一个人，第 13 位就被挡在门外。挡滥用的仍是屋子 24、总量 240、每连接每秒 25 条、消息至多 512 字节。要在集群里恢复按玩家地址分桶，得先让中转能拿到可信的真实地址（例如 Ingress 侧写一个可信头，或给中转配 `use-forwarded-headers` 白名单），这是另一件事。
+- **放行的来源**：`relay.mjs` 的 `ORIGINS` 里已有 `https://anlewo.iwenxuai.com`；换域名时改那一行（或给 `KS_RELAY_ORIGINS`）。
 
 ## 还没有的
 
