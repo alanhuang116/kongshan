@@ -23,6 +23,15 @@ export interface LinkResult {
 
 /** 一般的失败：这一回没成，但没什么要商量的（网络、401、503…） */
 type Fail = { ok: false; status: number; code: string; conflict?: false };
+
+/** 统一身份里的这个人（只带展示所需的三个字段） */
+export interface IdentityUser {
+  id: string;
+  name: string;
+  email: string;
+}
+export type IdentityResult = { ok: true; user: IdentityUser; bound: boolean } | Fail;
+export type SessionResult = { ok: true; user: IdentityUser } | Fail;
 export type RegisterResult = { ok: true; data: LinkResult } | Fail;
 export type PullResult = { ok: true; data: RemoteSave | null } | Fail;
 /**
@@ -86,7 +95,10 @@ export class SyncClient {
   }
 
   /** 一次请求：把状态码与解析后的 JSON 交回去，其余一概不管（不抛） */
-  private async call(path: string, init: { method: string; body?: unknown; headers?: Record<string, string> }): Promise<CallResult> {
+  private async call(
+    path: string,
+    init: { method: string; body?: unknown; headers?: Record<string, string>; credentials?: RequestCredentials },
+  ): Promise<CallResult> {
     if (!this.fetchImpl) return { status: 0, body: { error: 'no_fetch' } };
     const headers: Record<string, string> = {
       'x-anlewo-uid': this.uid,
@@ -103,7 +115,8 @@ export class SyncClient {
       headers,
       body: payload,
       cache: 'no-store',
-      credentials: 'omit',
+      // 只有统一身份那几条要带 cookie（SSO 票据是 httpOnly 的）；存档/笔迹照旧不带
+      credentials: init.credentials ?? 'omit',
       signal: timeoutSignal(this.timeoutMs),
     });
     let text = '';
@@ -126,7 +139,7 @@ export class SyncClient {
   /** 统一收口：网络层的意外都变成本地能认的 fail，界面不受影响 */
   private async safe(
     path: string,
-    init: { method: string; body?: unknown; headers?: Record<string, string> },
+    init: { method: string; body?: unknown; headers?: Record<string, string>; credentials?: RequestCredentials },
     what: string,
   ): Promise<CallResult | Fail> {
     try {
@@ -147,6 +160,76 @@ export class SyncClient {
     const body = out.body as { schema?: { payloadLimitBytes?: unknown } } | null;
     const n = body?.schema?.payloadLimitBytes;
     return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** GET /health 里的 identity 开关：关着就整段跳过登录（不弹窗、不请求身份服务） */
+  async identityOn(): Promise<boolean> {
+    const out = await this.safe('/health', { method: 'GET' }, '读身份开关');
+    if ('ok' in out || out.status !== 200) return false;
+    const body = out.body as { identity?: unknown } | null;
+    return body?.identity === 'on';
+  }
+
+  /**
+   * GET /identity/session：这枚 SSO cookie 是谁。
+   * 401 是常态（没登录过），不当错误；网络不通也按「没登录」处理，界面自己再去问。
+   */
+  async identitySession(): Promise<SessionResult> {
+    const out = await this.safe('/identity/session', { method: 'GET', credentials: 'same-origin' }, '读登录态');
+    if ('ok' in out) return out;
+    const body = out.body as { user?: Partial<IdentityUser> } | null;
+    const u = body?.user;
+    if (out.status === 200 && u && typeof u.id === 'string') {
+      return { ok: true, user: { id: u.id, name: String(u.name ?? ''), email: String(u.email ?? '') } };
+    }
+    const code = (out.body as { error?: string } | null)?.error ?? `http_${out.status}`;
+    return { ok: false, status: out.status, code };
+  }
+
+  /** POST /identity/login：密码或邮箱验证码；成功后服务端已写好 SSO cookie */
+  async identityLogin(input: { email: string; password?: string; code?: string }): Promise<IdentityResult> {
+    const out = await this.safe('/identity/login', { method: 'POST', body: input, credentials: 'same-origin' }, '登录');
+    return this.identityDone(out);
+  }
+
+  /** POST /identity/signup：留名（称呼 + 邮箱 + 密码 + 验证码） */
+  async identitySignup(input: { name: string; email: string; password: string; code: string }): Promise<IdentityResult> {
+    const out = await this.safe('/identity/signup', { method: 'POST', body: input, credentials: 'same-origin' }, '留名');
+    return this.identityDone(out);
+  }
+
+  /** POST /identity/code：发验证码（kind=login|signup） */
+  async identitySendCode(kind: 'login' | 'signup', email: string): Promise<{ ok: true } | Fail> {
+    const out = await this.safe('/identity/code', { method: 'POST', body: { kind, email }, credentials: 'same-origin' }, '发验证码');
+    if ('ok' in out) return out;
+    if (out.status === 200) return { ok: true };
+    const code = (out.body as { error?: string } | null)?.error ?? `http_${out.status}`;
+    return { ok: false, status: out.status, code };
+  }
+
+  /** POST /identity/logout：清掉父域 cookie */
+  async identityLogout(): Promise<{ ok: true } | Fail> {
+    const out = await this.safe('/identity/logout', { method: 'POST', body: {}, credentials: 'same-origin' }, '退出');
+    if ('ok' in out) return out;
+    if (out.status === 200) return { ok: true };
+    return { ok: false, status: out.status, code: (out.body as { error?: string } | null)?.error ?? `http_${out.status}` };
+  }
+
+  /** 登录/留名共用的收口：只要 {user, bound}，别的一概不往界面带 */
+  private identityDone(out: CallResult | Fail): IdentityResult {
+    if ('ok' in out) return out;
+    const body = out.body as { user?: Partial<IdentityUser>; bound?: unknown } | null;
+    const u = body?.user;
+    if (out.status === 200 && u && typeof u.id === 'string') {
+      return {
+        ok: true,
+        user: { id: u.id, name: String(u.name ?? ''), email: String(u.email ?? '') },
+        bound: body?.bound === true,
+      };
+    }
+    const code = (out.body as { error?: string } | null)?.error ?? `http_${out.status}`;
+    console.debug('[anlewo-sync] 身份这一步没成', out.status, code);
+    return { ok: false, status: out.status, code };
   }
 
   /** POST /link：匿名注册（或确认还是我）。已注册且凭证不对会 401 */

@@ -70,8 +70,12 @@ npm run dev
 | `PORT` | 否 | `3830` | |
 | `HOST` | 否 | `127.0.0.1` | 只听本机，由 Caddy 反代 |
 | `ANLEWO_CORS` | 否 | 两个正式站 | 逗号分隔，**与默认值求并集**；`localhost` / `127.0.0.1` / `::1` 的任意端口总是放行 |
-| `IDENTITY_ENABLED` | 否 | `0` | `1` 才允许 `/userinfo` 那条路 |
+| `IDENTITY_ENABLED` | 否 | `0` | `1` 才允许 `/userinfo` 那条路，也才开登录端点（`/identity/*`）；关着时统一 501 |
 | `IDENTITY_ISSUER` | 否 | 空 | 开了身份对接才必填；不写死 localhost |
+| `IDENTITY_CLIENT_ID` | 否 | `anlewo` | 登录用的 OAuth 客户端（identity `app-secrets` 里同名） |
+| `IDENTITY_CLIENT_SECRET` | 否 | 空 | 开了身份对接才必填；只在服务端用，浏览器拿不到 |
+| `SSO_COOKIE_DOMAIN` | 否 | 空 | 跨站免登录票据的父域（正式 `.iwenxuai.com`）；留空＝host-only |
+| `SSO_COOKIE_SECURE` | 否 | `0` | `1` 给票据 cookie 加 `Secure`（https 部署时开） |
 | `BODY_LIMIT` | 否 | `6291456` | 请求体上限（字节，6MB；存档本身 ≤4MB，JSON 转义还会胖一圈） |
 | `RATE_PER_MIN` | 否 | `120` | 每 uid 每分钟（桶键里是 uuid 的 sha256 前缀，不是原文） |
 | `IP_RATE_PER_MIN` | 否 | `max(RATE_PER_MIN×4, 240)` | 每 IP 每分钟（所有路径共用，含 `/health`） |
@@ -87,6 +91,21 @@ npm run dev
 
 - `x-anlewo-uid: <uuid>` —— **标识**，不是凭证（C1）
 - `authorization: Bearer <credential>` —— 含两个 `.` 视为 OIDC access token；否则视为本地 `sync_key`
+
+### 统一身份（`IDENTITY_ENABLED=1` 才开；关着时一律 `501 identity_disabled`，不发任何外网请求）
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| POST | `/identity/code` | 发验证码：`{kind:"login"|"signup", email}` |
+| POST | `/identity/login` | 登录：`{email,password}` 或 `{email,code}` |
+| POST | `/identity/signup` | 留名：`{name,email,password,code}` |
+| GET | `/identity/session` | 这枚 `yiwen_sso` 票据是谁；未登录 `401 not_logged_in` |
+| POST | `/identity/logout` | 清掉父域票据 |
+
+登录/留名成功回 `{user:{id,name,email}, bound}`，并写 `Set-Cookie: yiwen_sso=…`（`Domain` 取 `SSO_COOKIE_DOMAIN`，`Secure` 取 `SSO_COOKIE_SECURE`）。
+**令牌（access/refresh）不进响应体**：`anlewo` 客户端的密钥只在服务端，前端只拿到「我是谁」；带了 `x-anlewo-uid` 与 `sync_key` 时顺带把这台机器的 uid 绑到这个身份上（`bound=true`），绑定失败不改登录结果。
+
+父域票据与六爻、知己共用（`iwenxuai.com`）：任一站点登录过，其它站读到同一枚 cookie 就不用再登；换令牌与失效判据见 `yiwen-server` 的 `SsoController`（`/sso/token`、`/sso/exchange`，票据 `aud=sso`，`/userinfo` 认 `scope=openid`）。
 
 | 端点 | 说明 |
 | --- | --- |

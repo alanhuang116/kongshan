@@ -111,6 +111,18 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
   if (identityEnabled && !identityIssuer) {
     throw new ConfigError('IDENTITY_ENABLED=1 时必须同时给 IDENTITY_ISSUER（不能写死 localhost）');
   }
+  // 登录要客户端认证：密钥只在服务端；浏览器永远拿不到它
+  const identityClientId = str(env.IDENTITY_CLIENT_ID) || 'anlewo';
+  const identityClientSecret = str(env.IDENTITY_CLIENT_SECRET);
+  if (identityEnabled && !identityClientSecret) {
+    throw new ConfigError('IDENTITY_ENABLED=1 时必须同时给 IDENTITY_CLIENT_SECRET（anlewo 应用的客户端密钥）');
+  }
+  // 跨站免登录：票放在父域 cookie 里；本地/测试机留空就是 host-only，只有正式才给 .iwenxuai.com
+  const ssoCookieDomain = str(env.SSO_COOKIE_DOMAIN);
+  if (ssoCookieDomain && !/^\.[A-Za-z0-9.-]+$/.test(ssoCookieDomain)) {
+    throw new ConfigError('SSO_COOKIE_DOMAIN 必须是带前导点的父域，如 .iwenxuai.com（留空＝host-only）');
+  }
+  const ssoCookieSecure = str(env.SSO_COOKIE_SECURE) === '1';
 
   const ratePerMin = int(env.RATE_PER_MIN, 120, 1, 100000);
 
@@ -122,6 +134,10 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     cors: corsList(env.ANLEWO_CORS),
     identityIssuer,
     identityEnabled,
+    identityClientId,
+    identityClientSecret,
+    ssoCookieDomain,
+    ssoCookieSecure,
     // 请求体上限要**大于** payload 上限（4MB）：JSON 转义还会胖一圈，留到 6MB
     bodyLimit: int(env.BODY_LIMIT, 6291456, 1024, 8 * 1024 * 1024),
     // 每个 uid 每分钟（公平那一维：一台设备正常每分钟 12 次上下）

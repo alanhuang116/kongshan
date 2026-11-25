@@ -9,9 +9,19 @@
 /** 推送的硬上限：与 `db/V5__anlewo_payload_limit_4mb.sql` 的 CHECK、服务端 `MAX_PAYLOAD_BYTES` 一致 */
 export const SYNC_PUSH_LIMIT = 4194304;
 
+export interface SyncUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface SyncState {
   /** 同步层有没有真的跑起来（注册成功、订阅挂上）；flag 关着时永远是 false */
   started: boolean;
+  /** 统一身份里的这个人；null = 没登录（未登录不同步） */
+  user: SyncUser | null;
+  /** 登录/留名弹窗是不是开着（面板据此提示） */
+  authPrompt: boolean;
   /** 最近一次推送成功的时间（ms）；null = 这次会话还没推成功过 */
   lastPushAt: number | null;
   /** 最近一次尝试推送的字节数（整包存档 JSON 的 UTF-8 长度） */
@@ -26,6 +36,8 @@ export interface SyncState {
 
 const state: SyncState = {
   started: false,
+  user: null,
+  authPrompt: false,
   lastPushAt: null,
   bytes: 0,
   limit: SYNC_PUSH_LIMIT,
