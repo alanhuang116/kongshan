@@ -6,14 +6,15 @@
  * 这个客户端去换令牌，**令牌不进前端**（前端只拿到「我是谁」）。
  *
  * 免登录（参考六爻的登录与 yiwen-server identity 的 SsoController）：
- *   1. 任一站点登录成功后，服务端拿自己的 access token 换一张 identity 签的长效 SSO 票据；
+ *   1. 任一站点登录成功后，服务端拿自己的 access token 换一张 identity 签的 SSO 票据（24 小时）；
  *   2. 票据写进父域 cookie（`SSO_COOKIE_DOMAIN`，如 `.iwenxuai.com`），httpOnly；
  *   3. 别的站点读到同一枚 cookie，用 `/userinfo` 认人（票据带 `scope=openid`，账号停用立刻 401），
- *      要本地会话就用 `/sso/exchange` 换自己的令牌。
+ *      要本地会话就用 `/sso/exchange` 换自己的令牌；安乐窝只认人，进站时用 `/sso/renew` 续票。
+ *   4. 任一站退出走 `/sso/logout`：identity 会话纪元 +1，三站旧票全部作废。
  *
  * 这个文件不发 HTTP、不碰数据库，纯拼请求与 cookie 字符串，方便单测。
  */
-import { makeTimeoutSignal } from './auth.mjs';
+import { makeTimeoutSignal, userIdOf } from './auth.mjs';
 
 /** 父域 cookie 名：六爻、知己、安乐窝共用这一枚 */
 export const SSO_COOKIE = 'yiwen_sso';
@@ -151,7 +152,7 @@ export async function userinfo(config, token, opts = {}) {
   }
   if (!res.ok || !body || typeof body !== 'object') return { ok: false, status: res.status, code: 'invalid_token' };
   const u = body.user && typeof body.user === 'object' ? body.user : null;
-  const id = u && typeof u.id === 'string' ? u.id : null;
+  const id = userIdOf(u);
   if (!id) return { ok: false, status: res.status, code: 'invalid_token' };
   return {
     ok: true,
@@ -164,7 +165,7 @@ export async function userinfo(config, token, opts = {}) {
   };
 }
 
-/** 把一次登录换来的 access token 换成一张长效 SSO 票据 */
+/** 把一次登录换来的 access token 换成一张 SSO 票据（24 小时，可用 renewSso 续） */
 export async function mintSso(config, accessToken, opts) {
   const out = await identityCall(config, '/sso/token', {}, { ...(opts ?? {}), bearer: accessToken });
   if (!out.ok) return out;
@@ -172,5 +173,23 @@ export async function mintSso(config, accessToken, opts) {
   const expiresIn = out.body && Number.isFinite(out.body.expires_in) ? Number(out.body.expires_in) : 0;
   if (!token || expiresIn <= 0) return { ok: false, status: 0, code: 'bad_sso_response' };
   return { ok: true, status: out.status, token, expiresIn };
+}
+
+/**
+ * 续票：拿父域票据换一张新的 24 小时票。安乐窝没有本地会话，进站读登录态时顺手续上，
+ * 否则票一到 24 小时用户就得重新登录。只签票，不落 refresh 链。
+ */
+export async function renewSso(config, ticket, opts) {
+  const out = await identityCall(config, '/sso/renew', { sso: ticket }, opts);
+  if (!out.ok) return out;
+  const token = out.body && typeof out.body.token === 'string' ? out.body.token : '';
+  const expiresIn = out.body && Number.isFinite(out.body.expires_in) ? Number(out.body.expires_in) : 0;
+  if (!token || expiresIn <= 0) return { ok: false, status: 0, code: 'bad_sso_response' };
+  return { ok: true, status: out.status, token, expiresIn };
+}
+
+/** 全局登出：identity 侧会话纪元 +1，三站的旧票与旧 refresh 一起失效 */
+export function logoutSso(config, ticket, opts) {
+  return identityCall(config, '/sso/logout', { sso: ticket }, opts);
 }
 

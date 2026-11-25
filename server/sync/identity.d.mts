@@ -59,4 +59,10 @@ export function mintSso(
   accessToken: string,
   opts?: any,
 ): Promise<{ ok: true; status: number; token: string; expiresIn: number } | IdentityFailure>;
+export function renewSso(
+  config: IdentityConfig,
+  ticket: string,
+  opts?: any,
+): Promise<{ ok: true; status: number; token: string; expiresIn: number } | IdentityFailure>;
+export function logoutSso(config: IdentityConfig, ticket: string, opts?: any): Promise<IdentityCallOk | IdentityFailure>;
 export function explain(code: string | undefined, status: number): string;

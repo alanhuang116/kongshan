@@ -15,6 +15,8 @@ import {
   loginPassword,
   mintSso,
   readCookie,
+  renewSso,
+  logoutSso,
   sendEmailCode,
   signupEmail,
   ssoCookie,
@@ -527,19 +529,33 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
     await afterIdentityAuth(req, res, out);
   }
 
-  /** GET /identity/session：这枚 SSO cookie 是谁（未登录就 401，不建任何东西） */
+  /** GET /identity/session：这枚 SSO cookie 是谁（未登录就 401）；认出来顺手续一张新票 */
   async function handleIdentitySession(req, res) {
     requireIdentity();
     const token = readCookie(req.headers.cookie, SSO_COOKIE);
     if (!token) throw new HttpError(401, 'not_logged_in');
     const info = await userinfo(config, token, { fetchImpl });
     if (!info.ok) throw new HttpError(401, 'not_logged_in');
+    // 安乐窝没有本地会话，全靠这枚票：进站顺手续到新的 24 小时；续不上也照常返回登录态
+    const renewed = await renewSso(config, token, { fetchImpl });
+    if (renewed.ok) {
+      sendWithCookie(res, 200, { user: info.user }, ssoCookie(config, renewed.token, renewed.expiresIn));
+      return;
+    }
     send(res, 200, { user: info.user });
   }
 
-  /** POST /identity/logout：清掉父域 cookie（各域读到的是同一枚） */
+  /** POST /identity/logout：先让 identity 全局登出（纪元 +1），再清父域 cookie */
   async function handleIdentityLogout(req, res) {
     requireIdentity();
+    const token = readCookie(req.headers.cookie, SSO_COOKIE);
+    if (token) {
+      try {
+        await logoutSso(config, token, { fetchImpl });
+      } catch {
+        // 身份服务一时不在：cookie 照样清，本站先退干净
+      }
+    }
     sendWithCookie(res, 200, { ok: true }, clearSsoCookie(config));
   }
 
