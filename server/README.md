@@ -97,7 +97,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://kongshan.169-58-39-104.nip.io/ 
 | 文件 | 管什么 |
 | --- | --- |
 | `server/relay.Dockerfile` | 镜像 `yiwen/kongshan-relay:<tag>`：`node:22-bookworm-slim` + `ws`，构建上下文是仓库根 |
-| `deploy/k8s/relay.yaml.tmpl` | Deployment + Service（`kongshan-relay:3820`，1 副本，探活 `/health`） |
+| `deploy/k8s/relay.yaml.tmpl` | Deployment + Service（`kongshan-relay:3820`，1 副本、`Recreate`，探活 `/health`） |
 | `deploy/k8s/deployment.yaml.tmpl` | 静态站那一份清单，Ingress 里多了 `/ws` → `kongshan-relay:3820` |
 | `src/world/net/words.ts` | 前端在 `anlewo.iwenxuai.com` 上默认连同源（`SAME_ORIGIN_HOSTS`） |
 
@@ -126,7 +126,7 @@ curl -s https://anlewo.iwenxuai.com/ | grep -o '/assets/index-[^"]*\.js'   # 取
 集群里的几处与法国不同：
 
 - **`KS_RELAY_HOST=0.0.0.0`**：本机那份默认只听 `127.0.0.1`（由 Caddy 同机反代），集群里没有同机反代，必须听全部网卡。
-- **只有 1 个副本**：屋子在进程内，多副本会把同一时刻进来的人分到不同 Pod，互相看不见。要扩容得先按屋子粘人，不是改 `replicas` 就行。
+- **只有 1 个副本，且必须 `Recreate`**：屋子在进程内，多副本会把同一时刻进来的人分到不同 Pod，互相看不见。要扩容得先按屋子粘人，不是改 `replicas` 就行；滚动更新会短暂并存两个 Pod，同样会把一间屋子拆开，所以这个 Deployment 不能使用 `RollingUpdate`。
 - **`KS_RELAY_PER_IP=240`**（与总量同宽，等于关掉按地址分桶）：集群里连接经入口 nginx → Ingress → Pod，中转看到的是 Ingress 的地址而不是玩家的地址（`ipOf` 只在 loopback 时才信 `X-Forwarded-For`），保留「同一地址 12 个」会把所有玩家算成一个人，第 13 位就被挡在门外。挡滥用的仍是屋子 24、总量 240、每连接每秒 25 条、消息至多 512 字节。要在集群里恢复按玩家地址分桶，得先让中转能拿到可信的真实地址（例如 Ingress 侧写一个可信头，或给中转配 `use-forwarded-headers` 白名单），这是另一件事。
 - **放行的来源**：`relay.mjs` 的 `ORIGINS` 里已有 `https://anlewo.iwenxuai.com`；换域名时改那一行（或给 `KS_RELAY_ORIGINS`）。
 
