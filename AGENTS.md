@@ -53,6 +53,7 @@
 ### 分支纪律（2026-11-25 起）
 - **本地开发不合并 `main`**：`main` 只作为上游玩法来源，开发分支（`dev_link_portal` 及后续 `dev_*`）不向 `main` 合并、不推送 `main`。
 - **正式环境只发 `master`**：开发分支验证通过后合并到 `master`；正式 Jenkins 任务 `kongshan` 只从 `master` 构建，发布前确认 `master` 已包含本次上线提交。
+- **正式发布顺序**：提交并推送 `dev_link_portal` → 合并 `dev_link_portal` 到 `master` 并推送 → 用 `master` 触发 Jenkins 全量构建 → 触发后立即切回 `dev_link_portal`。
 - 发布从 `master` 最新提交全量构建（静态站 + 同步服务两段），不从开发分支直接发正式。
 
 - **main 新增存档字段**（`Saved` 顶层字段或 `world` 之外的结构变化）：先给方案再动手——是否升版本（`v`）、老档迁移怎么写、`payload` 上限与服务端校验是否要跟着改、`docs/DB_SPLIT_FINAL.md` 怎么更新；方案确认后改代码，不许合完就当没看见。
