@@ -13,7 +13,7 @@
  *
  * 这个文件不发 HTTP、不碰数据库，纯拼请求与 cookie 字符串，方便单测。
  */
-import { makeTimeoutSignal } from './auth.mjs';
+import { makeTimeoutSignal, userIdOf } from './auth.mjs';
 
 /** 父域 cookie 名：六爻、知己、安乐窝共用这一枚 */
 export const SSO_COOKIE = 'yiwen_sso';
@@ -151,7 +151,7 @@ export async function userinfo(config, token, opts = {}) {
   }
   if (!res.ok || !body || typeof body !== 'object') return { ok: false, status: res.status, code: 'invalid_token' };
   const u = body.user && typeof body.user === 'object' ? body.user : null;
-  const id = u && typeof u.id === 'string' ? u.id : null;
+  const id = userIdOf(u);
   if (!id) return { ok: false, status: res.status, code: 'invalid_token' };
   return {
     ok: true,

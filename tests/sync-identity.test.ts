@@ -77,6 +77,14 @@ describe('identity 调用', () => {
     expect(out.ok).toBe(false);
   });
 
+  it('按 identity 实际字段 user_id 认人', async () => {
+    const uid = '11111111-1111-4111-8111-111111111111';
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ user: { user_id: uid, name: '验收', email: 'a@b.c' } }), { status: 200 }));
+    const out = await userinfo(base, 'ticket', { fetchImpl: fetchImpl as unknown as typeof fetch });
+    if (!out.ok) throw new Error('expected ok');
+    expect(out.user.id).toBe(uid);
+  });
+
   it('网络不通也只回一句话', async () => {
     const fetchImpl = vi.fn(async () => { throw new Error('offline'); });
     const out = await userinfo(base, 'x', { fetchImpl: fetchImpl as unknown as typeof fetch });

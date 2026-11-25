@@ -17,6 +17,13 @@ const SYNC_KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 /** 是不是一个 uuid（大小写都收，统一小写处理交给调用方） */
 export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
+/** identity 的 /userinfo 把用户 ID 序列化为 user_id；兼容旧字段 id。 */
+export function userIdOf(user) {
+  if (!user || typeof user !== 'object') return null;
+  const id = typeof user.user_id === 'string' ? user.user_id : user.id;
+  return typeof id === 'string' && id ? id : null;
+}
+
 /** sha256 的小写十六进制（凭证、pieceKey 都用它做单向摘要） */
 export const sha256Hex = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex');
 
@@ -91,7 +98,7 @@ export async function fetchUserInfo({ issuer, accessToken, fetchImpl = globalThi
   } catch {
     return { ok: false, reason: 'bad_json' };
   }
-  const id = body && typeof body === 'object' && body.user && typeof body.user === 'object' ? body.user.id : undefined;
+  const id = userIdOf(body && typeof body === 'object' ? body.user : null);
   if (!isUuid(id)) return { ok: false, reason: 'bad_user_id' };
   return { ok: true, userId: String(id).toLowerCase(), raw: body };
 }
