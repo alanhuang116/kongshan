@@ -10,6 +10,10 @@
 # 彼此看不见。真要扩容，得先按屋子把人粘到同一个 Pod（或改成分区），不是把 replicas 调大就行。
 # 单副本 240 连接的上限对现在的人数足够（超过就分屋子，见 server/core.mjs）。
 #
+# 为什么是 Recreate 而不是 RollingUpdate：中转有状态，滚动更新会先起第二个 Pod 再退旧的，
+# 这段时间里新连进来的人会被 Ingress 分到两个互不相通的进程里，同一间屋子被拆开；旧 Pod 退出时
+# 那一屋的人也会一起断线。Recreate 接受几秒钟的停机换“任何时刻只有一个中转进程”。
+#
 # 关于同一个地址的连接数上限（KS_RELAY_PER_IP）：集群里连接由入口 nginx → Ingress → 本 Pod，
 # 中转看到的对端是 Ingress 的地址而不是玩家的地址（relay.mjs 的 ipOf 只在 loopback 时才信 X-Forwarded-For），
 # 所以这里把它放到与总量同宽——否则「同一个地址至多 12 个」会把所有玩家算成一个人，第 13 位就被挡在门外。
@@ -24,11 +28,9 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 3
+  # 有状态服务：不允许滚动时并存两个 Pod，见文件头
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app: kongshan-relay
