@@ -80,7 +80,8 @@ export class SyncClient {
     this.base = (opts.base || '/api/anlewo').replace(/\/+$/, '');
     this.uid = opts.uid;
     this.credential = opts.credential;
-    this.fetchImpl = opts.fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+    // 绑定到 globalThis：fetch 存进实例后再以 this.fetchImpl(...) 调用会触发 Illegal invocation
+    this.fetchImpl = opts.fetchImpl ?? (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
     this.timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
   }
 
