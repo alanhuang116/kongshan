@@ -3,7 +3,7 @@
 //   其余同源的静态文件（带指纹的脚本样式、用到的字体分片、图标）：有缓存就用缓存。
 // 换了不带指纹的文件（public/ 下的图标等）之后，把下面的版本号加一。
 // （名字一换，旧的「空山」那一份缓存在启用时就清掉了。）
-const V = 'anlewo-v2';
+const V = 'anlewo-v1';
 // 页面本身存在这个名字下：缓存管的那个目录（放在子目录下时不是 '/'）
 const HOME = self.registration.scope;
 self.addEventListener('install', () => { self.skipWaiting(); });
