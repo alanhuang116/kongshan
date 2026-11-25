@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node index.mjs",
     "migrate": "node migrate.mjs",
-    "smoke": "node smoke.mjs"
+    "smoke": "node smoke.mjs",
+    "stats": "node stats.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1",

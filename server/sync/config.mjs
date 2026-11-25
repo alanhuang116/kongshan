@@ -122,8 +122,8 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     cors: corsList(env.ANLEWO_CORS),
     identityIssuer,
     identityEnabled,
-    // 请求体上限要**大于** payload 上限（1MB）：JSON 转义还会胖一圈，留到 2MB
-    bodyLimit: int(env.BODY_LIMIT, 2097152, 1024, 8 * 1024 * 1024),
+    // 请求体上限要**大于** payload 上限（4MB）：JSON 转义还会胖一圈，留到 6MB
+    bodyLimit: int(env.BODY_LIMIT, 6291456, 1024, 8 * 1024 * 1024),
     // 每个 uid 每分钟（公平那一维：一台设备正常每分钟 12 次上下）
     ratePerMin,
     // 每个来源地址每分钟（兜底那一维）：覆盖十几台设备共用一个 NAT 出口，

@@ -6,8 +6,8 @@
  * 这个文件没有副作用，两边各自 import 都不会把同步层拉起来。
  */
 
-/** 推送的硬上限：与 `db/V3__anlewo_payload_limit.sql` 的 CHECK、服务端 `MAX_PAYLOAD_BYTES` 一致 */
-export const SYNC_PUSH_LIMIT = 1048576;
+/** 推送的硬上限：与 `db/V5__anlewo_payload_limit_4mb.sql` 的 CHECK、服务端 `MAX_PAYLOAD_BYTES` 一致 */
+export const SYNC_PUSH_LIMIT = 4194304;
 
 export interface SyncState {
   /** 同步层有没有真的跑起来（注册成功、订阅挂上）；flag 关着时永远是 false */

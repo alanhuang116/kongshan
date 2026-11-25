@@ -158,7 +158,7 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
    * 探库结果缓存 3 秒：health 也会占 IP 桶，但探活/压测时不该把 max:5 的连接池一口吃干；
    * 库不可用时照样回 200，只是 `ok:false`（"进程活着"与"库可用"是两件事）。
    *
-   * `schema` 是迁移有没有跑全（六张表、V3 的 1MB 上限）：部署时先跑 anlewo-sync-migrate Job，
+   * `schema` 是迁移有没有跑全（六张表、V5 的 4MB 上限）：部署时先跑 anlewo-sync-migrate Job，
    * 再拿这一个字段验收；缺表时服务自己照旧起得来（写档会 503 db_migration_missing），所以不能只看 `ok`。
    */
   let healthAt = 0;
@@ -183,6 +183,9 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
       schema: {
         tables: healthSchema ? (healthSchema.missing.length === 0 ? 'ok' : `missing:${healthSchema.missing.join(',')}`) : 'down',
         payloadLimit: healthSchema ? (healthSchema.payloadLimit ? 'ok' : 'missing') : 'down',
+        // 真上限（库里的 CHECK 与服务端常量取小）：客户端拿它当自己的门槛，
+        // 滚动发布时库/服务端还没跟上，客户端就按旧上限停推，而不是推上去换一个 413
+        payloadLimitBytes: healthSchema ? healthSchema.payloadLimitBytes : null,
       },
       redis: limiter.kind === 'redis' ? 'up' : 'memory',
       identity: config.identityEnabled ? 'on' : 'off',

@@ -18,6 +18,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { isSyncKey, isV4Uuid, loadId, newSyncKey, type SyncId } from './id';
 import type { Anchor } from './reconcile';
 import { syncState, type SyncState } from './state';
+import { storageState, type StorageState } from '../store';
 
 /** 与 id.ts 的 KEY 一致（那边没导出，这里照抄；改了要两边一起改） */
 const ID_KEY = 'anlewo:id:v1';
@@ -95,7 +96,7 @@ function fmtAgo(ms: number): string {
 
 /** 没推成的原因翻成人话 */
 const ERR_TEXT: Record<string, string> = {
-  too_large: '存档超过 1MB 上限，已停推（本地完好）',
+  too_large: '存档超过 4MB 上限，已停推（本地完好）',
   unserializable: '存档没法序列化成 JSON',
   conflict: '服务端有别的版本，正在重推',
   network_down: '网络没通（下次变动再试）',
@@ -229,6 +230,7 @@ function Devtools(): ReactElement {
   const [notice, setNotice] = useState<string>('');
   /** 同步层的内存状态（面板开着时每秒读一次；关着不跑） */
   const [sync, setSync] = useState<Readonly<SyncState>>(() => syncState());
+  const [store, setStore] = useState<Readonly<StorageState>>(() => storageState());
 
   const dotRef = useRef<HTMLDivElement | null>(null);
   /** 「安」字当前字形框；题名页出现/消失、字体与窗口变化时重算 */
@@ -301,7 +303,12 @@ function Devtools(): ReactElement {
   // 同步状态：每秒照一份快照（同步层自己是事件驱动的，没有订阅接口，轮询最省事）
   useEffect(() => {
     if (!open) return;
-    const tick = (): void => setSync({ ...syncState() });
+    // 同步锚也每秒重读：它只在上一次推送成功时被改写，只在开面板时读一次会停在旧 revision
+    const tick = (): void => {
+      setSync({ ...syncState() });
+      setStore({ ...storageState() });
+      setAnchor(readAnchor());
+    };
     tick();
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
@@ -447,6 +454,13 @@ function Devtools(): ReactElement {
                 {`（余 ${fmtBytes(Math.max(0, sync.limit - sync.bytes))}，占 ${((sync.bytes / sync.limit) * 100).toFixed(1)}%）`}
               </span>
             </div>
+            <div style={S.row}>
+              <span style={S.label}>本机落盘</span>
+              <span>
+                {store.ok ? `正常 · ${store.bytes} 字` : `写不进 localStorage（${store.lastError ?? 'unknown'}）`}
+                {store.trimmed > 0 ? ` · 为写下去已丢最老起居注 ${store.trimmed} 条` : ''}
+              </span>
+            </div>
             {sync.overLimit && (
               <div style={S.error} role="alert">
                 超上限停推：整包 {fmtBytes(sync.bytes)} 已超 {fmtBytes(sync.limit)}，本地照旧、但不再上传（改回小一点之前，服务端停在上一版）
@@ -456,7 +470,7 @@ function Devtools(): ReactElement {
               <div style={S.error} role="alert">上次没推成：{errText(sync.lastError)}</div>
             )}
             <div style={S.hint}>
-              字节数是整包存档 JSON 的 UTF-8 长度（与推送、V3 的 CHECK 同一个口径，含 journal 与 world 八份）；每秒刷一次，不落盘。
+              字节数是整包存档 JSON 的 UTF-8 长度（与推送、存档上限那条 CHECK 同一个口径，含 journal 与 world 八份）；每秒刷一次，不落盘。
             </div>
           </div>
 

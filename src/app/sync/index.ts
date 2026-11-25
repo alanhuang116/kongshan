@@ -33,8 +33,7 @@ const RELOAD_GUARD_PREFIX = 'anlewo:sync:reloaded:';
 const PUSH_DEBOUNCE_MS = 5000;
 const INK_POLL_MS = 8000;
 const CONFLICT_RETRY_MS = 700;
-/** 与 db/V3__anlewo_payload_limit.sql 的 CHECK 一致；超了就这一回不推（本地照旧） */
-const MAX_PUSH_BYTES = SYNC_PUSH_LIMIT;
+
 
 interface Session {
   stop: () => void;
@@ -167,6 +166,10 @@ async function boot(): Promise<void> {
     return;
   }
 
+  // 上限取小的那个：服务端报的是「库里的 CHECK 与服务端常量取小」，问不到就只用本地默认值。
+  // 滚动发布时库/服务端可能还停在旧上限，这时按旧的停推，好过推上去撞 413（只留一行 console.debug）。
+  const pushLimit = Math.min(SYNC_PUSH_LIMIT, (await client.payloadLimit()) ?? Number.POSITIVE_INFINITY);
+
   let baseRevision = 0;
   /** 上一次和服务端对齐时的本地文本（用来跳过没变的推送） */
   let lastPushed = '';
@@ -176,6 +179,9 @@ async function boot(): Promise<void> {
   let inkTimer: number | undefined;
   let paused = false;
   let conflictRetried = false;
+  /** 超限的那一行 console 只在“刚进入超限”时打一次，不是每次 patch 都打 */
+  let overLimitLogged = false;
+  setSyncState({ limit: pushLimit });
 
   /**
    * 推一次当前存档。force=true 时忽略"内容没变"，用于首轮对账与冲突重试。
@@ -193,10 +199,13 @@ async function boot(): Promise<void> {
     if (!force && text === lastPushed) return;
     const bytes = bytesOf(text);
     setSyncState({ bytes });
-    if (bytes > MAX_PUSH_BYTES) {
+    if (bytes > pushLimit) {
       // 超限只留一行 console 的话，人以为在同步、其实早停了：挂到面板上（sync/state.ts）
       setSyncState({ overLimit: true, lastError: 'too_large' });
-      console.debug('[anlewo-sync] 存档超过 1MB 上限，这一回不推（本地完好；需要时再升上限）');
+      if (!overLimitLogged) {
+        overLimitLogged = true;
+        console.debug('[anlewo-sync] 存档超过上限（' + pushLimit + ' 字节），这一回不推（本地完好；需要时再升上限）');
+      }
       return;
     }
 
@@ -207,6 +216,7 @@ async function boot(): Promise<void> {
       snapshotNext = false;
       conflictRetried = false;
       writeAnchor({ v: 1, revision: r.revision, hash: hashText(text) });
+      overLimitLogged = false;
       setSyncState({ overLimit: false, lastPushAt: Date.now(), lastError: null });
       return;
     }

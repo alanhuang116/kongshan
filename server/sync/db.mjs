@@ -12,10 +12,11 @@ const { Pool } = pg;
 
 /**
  * 单个存档 payload 的硬上限。三处必须一致：
- *   前端 src/app/sync/index.ts 的 MAX_PUSH_BYTES、这里、db/V3__anlewo_payload_limit.sql 的 CHECK。
+ *   前端 src/app/sync/state.ts 的 SYNC_PUSH_LIMIT、这里、db/V5__anlewo_payload_limit_4mb.sql 的 CHECK。
  * 任何一处小了，都会变成"大一点的档永远推不上去，而界面只在 console.debug 里留一行"。
+ * 4MB 是本地 localStorage（同源约 5MB 配额）之内的上限；再大本地先存不下。
  */
-export const MAX_PAYLOAD_BYTES = 1048576;
+export const MAX_PAYLOAD_BYTES = 4194304;
 /** 单篇笔迹的硬上限，与 anlewo_ink_chars_size_chk 一致 */
 export const MAX_INK_BYTES = 1048576;
 
@@ -58,7 +59,7 @@ export const SCHEMA_TABLES = [
 
 /**
  * 库通不通 + 迁移有没有跑全（health 与 migrate.mjs 的回读共用一个口径）。
- * 一条查询搞定两件事：库不通会直接抛（调用方记 down），库通但迁移没跑全就报缺哪张表 / 1MB 上限在不在。
+ * 一条查询搞定两件事：库不通会直接抛（调用方记 down），库通但迁移没跑全就报缺哪张表 / 4MB 上限在不在。
  * 只读目录与约束，不读任何业务数据、不带参数。
  */
 export async function schemaStatus(pool) {
@@ -71,13 +72,23 @@ export async function schemaStatus(pool) {
               to_regclass('public.anlewo_device')::text,
               to_regclass('public.anlewo_sync_key')::text
             ], NULL) AS present,
-            EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'anlewo_save_payload_size_chk') AS payload_limit`,
+            EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'anlewo_save_payload_size_chk') AS payload_limit,
+            -- 约束里那个数字（CHECK ((length((payload)::text) <= 4194304))）：报给客户端，
+            -- 让它在滚动发布中间态里按小的一头走，不至于推上去撞 413
+            (SELECT (regexp_match(pg_get_constraintdef(c.oid), '(\\d+)'))[1]
+               FROM pg_constraint c
+              WHERE c.conname = 'anlewo_save_payload_size_chk') AS payload_limit_bytes`,
   );
   const row = r.rows[0] ?? {};
   const present = new Set((row.present ?? []).map((x) => String(x).split('.').pop()));
   const missing = SCHEMA_TABLES.filter((t) => !present.has(t));
   const payloadLimit = row.payload_limit === true;
-  return { ok: missing.length === 0 && payloadLimit, missing, payloadLimit };
+  const dbBytes = Number(row.payload_limit_bytes);
+  // 库里的数字与服务端自己的常量取小：两边任何一个没跟上，都以小的为准
+  const payloadLimitBytes = payloadLimit && Number.isFinite(dbBytes) && dbBytes > 0
+    ? Math.min(dbBytes, MAX_PAYLOAD_BYTES)
+    : MAX_PAYLOAD_BYTES;
+  return { ok: missing.length === 0 && payloadLimit, missing, payloadLimit, payloadLimitBytes };
 }
 
 /**
@@ -106,6 +117,24 @@ export async function withTransaction(pool, fn) {
   } finally {
     client.release(failed ?? undefined);
   }
+}
+
+/**
+ * 快照只留最近几版（K4）：每次“覆盖前留底”都插一行，以前一行 ≤1MB、现在 ≤4MB，
+ * 不清就会变成库的主要增长项。逐用户在事务里顺手删，不需要定时任务。
+ */
+const SNAPSHOT_KEEP = { sync: 10, pre_bind: 3 };
+async function pruneSnapshots(client, uid, reason) {
+  const keep = SNAPSHOT_KEEP[reason] ?? 3;
+  await client.query(
+    `DELETE FROM anlewo_save_snapshot s
+      WHERE s.user_id = $1 AND s.reason = $2
+        AND s.revision NOT IN (
+          SELECT revision FROM anlewo_save_snapshot
+           WHERE user_id = $1 AND reason = $2
+           ORDER BY revision DESC LIMIT $3)`,
+    [uid, reason, keep],
+  );
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -298,6 +327,7 @@ export async function replaceSave(pool, { uid, payloadJson, baseRevision, client
        ON CONFLICT (user_id, revision, reason) DO NOTHING`,
       [u],
     );
+    await pruneSnapshots(client, u, 'sync');
     const r = await client.query(
       `UPDATE anlewo_save
           SET payload = $1::jsonb, revision = revision + 1, updated_at = now(), client_id = $4
@@ -367,6 +397,7 @@ export async function bindLink(pool, { uid, identityUid, issuer, subject }) {
        ON CONFLICT (user_id, revision, reason) DO NOTHING`,
       [u],
     );
+    await pruneSnapshots(client, u, 'pre_bind');
     const upd = await client.query(
       `UPDATE anlewo_identity_link
           SET identity_uid = $2, provider = 'oidc', issuer = $3, subject = $4, status = 'bound', bound_at = now()

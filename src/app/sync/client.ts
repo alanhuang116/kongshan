@@ -137,6 +137,18 @@ export class SyncClient {
     }
   }
 
+  /**
+   * GET /health：只取服务端报的存档上限（`schema.payloadLimitBytes`）。
+   * 不参与成败：拿不到就返回 null，调用方用本地默认值。
+   */
+  async payloadLimit(): Promise<number | null> {
+    const out = await this.safe('/health', { method: 'GET' }, '读健康');
+    if ('ok' in out || out.status !== 200) return null;
+    const body = out.body as { schema?: { payloadLimitBytes?: unknown } } | null;
+    const n = body?.schema?.payloadLimitBytes;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   /** POST /link：匿名注册（或确认还是我）。已注册且凭证不对会 401 */
   async register(device?: { deviceId?: string; kind?: string; label?: string }): Promise<RegisterResult> {
     const out = await this.safe('/link', { method: 'POST', body: device ?? {} }, '注册');
