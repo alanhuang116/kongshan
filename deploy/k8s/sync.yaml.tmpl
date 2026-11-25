@@ -56,8 +56,50 @@ spec:
                   key: DATABASE_URL
             - name: ANLEWO_CORS
               value: https://anlewo.iwenxuai.com
+            # SSO 配置全部走 anlewo-sync-env；键不存在时为空，等于关闭，
+            # 不会因为模板写死 "0" 而在正式环境静默不上线。
             - name: IDENTITY_ENABLED
-              value: "0"
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: IDENTITY_ENABLED
+                  optional: true
+            - name: IDENTITY_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: IDENTITY_ISSUER
+                  optional: true
+            - name: IDENTITY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: IDENTITY_CLIENT_ID
+                  optional: true
+            - name: IDENTITY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: IDENTITY_CLIENT_SECRET
+                  optional: true
+            - name: SSO_COOKIE_DOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: SSO_COOKIE_DOMAIN
+                  optional: true
+            - name: SSO_COOKIE_SECURE
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: SSO_COOKIE_SECURE
+                  optional: true
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: REDIS_URL
+                  optional: true
           resources:
             requests:
               cpu: 50m
