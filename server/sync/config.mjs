@@ -153,6 +153,12 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     // 正常一次浏览最多登一次；10 次/分覆盖公司/学校/CGNAT 这种共享出口里多人同时登录，
     // 又挡得住拿服务端客户端密钥撞密码的脚本（身份服务那边每验一次都要算 bcrypt）。
     loginPerMin: int(env.LOGIN_PER_MIN, 10, 1, 1000),
+    // `/identity/signup` 每分钟（每个来源地址）：留名一个人一辈子一次，5 次/分足够一个共享出口里
+    // 几个人同时留名；身份服务那边还有每客户端 30/小时、每邮箱 3/小时的更细口径。
+    signupPerMin: int(env.SIGNUP_PER_MIN, 5, 1, 1000),
+    // `/identity/code` 每分钟（每个来源地址）：每发一次就是一封真邮件（有成本、可被用来驿炸别人邮箱），
+    // 而界面自带 60 秒冷却，一个人最多 1 次/分；10 次/分＝同一出口十个人同时要码。
+    codePerMin: int(env.CODE_PER_MIN, 10, 1, 1000),
   });
 }
 

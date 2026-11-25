@@ -81,6 +81,8 @@ npm run dev
 | `IP_RATE_PER_MIN` | 否 | `max(RATE_PER_MIN×4, 240)` | 每 IP 每分钟（所有路径共用，含 `/health`） |
 | `LINK_PER_MIN` | 否 | `25` | 每 IP 每分的 `/link` **建行**预算（只数真正新建的身份，已注册用户的报到不占；客户端遇 429 会退避重试） |
 | `LOGIN_PER_MIN` | 否 | `10` | 每 IP 每分的 `/identity/login` **请求**预算（每次登录都要带服务端客户端密钥去敲身份服务） |
+| `SIGNUP_PER_MIN` | 否 | `5` | 每 IP 每分的 `/identity/signup` 请求预算（留名比登录更重：要花一枚验证码、写一行账号） |
+| `CODE_PER_MIN` | 否 | `10` | 每 IP 每分的 `/identity/code` 请求预算（每次会真发一封验证码邮件） |
 
 `.env.local` 会被自动读（已存在的真实环境变量优先），`ANLEWO_SYNC_NO_DOTENV=1` 可关掉。
 
@@ -134,7 +136,7 @@ npm run dev
 
 ## Redis 的边界（别把它当缓存用）
 
-Redis 里**只有**限流计数键，60s 过期，四个桶（`ip`/`u`/`login` 数的是"请求"，`linkc` 数的是"建行"，口径不同不能混）：
+Redis 里**只有**限流计数键，60s 过期，按口径分两类（`ip`/`u`/`login`/`signup`/`code` 数的是"请求"，`linkc` 数的是"建行"，不能混）：
 
 - `anlewo:rl:ip:<分钟桶>:<sha256(ip)[0:16]>` —— 所有路径（含 `/health`），上限 `IP_RATE_PER_MIN`
 - `anlewo:rl:u:<分钟桶>:<sha256(uid|ip)[0:16]>` —— 除 `/health` 外的路径，上限 `RATE_PER_MIN`
@@ -147,6 +149,10 @@ Redis 里**只有**限流计数键，60s 过期，四个桶（`ip`/`u`/`login` �
 - `anlewo:rl:login:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/login` 的登录预算，上限 `LOGIN_PER_MIN`（默认 10）。
   这条路径每次都要带着服务端客户端密钥去敲身份服务（那边每验一次就要算 bcrypt，还可能发验证码），
   所以按**请求数**限：登录是人手动动作，10 次/分已能覆盖共享出口里多人同时登录。
+- `anlewo:rl:signup:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/signup` 的预算，上限 `SIGNUP_PER_MIN`（默认 5）。
+  留名同时要发验证码、写账号，比登录更重；一个人只留一次名，5 次/分已够共享出口里几个人同时留名。
+- `anlewo:rl:code:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/code` 的预算，上限 `CODE_PER_MIN`（默认 10）。
+  每发一次就是一封真邮件（有成本、也能被拿来驿炸别人的邮箱），而界面自带 60 秒冷却，一个人最多 1 次/分。
 
 为什么 `/link` 不能按"请求数"限：它**每次开页面都打**，而绝大多数是"还是我"的报到（零写入）。
 拿请求数当预算，同一个共享出口（学校 / 公司 / CGNAT）里 25 个陌生人打出的 401 就能让整个办公室

@@ -468,9 +468,25 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
     return out.ok;
   }
 
+  /**
+   * 身份代理三件套（code / signup / login）的每来源地址分钟预算。
+   *
+   * 这三条都带着服务端的客户端密钥去敲身份服务（code、signup 还真会发验证码），
+   * 未登录流量不能无限重放。`name` 只用来分桶：三个端点各一只桶，互不挤占。
+   * 键里同样只放 sha256 前缀、不放原文；计数放在读请求体之前，连解析都不给它做。
+   */
+  async function identityBudget(req, name, perMin) {
+    const minute = Math.floor(Date.now() / 60000);
+    const ipHash = sha256Hex(clientIp(req)).slice(0, 16);
+    if ((await limiter.incrWithTtl(`anlewo:rl:${name}:${minute}:${ipHash}`, 60000)) > perMin) {
+      throw new HttpError(429, 'rate_limited');
+    }
+  }
+
   /** POST /identity/code：发验证码（kind=login|signup） */
   async function handleIdentityCode(req, res) {
     requireIdentity();
+    await identityBudget(req, 'code', config.codePerMin);
     const body = await readJson(req, config.bodyLimit);
     const kind = body.kind === 'signup' ? 'signup' : 'login';
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -483,14 +499,7 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
   /** POST /identity/login：密码或邮箱验证码登录（服务端代理，成功后落 SSO cookie） */
   async function handleIdentityLogin(req, res) {
     requireIdentity();
-    // 登录预算：这条路径每次都要带着服务端的客户端密钥去敲身份服务（bcrypt 验密钥 + 可能发验证码），
-    // 未登录流量不能无限重放。按来源地址计数（桶键里同样只放 sha256 前缀，不放原文），
-    // 放在读请求体之前：连解析都不给它做。
-    const minute = Math.floor(Date.now() / 60000);
-    const loginIpHash = sha256Hex(clientIp(req)).slice(0, 16);
-    if ((await limiter.incrWithTtl(`anlewo:rl:login:${minute}:${loginIpHash}`, 60000)) > config.loginPerMin) {
-      throw new HttpError(429, 'rate_limited');
-    }
+    await identityBudget(req, 'login', config.loginPerMin);
     const body = await readJson(req, config.bodyLimit);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';
@@ -506,6 +515,7 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
   /** POST /identity/signup：留名（称呼 + 邮箱 + 密码 + 验证码），成功后同样落 SSO cookie */
   async function handleIdentitySignup(req, res) {
     requireIdentity();
+    await identityBudget(req, 'signup', config.signupPerMin);
     const body = await readJson(req, config.bodyLimit);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
