@@ -483,6 +483,14 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
   /** POST /identity/login：密码或邮箱验证码登录（服务端代理，成功后落 SSO cookie） */
   async function handleIdentityLogin(req, res) {
     requireIdentity();
+    // 登录预算：这条路径每次都要带着服务端的客户端密钥去敲身份服务（bcrypt 验密钥 + 可能发验证码），
+    // 未登录流量不能无限重放。按来源地址计数（桶键里同样只放 sha256 前缀，不放原文），
+    // 放在读请求体之前：连解析都不给它做。
+    const minute = Math.floor(Date.now() / 60000);
+    const loginIpHash = sha256Hex(clientIp(req)).slice(0, 16);
+    if ((await limiter.incrWithTtl(`anlewo:rl:login:${minute}:${loginIpHash}`, 60000)) > config.loginPerMin) {
+      throw new HttpError(429, 'rate_limited');
+    }
     const body = await readJson(req, config.bodyLimit);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';

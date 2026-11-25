@@ -149,6 +149,10 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     // 已注册用户每次开页面的报到一次都不占——否则共享出口（学校/公司/CGNAT）里
     // 25 个陌生人打出的 401 就能让整个办公室一分钟内注册不上（那是可用性故障，不是限流）。
     linkPerMin: int(env.LINK_PER_MIN, 25, 1, 100000),
+    // `/identity/login` 的每分钟预算（每个来源地址，请求数不是建行数）：登录是人手动动作，
+    // 正常一次浏览最多登一次；10 次/分覆盖公司/学校/CGNAT 这种共享出口里多人同时登录，
+    // 又挡得住拿服务端客户端密钥撞密码的脚本（身份服务那边每验一次都要算 bcrypt）。
+    loginPerMin: int(env.LOGIN_PER_MIN, 10, 1, 1000),
   });
 }
 
