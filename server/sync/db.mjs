@@ -40,10 +40,44 @@ export function createPool(cfg) {
   return pool;
 }
 
-/** 库通不通（health 用）；不通就抛，让调用方记 down */
+/** 库通不通；不通就抛，让调用方记 down */
 export async function ping(pool) {
   const r = await pool.query('SELECT 1 AS ok');
   return r.rows[0]?.ok === 1;
+}
+
+/** health 要认的六张表（V1 建 5 张，V2 建 anlewo_sync_key） */
+export const SCHEMA_TABLES = [
+  'anlewo_identity_link',
+  'anlewo_save',
+  'anlewo_ink',
+  'anlewo_save_snapshot',
+  'anlewo_device',
+  'anlewo_sync_key',
+];
+
+/**
+ * 库通不通 + 迁移有没有跑全（health 与 migrate.mjs 的回读共用一个口径）。
+ * 一条查询搞定两件事：库不通会直接抛（调用方记 down），库通但迁移没跑全就报缺哪张表 / 1MB 上限在不在。
+ * 只读目录与约束，不读任何业务数据、不带参数。
+ */
+export async function schemaStatus(pool) {
+  const r = await pool.query(
+    `SELECT array_remove(ARRAY[
+              to_regclass('public.anlewo_identity_link')::text,
+              to_regclass('public.anlewo_save')::text,
+              to_regclass('public.anlewo_ink')::text,
+              to_regclass('public.anlewo_save_snapshot')::text,
+              to_regclass('public.anlewo_device')::text,
+              to_regclass('public.anlewo_sync_key')::text
+            ], NULL) AS present,
+            EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'anlewo_save_payload_size_chk') AS payload_limit`,
+  );
+  const row = r.rows[0] ?? {};
+  const present = new Set((row.present ?? []).map((x) => String(x).split('.').pop()));
+  const missing = SCHEMA_TABLES.filter((t) => !present.has(t));
+  const payloadLimit = row.payload_limit === true;
+  return { ok: missing.length === 0 && payloadLimit, missing, payloadLimit };
 }
 
 /**

@@ -9,13 +9,17 @@
  * 已经建过就是 no-op；权限不够会报错但不会中断后面的文件——错误逐条列出来。
  */
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.mjs';
-import { createPool, ping } from './db.mjs';
+import { createPool, ping, schemaStatus } from './db.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = join(HERE, '..', '..', 'db');
+/**
+ * 迁移脚本所在目录：仓库里是 `<repo>/db`；镜像里 `db/` 被拷到 `/app/db`
+ * （`server/sync/Dockerfile`），用 `MIGRATIONS_DIR` 指过去——否则 `../..` 会跑出镜像。
+ */
+const DB_DIR = process.env.MIGRATIONS_DIR ? resolve(process.env.MIGRATIONS_DIR) : join(HERE, '..', '..', 'db');
 
 /** 按版本号（V1、V2、V3…）排序，同版本号再按名字 */
 function migrationFiles() {
@@ -74,15 +78,11 @@ async function main() {
       }
     }
 
-    // 回读关键对象，确认"跑过"与"真的在"一致
-    const r = await pool.query(
-      `SELECT to_regclass('public.anlewo_sync_key') IS NOT NULL AS sync_key,
-              (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'anlewo_save_payload_size_chk') AS payload_chk`,
-    );
-    const row = r.rows[0] ?? {};
-    console.log(`[migrate] anlewo_sync_key：${row.sync_key ? '在' : '缺！'}`);
-    console.log(`[migrate] payload 上限约束：${row.payload_chk ?? '缺！'}`);
-    if (!row.sync_key) failedFiles += 1;
+    // 回读关键对象，确认"跑过"与"真的在"一致（与 /health 的 schema 字段同一口径）
+    const schema = await schemaStatus(pool);
+    console.log(`[migrate] 六张表：${schema.missing.length === 0 ? '齐' : '缺 ' + schema.missing.join(', ')}`);
+    console.log(`[migrate] payload 上限约束：${schema.payloadLimit ? '在' : '缺！'}`);
+    if (!schema.ok) failedFiles += 1;
   } catch (err) {
     console.error('[migrate] 失败：' + (err?.message ?? 'unknown'));
     failedFiles += 1;

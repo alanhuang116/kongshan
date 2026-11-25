@@ -90,7 +90,7 @@ npm run dev
 
 | 端点 | 说明 |
 | --- | --- |
-| `GET /health` | `{ok, db:"up"|"down", redis:"up"|"memory", identity:"on"|"off"}`，不含任何配置值 |
+| `GET /health` | `{ok, db:"up"|"down", schema:{tables, payloadLimit}, redis:"up"|"memory", identity:"on"|"off"}`，不含任何配置值。`schema.tables` 是 `ok` 或 `missing:<表名逗号列表>`，`schema.payloadLimit` 是 `ok`/`missing`（V3 的 1MB 约束）；库不通时两项都是 `down`。**`ok` 仍只看库通不通**：迁移没跑全时服务照样 200+`ok:true`，验收要看 `schema` |
 | `POST /link` | 匿名注册／确认还是我。行不存在 → 同一事务建 `identity_link(provider='anon', subject=uid)` + `sync_key(sha256(key))`，可选写 `device`；已存在 → 比对 `sha256(credential)`，不匹配 `401 bad_credential`。**唯一的例外**：link 行在、`sync_key` 行丢了（运维清理／从旧备份恢复），且该行 `created_at` 早于 10 分钟、又还没有任何存档 → 允许用请求里的新 key 受控重建（否则永久 401、静默不同步）。回 `{uid, status, boundIdentity}` |
 | `GET /save` | `200 {revision, payload, updatedAt}`；没有记录 → `204` |
 | `PUT /save` | `{payload, baseRevision, clientId?, snapshotBefore?}`。`baseRevision=0` 首发（`INSERT … ON CONFLICT DO NOTHING`），其余走 `UPDATE … WHERE revision=$base RETURNING`。0 行 → `409 conflict` + 服务端当前那一份。**`snapshotBefore:true` 时，覆盖前在同一个事务里先把被替换的那一版存进 `save_snapshot(reason='sync')`**——只在首轮对账（本地确有大改、要盖掉别的设备那一版）和冲突重推时用，常规 5 秒推送不写快照 |
@@ -222,6 +222,28 @@ Redis 在 `101.43.155.108:36379`，**Redis 6.2.6 / standalone / CentOS 7（`Linu
 
 回滚：`systemctl disable --now yiwen-anlewo-sync` + 撤掉 Caddy 里的 `handle /api/anlewo/*` 即可，
 前端行为回到纯 localStorage（`VITE_ANLEWO_SYNC` 不设就是关）。
+
+## 部署到正式 K8s（`anlewo.iwenxuai.com`）
+
+清单在 `deploy/k8s/`：`sync-migrate-job.yaml.tmpl`（库迁移）→ `sync.yaml.tmpl`（同步服务）→ `deployment.yaml.tmpl`（静态站 + Ingress）。
+
+**顺序不能反：先迁移，再起服务。** 新库上直接起 Deployment 也能活（`/health` 200），但写档会 503 `db_migration_missing`。
+
+1. **镜像**：`server/sync/Dockerfile` 构建上下文是**仓库根目录**（`docker build -f server/sync/Dockerfile .`）。镜像里已带 `db/`（`MIGRATIONS_DIR=/app/db`）与 `migrate.mjs`，所以迁移不需要宿主机有 psql、也不需要另做镜像。
+2. **secret**：`anlewo-sync-env` 至少给 `DATABASE_URL`（`sync.yaml.tmpl` 与 Job 都从这里取）。
+3. **迁移**：
+   ```bash
+   envsubst '${IMAGE_TAG}' < deploy/k8s/sync-migrate-job.yaml.tmpl | kubectl apply -f -
+   kubectl -n yiwen wait --for=condition=complete job/anlewo-sync-migrate --timeout=180s
+   kubectl -n yiwen logs job/anlewo-sync-migrate   # 逐份 V*.sql + “六张表：齐 / payload 上限约束：在”
+   ```
+   失败时 Job 非 0 退出（`backoffLimit: 1`）；修好再重跑前先 `kubectl -n yiwen delete job anlewo-sync-migrate --ignore-not-found`（Job 的 spec 不可变更）。
+4. **服务与站点**：`envsubst '${IMAGE_TAG}' < deploy/k8s/sync.yaml.tmpl | kubectl apply -f -`，再 apply `deployment.yaml.tmpl`。
+5. **验收**：`curl -s https://anlewo.iwenxuai.com/api/anlewo/health` 应看到
+   `{"ok":true,"db":"up","schema":{"tables":"ok","payloadLimit":"ok"},"redis":"memory","identity":"off"}`。
+   `schema.tables` 是 `missing:…` 就回第 3 步看 Job 日志；`redis:"memory"` 是清单里没给 `REDIS_URL` 的正常形态（单副本时才安全，见 K9）。
+
+改了 `db/` 里的 SQL：必须重跑第 3 步（Job 会幂等地把 V1→V… 全跑一遍），不要只重启 Deployment。
 
 ## 契约对照（docs/DB_SPLIT_FINAL.md §7）
 

@@ -1,0 +1,71 @@
+# 安乐窝同步服务的库迁移（先跑完这个 Job，再起 anlewo-sync 的 Deployment）
+#
+# 为什么单独一个 Job 而不是 initContainer：迁移失败要能在 Deployment 之外单独看结果与日志，
+# 不要因为一次 SQL 报错把整个 Rollout 卡死；重跑也不牵连正在服务的 Pod。
+#
+#   1) 生成并 apply（IMAGE_TAG 与其它清单同一个）
+#        envsubst '${IMAGE_TAG}' < deploy/k8s/sync-migrate-job.yaml.tmpl | kubectl apply -f -
+#   2) 等它跑完（migrate.mjs 幂等：按 V1→V2→… 顺序把 db/*.sql 全跑一遍，再回读六张表与 1MB 上限）
+#        kubectl -n yiwen wait --for=condition=complete job/anlewo-sync-migrate --timeout=180s
+#   3) 看结果（失败时这里能看到是哪一份 SQL、缺哪张表）
+#        kubectl -n yiwen logs job/anlewo-sync-migrate
+#   4) 再 apply sync.yaml.tmpl / deployment.yaml.tmpl
+#
+#   改了 db/ 里的 SQL 要重跑：先删掉旧 Job（Job 的 spec 不可变更，同名 apply 会报 immutable）
+#        kubectl -n yiwen delete job anlewo-sync-migrate --ignore-not-found
+#
+#   验收：Job 成功后 `curl -s https://anlewo.iwenxuai.com/api/anlewo/health` 应看到
+#         {"ok":true,"db":"up","schema":{"tables":"ok","payloadLimit":"ok"},...}
+#
+# 权限：V1 里有一条 CREATE EXTENSION IF NOT EXISTS pgcrypto，角色没有建扩展权限时会报错；
+#       migrate.mjs 会逐份列出失败并整体退出非 0，Job 因此失败——这是有意的，不要改成"跳过"。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anlewo-sync-migrate
+  namespace: yiwen
+  labels:
+    app: anlewo-sync-migrate
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: anlewo-sync-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: yiwen/kongshan-sync:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          command: ["node", "migrate.mjs"]
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anlewo-sync-env
+                  key: DATABASE_URL
+            # 镜像里 db/ 在 /app/db（server/sync/Dockerfile 已经写好 ENV，这里显式写一遍便于排错）
+            - name: MIGRATIONS_DIR
+              value: /app/db
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
