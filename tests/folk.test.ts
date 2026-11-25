@@ -4,13 +4,14 @@ import { FOLK, FOLK_BY_ID, SEASONS, planNow } from '../src/data/folk';
 import { SITE } from '../src/world/site';
 
 describe('全村的名册', () => {
+  // 组合是全量笛卡尔积（人 × 四季 × 晴雨 × 每 0.05 点），main 加了寻路/行程后单次跑约 7~8 秒，给足余量
   it('每个人每个钟头都有着落（四季、晴雨）', () => {
     for (const f of FOLK) for (const s of SEASONS) for (const wet of [false, true]) for (let h = 0; h < 24; h += 0.05) {
       const p = planNow(f.id, h, s, wet);
       expect(p, `${f.id} ${s} ${wet ? '雨雪' : '晴'} ${h.toFixed(2)} 点`).not.toBeNull();
       expect(p!.doing.length).toBeGreaterThan(1);
     }
-  });
+  }, 15000);
   it('日程的每一步都是从小到大、在 0–24 之内', () => {
     for (const f of FOLK) for (const s of f.plan) { expect(s.from).toBeGreaterThanOrEqual(0); expect(s.to).toBeLessThanOrEqual(24); expect(s.to).toBeGreaterThan(s.from); }
   });
