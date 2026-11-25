@@ -25,7 +25,7 @@
 
 | # | 历史稿/蓝方表述 | 实读纠正 | 证据 |
 |---|---|---|---|
-| F1 | `Saved` 17 字段 | **20 字段**（含 `v`）：v/time/weather/season/master/muted/sound/haptics/quality/visits/journal/found/walked/runTold/world/flow/day/**spot/guided/flowChosen** | `src/app/store.ts:27-65` |
+| F1 | `Saved` 17 字段 | **21 字段**（含 `v`）：v/time/weather/season/master/muted/sound/haptics/quality/visits/journal/found/walked/runTold/world/flow/day/spot/guided/flowChosen/**masterChosen**（main cccc786 新增） | `src/app/store.ts:27-67` |
 | F2 | world 6 或 7 份 | **实际 8 份**：day / stars / bagSeen / bag / farm / play / beasts / folk；`mem.ts:9` 注释只列 6 个已过时 | `Anlewo.ts:178,304,623`、`bag.ts:150,168`、`farm/index.ts:76,137`、`play/kit.ts:68`、`acts/beasts.ts:139`、`acts/favor.ts:224` |
 | F3 | 身份库名 `yiwen_identity` | **代码默认是 `identity`**（application.yml:11、.env.example、docker-compose 均 `POSTGRES_DB: identity`）；`yiwen_` 前缀在生产是否被 override **未证实** | `yiwen-identity/.../application.yml:11` 等 |
 | F4 | `journal` 用 `.slice(-3000)` 封顶 | **只在 `addEntry` 写入路径封顶；`load()` 读入不封顶** ⇒ 历史/手改存档可 >3000 条，服务端若上 3000 CHECK 会**误伤合法存档** | `store.ts:114` vs `store.ts:138` |
@@ -103,7 +103,7 @@
 
 | 本地键 / 数据源 | 内容 | 落位 | 本期动作 |
 |---|---|---|---|
-| `anlewo:v1`（`Saved` 20 字段） | v/time/weather/season/master/muted/sound/haptics/quality/visits/journal/found/walked/runTold/**world(8 份)**/flow/day/spot/guided/flowChosen | `anlewo_save.payload` **整包原样** | 结构预留；**不搬迁、不上传** |
+| `anlewo:v1`（`Saved` 21 字段） | v/time/weather/season/master/muted/sound/haptics/quality/visits/journal/found/walked/runTold/**world(8 份)**/flow/day/spot/guided/flowChosen/**masterChosen** | `anlewo_save.payload` **整包原样** | 结构预留；**不搬迁、不上传** |
 | `anlewo:write:v1` | `{key, chars[]}`——仅"当前尚未写完的一篇" | `anlewo_ink`（`piece_hash` + `chars` 原样） | 结构预留；诚实声明已完成篇与 PNG 无法补录 |
 | `anlewo:net:v1` | 雅号 / 衣色 / 同游开关（`on` 默认 true） | **不入库** | 保持 localStorage；同游身份与 uid 暂不打通 |
 | （未来）统一身份 `users.id` | 来自 OIDC `/userinfo.user.id` | `anlewo_identity_link.identity_uid` | **本期不写**；对接启用时才填，见 §5 |
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS anlewo_save (
 );
 CREATE INDEX IF NOT EXISTS anlewo_save_updated_idx ON anlewo_save (updated_at DESC);
 COMMENT ON COLUMN anlewo_save.payload IS
-  '与 src/app/store.ts 的 Saved（20 字段）1:1 原样往返；服务端不解析 world 的 8 份 ns。恢复时必须过 load() 等价校验。';
+  '与 src/app/store.ts 的 Saved（21 字段，含 v）1:1 原样往返；服务端不解析字段（含 world 的 8 份 ns）。恢复时必须过 load() 等价校验。';
 
 -- ============================================================
 -- 表 3（首批）：笔迹表 —— 只存客户端能提供的"当前未写完一篇"
@@ -359,7 +359,7 @@ if (!user?.id) throw new Error('invalid userinfo');
 | C7 | **`crypto.randomUUID` 兜底**：`globalThis.crypto?.randomUUID?.() ?? v4FromGetRandomValues()`（置 `b[6]=(b[6]&0x0f)|0x40`、`b[8]=(b[8]&0x3f)|0x80`），禁止退化到 `Math.random()` | 局域网 http 下 `randomUUID` 为 undefined |
 | C8 | **对接/同步 API 独立进程/独立 systemd unit/最小权限 DB role**；不改 `server/relay.mjs` 与其 `package.json`；CORS 白名单显式列 GitHub Pages 与 nip.io 两源 | relay 明写"不存任何东西、没有任何密钥" |
 | C9 | **失败仅 `console.debug`、不改 UI、绝不回写覆盖 localStorage**；本地为唯一真相源 | "异常静默"的可测定义 |
-| C10 | **local_uid / identity_uid 不进 `Saved` / `payload`**，`v:1` 与 20 字段字节不变；flag 未开时不注册订阅、不生成 uid、不开 IDB、不写任何新 key | 红线"不改变游戏功能" |
+| C10 | **local_uid / identity_uid 不进 `Saved` / `payload`**；`v:1` 不变，同步层不增删字段，主分支新增字段（如 `masterChosen`）按增量随整包往返；flag 未开时不注册订阅、不生成 uid、不开 IDB、不写任何新 key | 红线"不改变游戏功能" |
 | C11 | ** issuer/subject 建议写稳定常量，不用随环境变化的 URL 作业务键**；`/userinfo` 调用带 15s 超时、失败降级（参照 F15） | 防环境切换导致绑定错乱；防身份服务抖动拖垮 UI |
 
 ---
@@ -367,7 +367,7 @@ if (!user?.id) throw new Error('invalid userinfo');
 ## 8. 红线与不确定项
 
 ### 8.1 不可逾越的红线（违反即否决）
-1. 不改变游戏功能：20 个 Saved 字段、world 8 份、`Mem`/`Brush`/`packChar`、同游 relay 全部原样；服务端不解析 payload 内部。
+1. 不改变游戏功能：21 个 Saved 字段（含 `v`）、world 8 份、`Mem`/`Brush`/`packChar`、同游 relay 全部原样；服务端不解析 payload 内部。
 2. 本地优先：localStorage 写入成功 = 用户侧成功；服务端写入永远 best-effort。
 3. 异常静默：新增 I/O 全 try/catch，不弹错、不打断流程。
 4. 零网络依赖：身份对接/同步默认关闭；关闭时零请求、零等待。

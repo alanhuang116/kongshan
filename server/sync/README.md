@@ -236,7 +236,7 @@ Redis 在 `101.43.155.108:36379`，**Redis 6.2.6 / standalone / CentOS 7（`Linu
 | C7 | `crypto.randomUUID ?? getRandomValues 手拼 v4`，没有安全随机源就放弃同步，不退到 `Math.random` |
 | C8 | 独立目录／独立依赖／独立 systemd unit；`server/relay.mjs` 与 `server/package.json` 未改；CORS 白名单显式列两个正式站 |
 | C9 | 前端一切失败只 `console.debug`，不改 UI，绝不回写覆盖 localStorage |
-| C10 | `local_uid` / `identity_uid` 不进 `Saved`（`v:1` 与 20 字段不变）；flag 关时零请求、零新键 |
+| C10 | `local_uid` / `identity_uid` 不进 `Saved`；`v:1` 不变，同步层不增删字段，主分支新增字段（如 `masterChosen`）随整包往返；flag 关时零请求、零新键 |
 | C11 | issuer 走常量配置；`/userinfo` 15s 超时，失败降级不写库 |
 
 明确留给后续的：接续码（C2）、凭证轮换、多设备按 `identity_uid` 归集、`/userinfo` 以外的 JWT 自验签。

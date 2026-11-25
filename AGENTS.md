@@ -33,7 +33,7 @@
 - `server/relay.mjs` 与同游中转协议：它只转发、不存东西，别往里塞身份/存档。
 
 ### 存档契约（改之前必看）
-- 存档本体是 `localStorage['anlewo:v1']`，形状是 `Saved`（`src/app/store.ts`），**`v:1` 与 20 个字段不能悄悄改**。
+- 存档本体是 `localStorage['anlewo:v1']`，形状是 `Saved`（`src/app/store.ts`），**`v:1` 与 21 个字段（含 `v`）不能悄悄改**。
 - 世界内部另有 8 份存档（`world` 按名字分），`Mem` / `Brush` / `packChar` / `site.ts` 的坐标体系保持原样。
 - 新增玩法数据请放进现有 `Saved` 字段的 `world` 子结构；**确实要改顶层字段时，必须升版本 + 写迁移 + 先告诉我**，否则老玩家存档会静默失效。
 - 不要新增或改写这些键：`anlewo:id:v1`、`anlewo:sync:v1`、`anlewo:write:v1`。`anlewo:write:v1` 是笔迹的物理边界，另有负责人。
@@ -43,6 +43,15 @@
 - 你在你的 `main` 分支改；我在我的分支集成身份与同步。跨分支只共享**契约**（这份清单 + `docs/DB_SPLIT_FINAL.md` + `server/sync/README.md`）。
 - 合并时若 `src/main.tsx` 冲突，**保留同步入口那两行**，只合入你自己的玩法改动。
 - 关键结论不确定就标注，不要凭记忆猜库名、密码、环境性质。
+
+### 合并纪律（main → 带数据库/同步的开发分支）
+- 合并 `origin/main` 前先看工作树：有未提交改动先 stash，合并后再恢复，不要带着脏树硬合。
+- 合并后逐路径核对 `db/**`、`server/sync/**`、`docs/DB_SPLIT_FINAL.md`、`src/app/sync/**`、`tests/sync-*.test.ts`：`git diff <合并前提交> -- <上面这些路径>` 必须为空。出现冲突时保留同步/数据库一侧并逐行核对，**不许整段接受 main**。
+- `db/V1__anlewo_core.sql`、`V2__anlewo_sync_key.sql`、`V3__anlewo_payload_limit.sql` 不得改名、删减、重排；`.env.local`、口令、连接串不得进版本库。
+- 合并后跑 `npm run typecheck`、`npm test`，并对本地库做一次结构核对（6 张 `anlewo_*` 表、存档上限 1MB）或请求 `/api/anlewo/health`。
+- **main 新增存档字段**（`Saved` 顶层字段或 `world` 之外的结构变化）：先给方案再动手——是否升版本（`v`）、老档迁移怎么写、`payload` 上限与服务端校验是否要跟着改、`docs/DB_SPLIT_FINAL.md` 怎么更新；方案确认后改代码，不许合完就当没看见。
+- **main 新增数据表或表字段**：先给方案（表用途、与现有 6 张表的关系、索引/约束、是否涉及身份锚点），再按 `V1→V2→V3` 的顺序续写幂等脚本 `db/V4__*.sql`（可重复执行、`IF NOT EXISTS`/`DROP … IF EXISTS` 先删后加），把建表/改表语句一并提交。
+- 新增的 SQL **必须在本地 `yiwen_anlewo` 库真实执行并验收**（表、字段、约束、索引都在），验收结果写进合并说明；只改代码不建库、或把 DDL 只写在文档里，都算没做完。
 
 ---
 
@@ -159,7 +168,7 @@ curl -s http://127.0.0.1:3830/api/anlewo/health
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 老玩家存档突然丢了 | 改了 `Saved` 顶层字段但没升版本 | 保持 `v:1` 20 字段；必须改就升版本 + 迁移 |
+| 老玩家存档突然丢了 | 改了 `Saved` 顶层字段但没升版本 | 保持 `v:1` 21 字段；破坏性改动才升版本 + 迁移 |
 | 同步服务 `503 db_migration_missing` | 三张 SQL 没跑全 | 按 V1→V2→V3 补跑 |
 | `/link` 一直 401 | `authorization` 少了 `Bearer <sync_key>`；uid 只是标识不是凭证 | 看 `server/sync/README.md` 的契约 C1 |
 | 前端没任何网络请求 | `VITE_ANLEWO_SYNC` 没开 | 这是预期；开：`VITE_ANLEWO_SYNC=1` |
@@ -184,8 +193,10 @@ curl -s http://127.0.0.1:3830/api/anlewo/health
 
 1. `npm test` 全绿，`npm run typecheck` 0 错，`npm run build` 成功；
 2. 用 `?auto=1` 走一遍你改的玩法：键盘 + 触屏至少各一次；
-3. 老存档能读出来：`localStorage['anlewo:v1'].v === 1`，20 个字段没少；
+3. 老存档能读出来：`localStorage['anlewo:v1'].v === 1`，21 个字段（含 `v`）没少；
 4. 没有提交 `.env*`、口令、连接串、`dist/`；没有碰第 1 节列出的禁改文件；
-5. 改动只在你自己的分支；合并冲突时保留同步入口那两行。
+5. 改动只在你自己的分支；合并冲突时保留同步入口那两行；
+6. 从 `main` 合并进带数据库/同步的分支后，按第 1 节「合并纪律」逐路径核对，数据库与同步部分零改动；
+7. main 带来的新存档字段或新数据表，已先给方案、再给 `db/V4__*.sql` 建表/改表语句，并在本地 `yiwen_anlewo` 库建好验收。
 
 **如果以上任何一条做不到，停下来问我，不要自己放宽标准。**
