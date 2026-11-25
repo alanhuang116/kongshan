@@ -17,10 +17,10 @@ import {
   findLinkByIdentity,
   insertSaveInitial,
   listInk,
-  ping,
   readSave,
   registerLink,
   replaceSave,
+  schemaStatus,
   touchDevice,
   updateSaveCas,
   upsertInk,
@@ -155,18 +155,24 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
 
   /**
    * GET /health —— 只报状态，不报任何配置值。
-   * ping 结果缓存 3 秒：health 也会占 IP 桶，但探活/压测时不该把 max:5 的连接池一口吃干；
+   * 探库结果缓存 3 秒：health 也会占 IP 桶，但探活/压测时不该把 max:5 的连接池一口吃干；
    * 库不可用时照样回 200，只是 `ok:false`（"进程活着"与"库可用"是两件事）。
+   *
+   * `schema` 是迁移有没有跑全（六张表、V3 的 1MB 上限）：部署时先跑 anlewo-sync-migrate Job，
+   * 再拿这一个字段验收；缺表时服务自己照旧起得来（写档会 503 db_migration_missing），所以不能只看 `ok`。
    */
   let healthAt = 0;
   let healthDbUp = false;
+  /** 上次探到的结构（库不通时是 null） */
+  let healthSchema = null;
   async function handleHealth(req, res) {
     const now = Date.now();
     if (now - healthAt >= 3000) {
       try {
-        await ping(pool);
+        healthSchema = await schemaStatus(pool);
         healthDbUp = true;
       } catch {
+        healthSchema = null;
         healthDbUp = false;
       }
       healthAt = now;
@@ -174,6 +180,10 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
     send(res, 200, {
       ok: healthDbUp,
       db: healthDbUp ? 'up' : 'down',
+      schema: {
+        tables: healthSchema ? (healthSchema.missing.length === 0 ? 'ok' : `missing:${healthSchema.missing.join(',')}`) : 'down',
+        payloadLimit: healthSchema ? (healthSchema.payloadLimit ? 'ok' : 'missing') : 'down',
+      },
       redis: limiter.kind === 'redis' ? 'up' : 'memory',
       identity: config.identityEnabled ? 'on' : 'off',
     });

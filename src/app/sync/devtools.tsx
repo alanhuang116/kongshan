@@ -9,12 +9,15 @@
  * 只读写两个 localStorage 键（形状与既有模块逐字一致）：
  *   · anlewo:id:v1   —— 见 id.ts 的 SyncId { v:1, uid, key, createdAt }，id.ts 独占写入
  *   · anlewo:sync:v1 —— 见 sync/index.ts 与 reconcile.ts 的 Anchor { v:1, revision, hash }
+ * 另读一份**内存状态**（sync/state.ts）：存档字节、最近一次推成功的时间、是不是已经超限停推。
+ * 那份状态不落盘、不上报；同步 flag 没开时它一直是初值，面板据此说“没在同步”。
  * 本文件不新增任何键、不发任何请求、不碰服务端。
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { isSyncKey, isV4Uuid, loadId, newSyncKey, type SyncId } from './id';
 import type { Anchor } from './reconcile';
+import { syncState, type SyncState } from './state';
 
 /** 与 id.ts 的 KEY 一致（那边没导出，这里照抄；改了要两边一起改） */
 const ID_KEY = 'anlewo:id:v1';
@@ -66,6 +69,40 @@ function maskKey(key: string): string {
   if (key.length <= 8) return '••••';
   return `${key.slice(0, 4)}••••••••${key.slice(-4)}`;
 }
+
+/** 字节数说人话：小于 1KB 报字节，上头报 KB / MB（一位小数） */
+function fmtBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+/** 时刻：只到秒，本机时区 */
+function fmtClock(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** 多久以前：给人看个量级就行 */
+function fmtAgo(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} 秒`;
+  if (s < 3600) return `${Math.round(s / 60)} 分钟`;
+  return `${Math.round(s / 3600)} 小时`;
+}
+
+/** 没推成的原因翻成人话 */
+const ERR_TEXT: Record<string, string> = {
+  too_large: '存档超过 1MB 上限，已停推（本地完好）',
+  unserializable: '存档没法序列化成 JSON',
+  conflict: '服务端有别的版本，正在重推',
+  network_down: '网络没通（下次变动再试）',
+  bad_credential: '凭证不被服务端认（要重新注册）',
+  identity_disabled: '身份对接关着',
+};
+const errText = (code: string): string => ERR_TEXT[code] ?? code;
 
 const S: Record<string, CSSProperties> = {
   dot: {
@@ -190,6 +227,8 @@ function Devtools(): ReactElement {
   const [draftUid, setDraftUid] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
+  /** 同步层的内存状态（面板开着时每秒读一次；关着不跑） */
+  const [sync, setSync] = useState<Readonly<SyncState>>(() => syncState());
 
   const dotRef = useRef<HTMLDivElement | null>(null);
   /** 「安」字当前字形框；题名页出现/消失、字体与窗口变化时重算 */
@@ -258,6 +297,15 @@ function Devtools(): ReactElement {
     clicksRef.current = [];
     setOpen(false);
   }, []);
+
+  // 同步状态：每秒照一份快照（同步层自己是事件驱动的，没有订阅接口，轮询最省事）
+  useEffect(() => {
+    if (!open) return;
+    const tick = (): void => setSync({ ...syncState() });
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [open]);
 
   /** 应用 uid：形状严格照 id.ts，非法 uuid 一律不写 */
   const applyUid = useCallback((): void => {
@@ -381,6 +429,35 @@ function Devtools(): ReactElement {
               </span>
             </div>
             <div style={S.hint}>只读展示；点「清除同步锚」会删掉这个键。</div>
+          </div>
+
+          <div style={S.section}>
+            <div style={S.row}>
+              <span style={S.label}>最近推送</span>
+              <span>
+                {sync.lastPushAt
+                  ? `成功 · ${fmtClock(sync.lastPushAt)}（${fmtAgo(Date.now() - sync.lastPushAt)}前）`
+                  : sync.started ? '这次会话还没推成功过' : '没在同步（同步层未启动）'}
+              </span>
+            </div>
+            <div style={S.row}>
+              <span style={S.label}>存档字节</span>
+              <span>
+                {fmtBytes(sync.bytes)} / {fmtBytes(sync.limit)}
+                {`（余 ${fmtBytes(Math.max(0, sync.limit - sync.bytes))}，占 ${((sync.bytes / sync.limit) * 100).toFixed(1)}%）`}
+              </span>
+            </div>
+            {sync.overLimit && (
+              <div style={S.error} role="alert">
+                超上限停推：整包 {fmtBytes(sync.bytes)} 已超 {fmtBytes(sync.limit)}，本地照旧、但不再上传（改回小一点之前，服务端停在上一版）
+              </div>
+            )}
+            {!sync.overLimit && sync.lastError && (
+              <div style={S.error} role="alert">上次没推成：{errText(sync.lastError)}</div>
+            )}
+            <div style={S.hint}>
+              字节数是整包存档 JSON 的 UTF-8 长度（与推送、V3 的 CHECK 同一个口径，含 journal 与 world 八份）；每秒刷一次，不落盘。
+            </div>
           </div>
 
           <div style={S.section}>
