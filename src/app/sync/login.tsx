@@ -7,7 +7,8 @@
  *     前端只拿到「我是谁」（`{id,name,email}`）；
  *   · 用安乐窝自己的纸墨样式（内联样式，不新增全局类名，避免碰玩法侧的样式表）。
  *
- * 未登录时由 `index.ts` 打开；登录成功后才起同步。关掉弹窗＝这次不同步，本地照旧能玩。
+ * 由 `index.ts` 在需要时打开（如用户主动点击「登录/同步」）。登录成功后起同步。
+ * 点击遮罩层可关闭弹窗；未登录时以访客模式进入，本地存档照旧。
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -220,7 +221,6 @@ function LoginSheet({ client, onDone, onClose }: {
         <button type="submit" style={ok && !busy ? S.submitOn : S.submit} disabled={!ok || busy}>
           {busy ? '落印中…' : mode === 'register' ? '落印留名' : '凭帖入内'}
         </button>
-        <button type="button" style={S.close} onClick={onClose} disabled={busy}>暂不</button>
       </form>
     </div>
   );
@@ -288,9 +288,5 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: 4, padding: '11px 0', borderRadius: 10, border: 'none',
     background: SEAL, color: '#fdf8ee', font: 'inherit', fontSize: 15,
     letterSpacing: '.16em', cursor: 'pointer',
-  },
-  close: {
-    padding: '6px 0', background: 'transparent', border: 'none',
-    color: 'rgba(44,42,38,.55)', font: 'inherit', fontSize: 13, cursor: 'pointer',
   },
 };
