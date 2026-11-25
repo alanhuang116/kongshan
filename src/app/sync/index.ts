@@ -163,19 +163,16 @@ async function boot(): Promise<void> {
   const client = new SyncClient({ base: apiBase || '/api/anlewo', uid: id.uid, credential: id.key });
 
   // 统一身份：六爻 / 知己登录过的话，父域 SSO cookie 还在，这里直接认人（免登录）；
-  // 没有就要求登录——没登录就不起同步（本地存档照旧，不受影响）。身份对接关着时整段跳过。
+  // 没有登录也能玩（本地存档照旧），只是不同步。用户后续可在设置中主动登录。
+  // 身份对接关着时整段跳过。
   if (await client.identityOn()) {
     const known = await client.identitySession();
-    let user = known.ok ? known.user : null;
-    if (!user) {
-      const done = await openLogin(client);
-      if (!done) {
-        console.debug('[anlewo-sync] 没登录：这次不同步（本地照旧）');
-        return;
-      }
-      user = done.user;
+    const user = known.ok ? known.user : null;
+    if (user) {
+      setSyncState({ user });
+    } else {
+      console.debug('[anlewo-sync] 未登录：以访客模式进入，本地存档照旧，暂不同步');
     }
-    setSyncState({ user });
   }
 
   const reg = await registerWithRetry(client);
