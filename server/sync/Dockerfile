@@ -6,6 +6,10 @@ ENV NODE_ENV=production
 COPY server/sync/package.json server/sync/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com
 COPY server/sync/ ./
+# 迁移脚本要读的 db/V*.sql：镜像里放 /app/db，migrate.mjs 靠 MIGRATIONS_DIR 找它
+# （仓库里不加这个变量时仍读 <repo>/db，本机 `npm run migrate` 行为不变）
+COPY db/ ./db/
+ENV MIGRATIONS_DIR=/app/db
 USER node
 EXPOSE 3830
 CMD ["node", "index.mjs"]

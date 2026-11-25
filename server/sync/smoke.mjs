@@ -183,7 +183,7 @@ async function main() {
     await started.close();
     process.exit(1);
   }
-  ok('六张表都在（V1 + V2 已执行）' + (tables.k ? '，V3 的 1MB 上限见下方断言' : ''));
+  ok('六张表都在（V1 + V2 已执行）' + (tables.k ? '，V5 的 4MB 上限见下方断言' : ''));
 
   const uid = randomUUID();
   const key = randomBytes(32).toString('base64url');
@@ -249,6 +249,12 @@ async function main() {
         JSON.stringify(r.json),
       );
       check(r.json?.identity === 'off', `identity:"off"（实际 ${JSON.stringify(r.json?.identity)}）`);
+      check(r.json?.schema?.tables === 'ok', `schema.tables:"ok"（实际 ${JSON.stringify(r.json?.schema?.tables)}）`);
+      check(r.json?.schema?.payloadLimit === 'ok', `schema.payloadLimit:"ok"（实际 ${JSON.stringify(r.json?.schema?.payloadLimit)}）`);
+      check(
+        typeof r.json?.schema?.payloadLimitBytes === 'number' && r.json.schema.payloadLimitBytes > 0,
+        `schema.payloadLimitBytes 是正数（实际 ${JSON.stringify(r.json?.schema?.payloadLimitBytes)}）`,
+      );
       check(!JSON.stringify(r.json).includes('postgres'), 'health 里没有任何连接串');
     }
 
@@ -833,6 +839,10 @@ async function main() {
         check(
           first.status === 200 && first.json?.ok === false && first.json?.db === 'down',
           `库不可用：200 + ok:false + db:"down"（实际 ${first.status} ${first.text.slice(0, 60)}）`,
+        );
+        check(
+          first.json?.schema?.tables === 'down' && first.json?.schema?.payloadLimit === 'down',
+          `库不可用：schema 两项都报 down（实际 ${JSON.stringify(first.json?.schema)}）`,
         );
         check(after1 >= 1, `第一次 /health 真的探了一次库（探库次数 ${after1}）`);
         check(pings === after1, `3 秒内第二次走缓存、不再打库（探库次数 ${after1} → ${pings}）`);

@@ -72,7 +72,7 @@ npm run dev
 | `ANLEWO_CORS` | 否 | 两个正式站 | 逗号分隔，**与默认值求并集**；`localhost` / `127.0.0.1` / `::1` 的任意端口总是放行 |
 | `IDENTITY_ENABLED` | 否 | `0` | `1` 才允许 `/userinfo` 那条路 |
 | `IDENTITY_ISSUER` | 否 | 空 | 开了身份对接才必填；不写死 localhost |
-| `BODY_LIMIT` | 否 | `2097152` | 请求体上限（字节，2MB；存档本身 ≤1MB） |
+| `BODY_LIMIT` | 否 | `6291456` | 请求体上限（字节，6MB；存档本身 ≤4MB，JSON 转义还会胖一圈） |
 | `RATE_PER_MIN` | 否 | `120` | 每 uid 每分钟（桶键里是 uuid 的 sha256 前缀，不是原文） |
 | `IP_RATE_PER_MIN` | 否 | `max(RATE_PER_MIN×4, 240)` | 每 IP 每分钟（所有路径共用，含 `/health`） |
 | `LINK_PER_MIN` | 否 | `25` | 每 IP 每分的 `/link` **建行**预算（只数真正新建的身份，已注册用户的报到不占；客户端遇 429 会退避重试） |
@@ -90,7 +90,7 @@ npm run dev
 
 | 端点 | 说明 |
 | --- | --- |
-| `GET /health` | `{ok, db:"up"|"down", redis:"up"|"memory", identity:"on"|"off"}`，不含任何配置值 |
+| `GET /health` | `{ok, db:"up"|"down", schema:{tables, payloadLimit}, redis:"up"|"memory", identity:"on"|"off"}`，不含任何配置值。`schema.tables` 是 `ok` 或 `missing:<表名逗号列表>`，`schema.payloadLimit` 是 `ok`/`missing`（V5 的 4MB 约束），`schema.payloadLimitBytes` 是**真上限**（库里的 CHECK 与服务端 `MAX_PAYLOAD_BYTES` 取小；库不通时为 `null`）——客户端拿它当自己的门槛，所以滚动发布中间态不会撞 413；库不通时三项都是 `down`/`null`。**`ok` 仍只看库通不通**：迁移没跑全时服务照样 200+`ok:true`，验收要看 `schema` |
 | `POST /link` | 匿名注册／确认还是我。行不存在 → 同一事务建 `identity_link(provider='anon', subject=uid)` + `sync_key(sha256(key))`，可选写 `device`；已存在 → 比对 `sha256(credential)`，不匹配 `401 bad_credential`。**唯一的例外**：link 行在、`sync_key` 行丢了（运维清理／从旧备份恢复），且该行 `created_at` 早于 10 分钟、又还没有任何存档 → 允许用请求里的新 key 受控重建（否则永久 401、静默不同步）。回 `{uid, status, boundIdentity}` |
 | `GET /save` | `200 {revision, payload, updatedAt}`；没有记录 → `204` |
 | `PUT /save` | `{payload, baseRevision, clientId?, snapshotBefore?}`。`baseRevision=0` 首发（`INSERT … ON CONFLICT DO NOTHING`），其余走 `UPDATE … WHERE revision=$base RETURNING`。0 行 → `409 conflict` + 服务端当前那一份。**`snapshotBefore:true` 时，覆盖前在同一个事务里先把被替换的那一版存进 `save_snapshot(reason='sync')`**——只在首轮对账（本地确有大改、要盖掉别的设备那一版）和冲突重推时用，常规 5 秒推送不写快照 |
@@ -107,10 +107,10 @@ npm run dev
 
 ### 上传体积
 
-- 存档：`JSON.stringify(payload)` ≤ 1048576（与 `db/V3__anlewo_payload_limit.sql` 的 CHECK 一致；3000 条起居注约 380KB，256KB 那个旧上限会把老玩家挡在门外）
+- 存档：`JSON.stringify(payload)` ≤ 4194304（与 `db/V5__anlewo_payload_limit_4mb.sql` 的 CHECK 一致；journal 在客户端封顶 3000 条，3000 条 × 100 字约 1MB、× 160 字约 1.43MB，所以 1MB 那个旧上限会把玩得久的档挡在门外）
 - 笔迹：`JSON.stringify(chars)` ≤ 1048576，`chars` 最多 4096 项，`charTotal` 必须等于 `chars.length`
 - `pieceKey` ≤ 2048 字节
-- 客户端推之前先量一遍：超 1MB 就这一回不推（`console.debug` 一行），本地照旧——不会因为超限而反复撞 413
+- 客户端推之前先量一遍：超 4MB 就这一回不推（`console.debug` 一行），本地照旧——不会因为超限而反复撞 413
 
 ## Redis 的边界（别把它当缓存用）
 
@@ -223,6 +223,37 @@ Redis 在 `101.43.155.108:36379`，**Redis 6.2.6 / standalone / CentOS 7（`Linu
 回滚：`systemctl disable --now yiwen-anlewo-sync` + 撤掉 Caddy 里的 `handle /api/anlewo/*` 即可，
 前端行为回到纯 localStorage（`VITE_ANLEWO_SYNC` 不设就是关）。
 
+## 部署到正式 K8s（`anlewo.iwenxuai.com`）
+
+清单在 `deploy/k8s/`：`sync-migrate-job.yaml.tmpl`（库迁移）→ `sync.yaml.tmpl`（同步服务）→ `deployment.yaml.tmpl`（静态站 + Ingress）。
+
+**顺序不能反：先迁移，再起服务。** 新库上直接起 Deployment 也能活（`/health` 200），但写档会 503 `db_migration_missing`。
+
+1. **镜像**：`server/sync/Dockerfile` 构建上下文是**仓库根目录**（`docker build -f server/sync/Dockerfile .`）。镜像里已带 `db/`（`MIGRATIONS_DIR=/app/db`）与 `migrate.mjs`，所以迁移不需要宿主机有 psql、也不需要另做镜像。
+2. **secret**：`anlewo-sync-env` 至少给 `DATABASE_URL`（`sync.yaml.tmpl` 与 Job 都从这里取）。
+3. **迁移**：
+   ```bash
+   envsubst '${IMAGE_TAG}' < deploy/k8s/sync-migrate-job.yaml.tmpl | kubectl apply -f -
+   kubectl -n yiwen wait --for=condition=complete job/anlewo-sync-migrate --timeout=180s
+   kubectl -n yiwen logs job/anlewo-sync-migrate   # 逐份 V*.sql + “六张表：齐 / payload 上限约束：在”
+   ```
+   失败时 Job 非 0 退出（`backoffLimit: 1`）；修好再重跑前先 `kubectl -n yiwen delete job anlewo-sync-migrate --ignore-not-found`（Job 的 spec 不可变更）。
+4. **服务与站点**：`envsubst '${IMAGE_TAG}' < deploy/k8s/sync.yaml.tmpl | kubectl apply -f -`，再 apply `deployment.yaml.tmpl`。
+5. **验收**：`curl -s https://anlewo.iwenxuai.com/api/anlewo/health` 应看到
+   `{"ok":true,"db":"up","schema":{"tables":"ok","payloadLimit":"ok"},"redis":"memory","identity":"off"}`。
+   `schema.tables` 是 `missing:…` 就回第 3 步看 Job 日志；`redis:"memory"` 是清单里没给 `REDIS_URL` 的正常形态（单副本时才安全，见 K9）。
+
+改了 `db/` 里的 SQL：必须重跑第 3 步（Job 会幂等地把 V1→V… 全跑一遍），不要只重启 Deployment。
+
+### 上限放宽（V5：1MB → 4MB）的滚动顺序
+
+**先跑迁移，再发带新上限的服务端与前端**，顺序反了会出现“界面看着在同步、其实一次都没推上去”：
+
+1. 目标库执行到 V5：K8s 走上面的 `anlewo-sync-migrate` Job，测试机/本地 `cd server/sync && npm run migrate`（= `node migrate.mjs`）。日志与 `/health` 都要看到 `payload 上限约束：在` / `schema.payloadLimit:"ok"`。
+2. 再发镜像（`server/sync/Dockerfile`，含 `MAX_PAYLOAD_BYTES=4MB`、`BODY_LIMIT` 默认 6MB）与 `deployment.yaml.tmpl`（Ingress `proxy-body-size: 6m`），最后发前端（`SYNC_PUSH_LIMIT=4MB`）。
+3. 只发一半的后果：老服务端仍按 1MB 回 413 `payload_too_large`，或库还是旧 CHECK——客户端超限时只在 `console.debug` 留一行、面板上挂“超上限停推”，不会有别的报错。
+4. 回滚方向相反：先退代码、确认库里没有超过 1MB 的行，再把约束改回 1048576。
+
 ## 契约对照（docs/DB_SPLIT_FINAL.md §7）
 
 | # | 兑现方式 |
@@ -247,8 +278,8 @@ Redis 在 `101.43.155.108:36379`，**Redis 6.2.6 / standalone / CentOS 7（`Linu
 | --- | --- | --- | --- |
 | K1 | **本期身份绑定是 1:1**：`anlewo_identity_link_subject_uq` 是 `(provider,issuer,subject)` 唯一，第二台设备拿同一个统一身份绑会 `409 identity_already_bound` | 多设备共享同一统一身份暂不可能 | 合并流程落地时放宽该唯一索引 / 把 `subject` 换成设备级标识 |
 | K2 | 笔迹**只能备份不能恢复**（`GET /ink` 不回 `chars`，无单篇读取端点） | 换设备拿不回笔迹 | 加 `GET /ink/:pieceHash` |
-| K3 | 写库**没有字节预算**：单 IP 限流 120/分，每个请求仍可写 ≤1MB | 极端情况下能写胖库（同实例还有身份库） | 加 `WRITE_BYTES_PER_MIN` 或按 uid 的存储配额 |
-| K4 | `save_snapshot` 没有自动清理任务 | 每次"覆盖前留底"加一行，长期增长 | 定时清理：每用户保留最近 10 版 + `pre_bind` 最后一版 |
+| K3 | 写库**没有字节预算**：单 IP 限流 120/分，每个请求仍可写 ≤4MB | 极端情况下能写胖库（同实例还有身份库） | 加 `WRITE_BYTES_PER_MIN` 或按 uid 的存储配额 |
+| K4 | ~~`save_snapshot` 没有自动清理任务~~ **已收口**：每次写快照后按用户删旧（`sync` 留最近 10 版、`pre_bind` 留最近 3 版，同一事务里做） | 以前每次"覆盖前留底"都多一行，上限放宽到 4MB 后一行可达 4MB | 剩余风险在 K3：没有按字节的写库预算 |
 | K5 | 首次注册无凭证（`/link` 谁先来谁占这个 uuid） | uid 是 122bit 随机、不出现在 URL/日志，猜不到；但被抢先占掉后真机会 401 | 配合 K6 的受控重建 + 人工换 uid |
 | K6 | 凭证行丢失的自动重建只覆盖"`created_at` 早于 10 分钟且还没有存档"的行 | 已有存档又丢了 `sync_key` 时仍需人工处理（见下） | 凭证轮换 + 审计 |
 | K7 | `SIGTERM` 优雅退出只在 Linux 上有效，Windows 走 `TerminateProcess` | 本机开发时测不出来 | 部署后 `systemctl restart` 看日志那一行 |

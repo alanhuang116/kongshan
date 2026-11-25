@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS anlewo_save (
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT anlewo_save_payload_object_chk CHECK (jsonb_typeof(payload) = 'object'),
-  CONSTRAINT anlewo_save_payload_size_chk   CHECK (length(payload::text) <= 262144)  -- 256KB 硬上限
+  CONSTRAINT anlewo_save_payload_size_chk   CHECK (length(payload::text) <= 4194304)  -- 4MB 硬上限（V5 起；V1 256KB → V3 1MB）
 );
 CREATE INDEX IF NOT EXISTS anlewo_save_updated_idx ON anlewo_save (updated_at DESC);
 COMMENT ON COLUMN anlewo_save.payload IS

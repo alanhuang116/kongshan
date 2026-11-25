@@ -54,6 +54,14 @@ describe('SyncClient', () => {
     }
   });
 
+  it('读上限：/health 报多少就是多少；没报、不是正数、状态不对，一律 null（调用方退回本地默认值）', async () => {
+    expect(await client(() => ({ status: 200, body: { ok: true, schema: { payloadLimitBytes: 4194304 } } })).payloadLimit()).toBe(4194304);
+    expect(await client(() => ({ status: 200, body: { ok: true, schema: { payloadLimit: 'ok' } } })).payloadLimit()).toBeNull();
+    expect(await client(() => ({ status: 200, body: { ok: true, schema: { payloadLimitBytes: 0 } } })).payloadLimit()).toBeNull();
+    expect(await client(() => ({ status: 200, body: null })).payloadLimit()).toBeNull();
+    expect(await client(() => ({ status: 500, body: { error: 'internal' } })).payloadLimit()).toBeNull();
+  });
+
   it('拉存档 204：当作"服务端还没有"', async () => {
     const c = client(() => ({ status: 204 }));
     const r = await c.pullSave();

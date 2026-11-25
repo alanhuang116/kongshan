@@ -1,3 +1,8 @@
+# 安乐窝同步服务（Deployment + Service）
+#
+# 应用顺序：先 `sync-migrate-job.yaml.tmpl`（等 job/anlewo-sync-migrate 完成），再 apply 本文件；
+# 否则新库上服务会以 503 db_migration_missing 起得来但写不了档，而探活只看 200 是看不出来的。
+# 验收：GET /api/anlewo/health 里 schema.tables 与 schema.payloadLimit 都是 "ok"。
 apiVersion: apps/v1
 kind: Deployment
 metadata:

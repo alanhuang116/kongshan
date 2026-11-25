@@ -48,7 +48,7 @@
 - 合并 `origin/main` 前先看工作树：有未提交改动先 stash，合并后再恢复，不要带着脏树硬合。
 - 合并后逐路径核对 `db/**`、`server/sync/**`、`docs/DB_SPLIT_FINAL.md`、`src/app/sync/**`、`tests/sync-*.test.ts`：`git diff <合并前提交> -- <上面这些路径>` 必须为空。出现冲突时保留同步/数据库一侧并逐行核对，**不许整段接受 main**。
 - `db/V1__anlewo_core.sql`、`V2__anlewo_sync_key.sql`、`V3__anlewo_payload_limit.sql` 不得改名、删减、重排；`.env.local`、口令、连接串不得进版本库。
-- 合并后跑 `npm run typecheck`、`npm test`，并对本地库做一次结构核对（6 张 `anlewo_*` 表、存档上限 1MB）或请求 `/api/anlewo/health`。
+- 合并后跑 `npm run typecheck`、`npm test`，并对本地库做一次结构核对（6 张 `anlewo_*` 表、存档上限 4MB）或请求 `/api/anlewo/health`。
 
 ### 分支纪律（2026-11-25 起）
 - **本地开发不合并 `main`**：`main` 只作为上游玩法来源，开发分支（`dev_link_portal` 及后续 `dev_*`）不向 `main` 合并、不推送 `main`。
@@ -59,6 +59,17 @@
 - **main 新增存档字段**（`Saved` 顶层字段或 `world` 之外的结构变化）：先给方案再动手——是否升版本（`v`）、老档迁移怎么写、`payload` 上限与服务端校验是否要跟着改、`docs/DB_SPLIT_FINAL.md` 怎么更新；方案确认后改代码，不许合完就当没看见。
 - **main 新增数据表或表字段**：先给方案（表用途、与现有 6 张表的关系、索引/约束、是否涉及身份锚点），再按 `V1→V2→V3` 的顺序续写幂等脚本 `db/V4__*.sql`（可重复执行、`IF NOT EXISTS`/`DROP … IF EXISTS` 先删后加），把建表/改表语句一并提交。
 - 新增的 SQL **必须在本地 `yiwen_anlewo` 库真实执行并验收**（表、字段、约束、索引都在），验收结果写进合并说明；只改代码不建库、或把 DDL 只写在文档里，都算没做完。
+
+### 存档上限这类「放宽」迁移的滚动顺序（V5 起）
+
+- **先迁移，再发代码**。上限放宽（V5 把 payload 1MB → 4MB）必须先在目标库执行，再发布带新上限的服务端与前端。
+  - 库里还是旧的 1MB CHECK、服务端/前端先放开 4MB：大档在服务端被旧 CHECK 拦下，前端只留一行 `console.debug`，看起来在同步、其实停着。
+  - 库里已是 4MB、前端还是 1MB：只是白白少用额度，不报错；所以“先库、后代码”那一头永远安全。
+  - 前端 4MB 而服务端仍是 `MAX_PAYLOAD_BYTES=1MB`：413 `payload_too_large`，同一个静默不同步。
+- **正式 K8s**：`kubectl -n yiwen delete job anlewo-sync-migrate --ignore-not-found` → `envsubst '${IMAGE_TAG}' < deploy/k8s/sync-migrate-job.yaml.tmpl | kubectl apply -f -` → `kubectl -n yiwen wait --for=condition=complete job/anlewo-sync-migrate --timeout=180s` → 日志里要有 `✓ V5__anlewo_payload_limit_4mb.sql` 与 `payload 上限约束：在`；然后才 apply `sync.yaml.tmpl` 与 `deployment.yaml.tmpl`。
+- **测试机 / 本地**：`cd server/sync && npm run migrate`（就是 `node migrate.mjs`，幂等、可重复跑），确认回读 `payload 上限约束：在`，再重启同步服务并重新构建前端。
+- **四处数字必须一起改**：`src/app/sync/state.ts` 的 `SYNC_PUSH_LIMIT`、`server/sync/db.mjs` 的 `MAX_PAYLOAD_BYTES`、`db/V5__anlewo_payload_limit_4mb.sql` 的 CHECK；再加 `BODY_LIMIT`（默认 6MB）与 Ingress 的 `proxy-body-size`（6m）必须**大于**上限，否则 413 先出在反代那一层。
+- **回滚方向相反**：先把前端/服务端退回 1MB（客户端不再往上推），确认库里没有超过 1MB 的行，再把约束改回 1048576——否则 `ADD CONSTRAINT` 会直接失败。
 
 ---
 
@@ -110,17 +121,19 @@ npm run preview    # 看打包后的样子
 
 ### 3.2 建库（在法国服务器上自建，幂等）
 
-需要从我仓库拿 `db/V1__anlewo_core.sql`、`db/V2__anlewo_sync_key.sql`、`db/V3__anlewo_payload_limit.sql`。
+需要从我仓库拿 `db/V1__anlewo_core.sql`、`db/V2__anlewo_sync_key.sql`、`db/V3__anlewo_payload_limit.sql`、`db/V4__anlewo_save_comment_21fields.sql`、`db/V5__anlewo_payload_limit_4mb.sql`。
 
 ```bash
 # 以 postgres 超级用户或有 CREATEDB 权限的角色执行；口令用占位符，真实值从密钥管理器取
 sudo -u postgres psql -c "CREATE ROLE anlewo LOGIN PASSWORD '<PLACEHOLDER>';"
 sudo -u postgres createdb -O anlewo yiwen_anlewo
 
-# 三个脚本按序执行，都可重复跑
+# 五个脚本按序执行，都可重复跑
 psql "postgresql://anlewo:<PLACEHOLDER>@127.0.0.1:5432/yiwen_anlewo" -v ON_ERROR_STOP=1 -f db/V1__anlewo_core.sql
 psql "postgresql://anlewo:<PLACEHOLDER>@127.0.0.1:5432/yiwen_anlewo" -v ON_ERROR_STOP=1 -f db/V2__anlewo_sync_key.sql
 psql "postgresql://anlewo:<PLACEHOLDER>@127.0.0.1:5432/yiwen_anlewo" -v ON_ERROR_STOP=1 -f db/V3__anlewo_payload_limit.sql
+psql "postgresql://anlewo:<PLACEHOLDER>@127.0.0.1:5432/yiwen_anlewo" -v ON_ERROR_STOP=1 -f db/V4__anlewo_save_comment_21fields.sql
+psql "postgresql://anlewo:<PLACEHOLDER>@127.0.0.1:5432/yiwen_anlewo" -v ON_ERROR_STOP=1 -f db/V5__anlewo_payload_limit_4mb.sql
 ```
 
 `V1` 会 `CREATE EXTENSION IF NOT EXISTS pgcrypto`；如果报权限错，让 DBA 在库上先装扩展或给建扩展权限，`CREATE DATABASE` 不能放进事务块，也不在脚本里。
@@ -136,7 +149,7 @@ SELECT table_name FROM information_schema.tables
 
 应看到 6 张表：`anlewo_identity_link`、`anlewo_save`、`anlewo_ink`、`anlewo_sync_key`、`anlewo_save_snapshot`、`anlewo_device`。
 
-三张脚本的关系：**V2 依赖 V1**（外键），**V3 依赖 V1**（改 `anlewo_save` 的约束）。漏跑 V2 会在 `/link` 时报 `db_migration_missing`。
+三张脚本的关系：**V2 依赖 V1**（外键），**V3/V5 依赖 V1**（改 `anlewo_save` 的约束），**V4 依赖 V1**（只改 `payload` 的注释）。漏跑 V2 会在 `/link` 时报 `db_migration_missing`；漏跑 V5 则存档上限还停在 1MB。
 
 ### 3.3 配置（口令只进被忽略的文件）
 

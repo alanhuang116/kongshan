@@ -132,10 +132,107 @@ function load(): Saved {
   return { ...DEFAULT };
 }
 export const saved = createStore<Saved>(typeof localStorage === 'undefined' ? { ...DEFAULT } : load());
+/**
+ * 落盘状态：配额满了的时候本地并不是“什么都没发生”，只是没写进去——开发面板要看得到（不落盘、不上报）。
+ */
+export interface StorageState {
+  ok: boolean;
+  /** 最近一次写成功的字符数（UTF-16，localStorage 就是这么计的） */
+  bytes: number;
+  /** 为了存下而丢掉的起居注条数（只在配额不足时大于 0） */
+  trimmed: number;
+  lastError: string | null;
+}
+const storedChars = (): number => {
+  try {
+    return localStorage.getItem(KEY)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+};
+const storage: StorageState = { ok: true, bytes: storedChars(), trimmed: 0, lastError: null };
+export const storageState = (): Readonly<StorageState> => storage;
+
+/** 序列化失败（循环引用之类）给 null，调用方记一笔就走 */
+function textOf(snap: Saved): string | null {
+  try {
+    return JSON.stringify(snap);
+  } catch {
+    return null;
+  }
+}
+
+/** 最后 keep 条；keep=0 时给空数组（不能用 slice(-0)，那是整份） */
+function tail<T>(list: T[], keep: number): T[] {
+  return keep <= 0 ? [] : list.slice(-keep);
+}
+
+/** 写一次并把状态记好；写不进去返回 false，lastError 留的就是浏览器给的那个名字 */
+function put(text: string): boolean {
+  try {
+    localStorage.setItem(KEY, text);
+    storage.ok = true;
+    storage.bytes = text.length;
+    storage.lastError = null;
+    return true;
+  } catch (err) {
+    storage.ok = false;
+    storage.lastError = err instanceof Error ? err.name : 'write_failed';
+    return false;
+  }
+}
+
+let writing = false;
+/**
+ * 写回 localStorage。配额满（QuotaExceededError）时只丢**最老的**起居注，而且能少丢就少丢：
+ * 二分找出“还能写进去的最大条数”（每探一次就真写一次，配额只有写了才知道），
+ * 通常只丢刚好需要的那几条；以前这里是 catch 一句“存不下就算了”，结果是玩一整晚、关页全没。
+ * 其余字段（天时、行囊、村人、星图…）一条不动；丢到一条不剩也写不下，才记失败、内存不动。
+ * writing 只防一种事：保存的订阅将来若改成同步回调，递归会直接把栈打穿。
+ */
+function persist(): void {
+  if (writing) return;
+  writing = true;
+  try {
+    const snap = saved.get();
+    const text = textOf(snap);
+    if (text === null) {
+      storage.ok = false;
+      storage.lastError = 'unserializable';
+      return;
+    }
+    if (put(text)) return;
+
+    let lo = 0;
+    let hi = snap.journal.length;
+    let kept = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const probe = textOf({ ...snap, journal: tail(snap.journal, mid) });
+      if (probe !== null && put(probe)) {
+        kept = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (kept < 0) return; // 一条都写不进：状态已记好，内存一条不动
+    if (kept === snap.journal.length) return; // 全量那一探就写成了，什么也不用裁
+    const trimmed = { ...snap, journal: tail(snap.journal, kept) };
+    // 二分最后一次探测可能是失败的、把状态写成了“没写成”：这里把最后那一份再写一次，状态以它为准
+    const finalText = textOf(trimmed);
+    if (finalText === null || !put(finalText)) return;
+    storage.trimmed += snap.journal.length - kept;
+    saved.set(() => trimmed); // 内存也退到同一步
+  } finally {
+    writing = false;
+  }
+}
+
 let pending = 0;
 saved.sub(() => {
   if (pending) return;
-  pending = window.setTimeout(() => { pending = 0; try { localStorage.setItem(KEY, JSON.stringify(saved.get())); } catch { /* 存不下就算了 */ } }, 300);
+  pending = window.setTimeout(() => { pending = 0; persist(); }, 300);
 });
 export const patch = (p: Partial<Saved>) => saved.set((s) => ({ ...s, ...p }));
 export function addEntry(e: Omit<Entry, 't'>) {
