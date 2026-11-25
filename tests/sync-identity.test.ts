@@ -3,8 +3,10 @@ import {
   SSO_COOKIE,
   clearSsoCookie,
   loginPassword,
+  logoutSso,
   mintSso,
   readCookie,
+  renewSso,
   ssoCookie,
   userinfo,
 } from '../server/sync/identity.mjs';
@@ -69,6 +71,26 @@ describe('identity 调用', () => {
     const bad = vi.fn(async () => new Response(JSON.stringify({ token: '' }), { status: 200 }));
     const out = await mintSso(base, 'access', { fetchImpl: bad as unknown as typeof fetch });
     expect(out.ok).toBe(false);
+  });
+
+  it('renewSso 只认带 token 与 expires_in 的续票响应', async () => {
+    const good = vi.fn(async () => new Response(JSON.stringify({ token: 'fresh', expires_in: 86400 }), { status: 200 }));
+    const ok = await renewSso(base, 'old', { fetchImpl: good as unknown as typeof fetch });
+    expect(ok).toEqual({ ok: true, status: 200, token: 'fresh', expiresIn: 86400 });
+    expect(String((good.mock.calls[0] as unknown as [URL])[0])).toBe('https://identity.example/sso/renew');
+
+    const bad = vi.fn(async () => new Response(JSON.stringify({ token: '' }), { status: 200 }));
+    const out = await renewSso(base, 'old', { fetchImpl: bad as unknown as typeof fetch });
+    expect(out.ok).toBe(false);
+  });
+
+  it('logoutSso 把票据交给 identity 做全局登出', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+    const out = await logoutSso(base, 'ticket', { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(out.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(String(url)).toBe('https://identity.example/sso/logout');
+    expect(JSON.parse(String(init.body))).toEqual({ sso: 'ticket' });
   });
 
   it('userinfo 401 折成 invalid_token，不抛', async () => {
