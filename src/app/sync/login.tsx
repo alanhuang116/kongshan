@@ -12,7 +12,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { IdentityUser, SyncClient } from './client';
-import { setSyncState } from './state';
 
 const CODE_COOLDOWN = 60;
 
@@ -28,14 +27,11 @@ export function openLogin(client: SyncClient): Promise<LoginDone | null> {
   document.body.appendChild(host);
   const root = createRoot(host);
   return new Promise<LoginDone | null>((resolve) => {
-    setSyncState({ authPrompt: true });
+    let settled = false;
     const close = (value: LoginDone | null): void => {
-      setSyncState({ authPrompt: false });
-      try {
-        root.unmount();
-      } catch {
-        // 已经卸了
-      }
+      if (settled) return;
+      settled = true;
+      root.unmount();
       host.remove();
       resolve(value);
     };
@@ -75,14 +71,9 @@ function LoginSheet({ client, onDone, onClose }: {
   const [err, setErr] = useState('');
   const hintId = useId();
   const sheet = useRef<HTMLFormElement>(null);
-  const mounted = useRef(true);
 
   useEffect(() => {
-    mounted.current = true;
     sheet.current?.focus();
-    return () => {
-      mounted.current = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -118,7 +109,6 @@ function LoginSheet({ client, onDone, onClose }: {
     setSending(true);
     setErr('');
     const r = await client.identitySendCode(mode === 'register' ? 'signup' : 'login', emailValue);
-    if (!mounted.current) return;
     setSending(false);
     if (r.ok) {
       setCode('');
@@ -136,9 +126,7 @@ function LoginSheet({ client, onDone, onClose }: {
     const r = mode === 'register'
       ? await client.identitySignup({ name: name.trim(), email: emailValue, password: pw, code })
       : await client.identityLogin(byCode ? { email: emailValue, code } : { email: emailValue, password: pw });
-    if (!mounted.current) return;
     if (r.ok) {
-      setSyncState({ user: r.user });
       onDone({ user: r.user, bound: r.bound });
       return;
     }

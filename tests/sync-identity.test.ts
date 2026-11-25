@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   SSO_COOKIE,
   clearSsoCookie,
-  explain,
   loginPassword,
   mintSso,
   readCookie,
@@ -82,6 +81,6 @@ describe('identity 调用', () => {
     const fetchImpl = vi.fn(async () => { throw new Error('offline'); });
     const out = await userinfo(base, 'x', { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(out.ok).toBe(false);
-    expect(explain((out as { code?: string }).code ?? 'network', 0)).toBe('身份服务暂时连不上');
+    expect((out as { code?: string }).code).toBe('network');
   });
 });

@@ -174,16 +174,3 @@ export async function mintSso(config, accessToken, opts) {
   return { ok: true, status: out.status, token, expiresIn };
 }
 
-/** identity 的错误码 → 给界面的一句话（与六爻 AuthSheet 的口径一致） */
-export function explain(code, status) {
-  if (code === 'invalid_credentials') return '邮箱或密码不对';
-  if (code === 'invalid_code') return '验证码不正确或已过期';
-  if (code === 'email_taken') return '这个邮箱已留过名，请直接登录';
-  if (code === 'password_invalid') return '密码需 8–64 位，并同时包含字母和数字';
-  if (code === 'invalid_request') return '称呼或邮箱格式不对';
-  if (code === 'account_disabled') return '账号不可用';
-  if (code === 'mail_unavailable') return '邮件服务暂时不可用，请稍后重试';
-  if (code === 'rate_limited' || status === 429) return '稍候片刻再试';
-  if (code === 'timeout' || code === 'network' || status === 0) return '身份服务暂时连不上';
-  return '身份服务暂时连不上';
-}
