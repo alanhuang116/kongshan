@@ -111,6 +111,18 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
   if (identityEnabled && !identityIssuer) {
     throw new ConfigError('IDENTITY_ENABLED=1 时必须同时给 IDENTITY_ISSUER（不能写死 localhost）');
   }
+  // 登录要客户端认证：密钥只在服务端；浏览器永远拿不到它
+  const identityClientId = str(env.IDENTITY_CLIENT_ID) || 'anlewo';
+  const identityClientSecret = str(env.IDENTITY_CLIENT_SECRET);
+  if (identityEnabled && !identityClientSecret) {
+    throw new ConfigError('IDENTITY_ENABLED=1 时必须同时给 IDENTITY_CLIENT_SECRET（anlewo 应用的客户端密钥）');
+  }
+  // 跨站免登录：票放在父域 cookie 里；本地/测试机留空就是 host-only，只有正式才给 .iwenxuai.com
+  const ssoCookieDomain = str(env.SSO_COOKIE_DOMAIN);
+  if (ssoCookieDomain && !/^\.[A-Za-z0-9.-]+$/.test(ssoCookieDomain)) {
+    throw new ConfigError('SSO_COOKIE_DOMAIN 必须是带前导点的父域，如 .iwenxuai.com（留空＝host-only）');
+  }
+  const ssoCookieSecure = str(env.SSO_COOKIE_SECURE) === '1';
 
   const ratePerMin = int(env.RATE_PER_MIN, 120, 1, 100000);
 
@@ -122,6 +134,10 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     cors: corsList(env.ANLEWO_CORS),
     identityIssuer,
     identityEnabled,
+    identityClientId,
+    identityClientSecret,
+    ssoCookieDomain,
+    ssoCookieSecure,
     // 请求体上限要**大于** payload 上限（4MB）：JSON 转义还会胖一圈，留到 6MB
     bodyLimit: int(env.BODY_LIMIT, 6291456, 1024, 8 * 1024 * 1024),
     // 每个 uid 每分钟（公平那一维：一台设备正常每分钟 12 次上下）
@@ -133,6 +149,16 @@ export function loadConfig(env = process.env, { dotenv = true } = {}) {
     // 已注册用户每次开页面的报到一次都不占——否则共享出口（学校/公司/CGNAT）里
     // 25 个陌生人打出的 401 就能让整个办公室一分钟内注册不上（那是可用性故障，不是限流）。
     linkPerMin: int(env.LINK_PER_MIN, 25, 1, 100000),
+    // `/identity/login` 的每分钟预算（每个来源地址，请求数不是建行数）：登录是人手动动作，
+    // 正常一次浏览最多登一次；10 次/分覆盖公司/学校/CGNAT 这种共享出口里多人同时登录，
+    // 又挡得住拿服务端客户端密钥撞密码的脚本（身份服务那边每验一次都要算 bcrypt）。
+    loginPerMin: int(env.LOGIN_PER_MIN, 10, 1, 1000),
+    // `/identity/signup` 每分钟（每个来源地址）：留名一个人一辈子一次，5 次/分足够一个共享出口里
+    // 几个人同时留名；身份服务那边还有每客户端 30/小时、每邮箱 3/小时的更细口径。
+    signupPerMin: int(env.SIGNUP_PER_MIN, 5, 1, 1000),
+    // `/identity/code` 每分钟（每个来源地址）：每发一次就是一封真邮件（有成本、可被用来驿炸别人邮箱），
+    // 而界面自带 60 秒冷却，一个人最多 1 次/分；10 次/分＝同一出口十个人同时要码。
+    codePerMin: int(env.CODE_PER_MIN, 10, 1, 1000),
   });
 }
 

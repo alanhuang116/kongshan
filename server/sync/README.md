@@ -70,12 +70,19 @@ npm run dev
 | `PORT` | 否 | `3830` | |
 | `HOST` | 否 | `127.0.0.1` | 只听本机，由 Caddy 反代 |
 | `ANLEWO_CORS` | 否 | 两个正式站 | 逗号分隔，**与默认值求并集**；`localhost` / `127.0.0.1` / `::1` 的任意端口总是放行 |
-| `IDENTITY_ENABLED` | 否 | `0` | `1` 才允许 `/userinfo` 那条路 |
+| `IDENTITY_ENABLED` | 否 | `0` | `1` 才允许 `/userinfo` 那条路，也才开登录端点（`/identity/*`）；关着时统一 501 |
 | `IDENTITY_ISSUER` | 否 | 空 | 开了身份对接才必填；不写死 localhost |
+| `IDENTITY_CLIENT_ID` | 否 | `anlewo` | 登录用的 OAuth 客户端（identity `app-secrets` 里同名） |
+| `IDENTITY_CLIENT_SECRET` | 否 | 空 | 开了身份对接才必填；只在服务端用，浏览器拿不到 |
+| `SSO_COOKIE_DOMAIN` | 否 | 空 | 跨站免登录票据的父域（正式 `.iwenxuai.com`）；留空＝host-only |
+| `SSO_COOKIE_SECURE` | 否 | `0` | `1` 给票据 cookie 加 `Secure`（https 部署时开） |
 | `BODY_LIMIT` | 否 | `6291456` | 请求体上限（字节，6MB；存档本身 ≤4MB，JSON 转义还会胖一圈） |
 | `RATE_PER_MIN` | 否 | `120` | 每 uid 每分钟（桶键里是 uuid 的 sha256 前缀，不是原文） |
 | `IP_RATE_PER_MIN` | 否 | `max(RATE_PER_MIN×4, 240)` | 每 IP 每分钟（所有路径共用，含 `/health`） |
 | `LINK_PER_MIN` | 否 | `25` | 每 IP 每分的 `/link` **建行**预算（只数真正新建的身份，已注册用户的报到不占；客户端遇 429 会退避重试） |
+| `LOGIN_PER_MIN` | 否 | `10` | 每 IP 每分的 `/identity/login` **请求**预算（每次登录都要带服务端客户端密钥去敲身份服务） |
+| `SIGNUP_PER_MIN` | 否 | `5` | 每 IP 每分的 `/identity/signup` 请求预算（留名比登录更重：要花一枚验证码、写一行账号） |
+| `CODE_PER_MIN` | 否 | `10` | 每 IP 每分的 `/identity/code` 请求预算（每次会真发一封验证码邮件） |
 
 `.env.local` 会被自动读（已存在的真实环境变量优先），`ANLEWO_SYNC_NO_DOTENV=1` 可关掉。
 
@@ -87,6 +94,21 @@ npm run dev
 
 - `x-anlewo-uid: <uuid>` —— **标识**，不是凭证（C1）
 - `authorization: Bearer <credential>` —— 含两个 `.` 视为 OIDC access token；否则视为本地 `sync_key`
+
+### 统一身份（`IDENTITY_ENABLED=1` 才开；关着时一律 `501 identity_disabled`，不发任何外网请求）
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| POST | `/identity/code` | 发验证码：`{kind:"login"|"signup", email}` |
+| POST | `/identity/login` | 登录：`{email,password}` 或 `{email,code}` |
+| POST | `/identity/signup` | 留名：`{name,email,password,code}` |
+| GET | `/identity/session` | 这枚 `yiwen_sso` 票据是谁；未登录 `401 not_logged_in` |
+| POST | `/identity/logout` | 清掉父域票据 |
+
+登录/留名成功回 `{user:{id,name,email}, bound}`，并写 `Set-Cookie: yiwen_sso=…`（`Domain` 取 `SSO_COOKIE_DOMAIN`，`Secure` 取 `SSO_COOKIE_SECURE`）。
+**令牌（access/refresh）不进响应体**：`anlewo` 客户端的密钥只在服务端，前端只拿到「我是谁」；带了 `x-anlewo-uid` 与 `sync_key` 时顺带把这台机器的 uid 绑到这个身份上（`bound=true`），绑定失败不改登录结果。
+
+父域票据与六爻、知己共用（`iwenxuai.com`）：任一站点登录过，其它站读到同一枚 cookie 就不用再登；换令牌与失效判据见 `yiwen-server` 的 `SsoController`（`/sso/token`、`/sso/exchange`，票据 `aud=sso`，`/userinfo` 认 `scope=openid`）。
 
 | 端点 | 说明 |
 | --- | --- |
@@ -114,7 +136,7 @@ npm run dev
 
 ## Redis 的边界（别把它当缓存用）
 
-Redis 里**只有**限流计数键，60s 过期，三个桶（前两个数"请求"，第三个数"建行"，口径不同不能混）：
+Redis 里**只有**限流计数键，60s 过期，按口径分两类（`ip`/`u`/`login`/`signup`/`code` 数的是"请求"，`linkc` 数的是"建行"，不能混）：
 
 - `anlewo:rl:ip:<分钟桶>:<sha256(ip)[0:16]>` —— 所有路径（含 `/health`），上限 `IP_RATE_PER_MIN`
 - `anlewo:rl:u:<分钟桶>:<sha256(uid|ip)[0:16]>` —— 除 `/health` 外的路径，上限 `RATE_PER_MIN`
@@ -124,6 +146,13 @@ Redis 里**只有**限流计数键，60s 过期，三个桶（前两个数"请�
   已注册用户的报到一次都不占；预留之后**任何其他退出**（坏 `Content-Type` / 坏 JSON / 体过大 /
   建行前被别人抢先）都**退还**。所以它平时等于本窗口的建行成功数，只有在打满之后才会高出实际行数。
   上限 `LINK_PER_MIN`（默认 25）
+- `anlewo:rl:login:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/login` 的登录预算，上限 `LOGIN_PER_MIN`（默认 10）。
+  这条路径每次都要带着服务端客户端密钥去敲身份服务（那边每验一次就要算 bcrypt，还可能发验证码），
+  所以按**请求数**限：登录是人手动动作，10 次/分已能覆盖共享出口里多人同时登录。
+- `anlewo:rl:signup:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/signup` 的预算，上限 `SIGNUP_PER_MIN`（默认 5）。
+  留名同时要发验证码、写账号，比登录更重；一个人只留一次名，5 次/分已够共享出口里几个人同时留名。
+- `anlewo:rl:code:<分钟桶>:<sha256(ip)[0:16]>` —— `/identity/code` 的预算，上限 `CODE_PER_MIN`（默认 10）。
+  每发一次就是一封真邮件（有成本、也能被拿来驿炸别人的邮箱），而界面自带 60 秒冷却，一个人最多 1 次/分。
 
 为什么 `/link` 不能按"请求数"限：它**每次开页面都打**，而绝大多数是"还是我"的报到（零写入）。
 拿请求数当预算，同一个共享出口（学校 / 公司 / CGNAT）里 25 个陌生人打出的 401 就能让整个办公室

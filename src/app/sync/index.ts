@@ -19,6 +19,7 @@ import { saved, type Saved } from '../store';
 import { SyncClient } from './client';
 import { ensureId } from './id';
 import { decideReconcile, hashText, type Anchor } from './reconcile';
+import { openLogin } from './login';
 import { SYNC_PUSH_LIMIT, setSyncState } from './state';
 
 /** 与 store.ts 里同一个键（那边没导出，这里只能照抄；改了要两边一起改） */
@@ -160,6 +161,23 @@ async function boot(): Promise<void> {
   }
 
   const client = new SyncClient({ base: apiBase || '/api/anlewo', uid: id.uid, credential: id.key });
+
+  // 统一身份：六爻 / 知己登录过的话，父域 SSO cookie 还在，这里直接认人（免登录）；
+  // 没有就要求登录——没登录就不起同步（本地存档照旧，不受影响）。身份对接关着时整段跳过。
+  if (await client.identityOn()) {
+    const known = await client.identitySession();
+    let user = known.ok ? known.user : null;
+    if (!user) {
+      const done = await openLogin(client);
+      if (!done) {
+        console.debug('[anlewo-sync] 没登录：这次不同步（本地照旧）');
+        return;
+      }
+      user = done.user;
+    }
+    setSyncState({ user });
+  }
+
   const reg = await registerWithRetry(client);
   if (!reg.ok) {
     console.debug('[anlewo-sync] 注册没成（不影响本地），先不同步', reg.status, reg.code);

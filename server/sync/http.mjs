@@ -9,6 +9,18 @@
 import { originAllowed } from './config.mjs';
 import { fetchUserInfo, isUuid, keyMatches, parseAuthorization, sha256Hex } from './auth.mjs';
 import {
+  SSO_COOKIE,
+  clearSsoCookie,
+  loginCode,
+  loginPassword,
+  mintSso,
+  readCookie,
+  sendEmailCode,
+  signupEmail,
+  ssoCookie,
+  userinfo,
+} from './identity.mjs';
+import {
   MAX_INK_BYTES,
   MAX_PAYLOAD_BYTES,
   bindLink,
@@ -391,6 +403,146 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
     send(res, 200, { uid, status: 'bound', boundIdentity: info.userId });
   }
 
+  // ---------------------------------------------------------------- 统一身份（登录 / 免登录）
+
+  /** 身份对接关着时，这批端点一律 501，一行外网请求都不发 */
+  function requireIdentity() {
+    if (!config.identityEnabled) throw new HttpError(501, 'identity_disabled');
+  }
+
+  /** 发 JSON 并带一枚 Set-Cookie（send() 只发 JSON，这里单独写头） */
+  function sendWithCookie(res, status, body, cookie) {
+    const text = JSON.stringify(body);
+    res.writeHead(status, {
+      'content-type': JSON_TYPE,
+      'cache-control': 'no-store',
+      'content-length': Buffer.byteLength(text, 'utf8'),
+      'x-content-type-options': 'nosniff',
+      'set-cookie': cookie,
+    });
+    res.end(text);
+  }
+
+  /** identity 返回的 user（user_id/name/email）→ 给前端的三个字段，别的一概不带 */
+  function publicUser(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = typeof raw.user_id === 'string' ? raw.user_id : '';
+    if (!isUuid(id)) return null;
+    return {
+      id: id.toLowerCase(),
+      name: typeof raw.name === 'string' ? raw.name : '',
+      email: typeof raw.email === 'string' ? raw.email : '',
+    };
+  }
+
+  /**
+   * 登录成功之后：换 SSO 票据 → 写父域 cookie → （可选）把这台机器的 uid 绑到这个身份上。
+   *
+   * 令牌（access/refresh）**不出现在响应体里**：前端只需要「我是谁」，令牌留在服务端换票据用。
+   * 绑定失败不改登录结果：人已经登进来了，只是这台机器的匿名档还没归到这个身份名下（C1：uid 不是凭证）。
+   */
+  async function afterIdentityAuth(req, res, out) {
+    const access = out.body && typeof out.body.access_token === 'string' ? out.body.access_token : '';
+    const user = publicUser(out.body && out.body.user);
+    if (!access || !user) throw new HttpError(502, 'identity_bad_response');
+    const ticket = await mintSso(config, access, { fetchImpl });
+    if (!ticket.ok) throw new HttpError(502, 'identity_unavailable');
+    let bound = false;
+    try {
+      bound = await bindThisDevice(req, user.id);
+    } catch {
+      bound = false;
+    }
+    sendWithCookie(res, 200, { user, bound }, ssoCookie(config, ticket.token, ticket.expiresIn));
+  }
+
+  /** 带了 uid + 设备凭证才绑：同 /identity/bind 的口径，只是令牌由服务端去换 */
+  async function bindThisDevice(req, identityUid) {
+    const rawUid = req.headers['x-anlewo-uid'];
+    const uid = typeof rawUid === 'string' && isUuid(rawUid) ? rawUid.toLowerCase() : null;
+    const cred = parseAuthorization(req.headers.authorization);
+    if (!uid || !cred || cred.kind !== 'sync_key') return false;
+    const hash = await findKeyHash(pool, uid);
+    if (!hash || !keyMatches(cred.value, hash)) return false;
+    const out = await bindLink(pool, { uid, identityUid, issuer: config.identityIssuer, subject: identityUid });
+    return out.ok;
+  }
+
+  /**
+   * 身份代理三件套（code / signup / login）的每来源地址分钟预算。
+   *
+   * 这三条都带着服务端的客户端密钥去敲身份服务（code、signup 还真会发验证码），
+   * 未登录流量不能无限重放。`name` 只用来分桶：三个端点各一只桶，互不挤占。
+   * 键里同样只放 sha256 前缀、不放原文；计数放在读请求体之前，连解析都不给它做。
+   */
+  async function identityBudget(req, name, perMin) {
+    const minute = Math.floor(Date.now() / 60000);
+    const ipHash = sha256Hex(clientIp(req)).slice(0, 16);
+    if ((await limiter.incrWithTtl(`anlewo:rl:${name}:${minute}:${ipHash}`, 60000)) > perMin) {
+      throw new HttpError(429, 'rate_limited');
+    }
+  }
+
+  /** POST /identity/code：发验证码（kind=login|signup） */
+  async function handleIdentityCode(req, res) {
+    requireIdentity();
+    await identityBudget(req, 'code', config.codePerMin);
+    const body = await readJson(req, config.bodyLimit);
+    const kind = body.kind === 'signup' ? 'signup' : 'login';
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (!email || email.length > 254) throw new HttpError(400, 'bad_email');
+    const out = await sendEmailCode(config, kind, email, { fetchImpl });
+    if (!out.ok) throw new HttpError(out.status === 429 ? 429 : 502, out.status === 429 ? 'rate_limited' : 'identity_unavailable');
+    send(res, 200, { sent: true });
+  }
+
+  /** POST /identity/login：密码或邮箱验证码登录（服务端代理，成功后落 SSO cookie） */
+  async function handleIdentityLogin(req, res) {
+    requireIdentity();
+    await identityBudget(req, 'login', config.loginPerMin);
+    const body = await readJson(req, config.bodyLimit);
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const code = typeof body.code === 'string' ? body.code.trim() : '';
+    if (!email || email.length > 254) throw new HttpError(400, 'bad_email');
+    const out = code
+      ? await loginCode(config, email, code, { fetchImpl })
+      : await loginPassword(config, email, password, { fetchImpl });
+    if (!out.ok) throw new HttpError(out.status === 401 || out.status === 403 || out.status === 429 ? out.status : 502, out.code);
+    await afterIdentityAuth(req, res, out);
+  }
+
+  /** POST /identity/signup：留名（称呼 + 邮箱 + 密码 + 验证码），成功后同样落 SSO cookie */
+  async function handleIdentitySignup(req, res) {
+    requireIdentity();
+    await identityBudget(req, 'signup', config.signupPerMin);
+    const body = await readJson(req, config.bodyLimit);
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const code = typeof body.code === 'string' ? body.code.trim() : '';
+    if (!name || !email || !password || !code) throw new HttpError(400, 'invalid_request');
+    const out = await signupEmail(config, { name, email, password, code }, { fetchImpl });
+    if (!out.ok) throw new HttpError(out.status === 409 || out.status === 429 || out.status === 400 ? out.status : 502, out.code);
+    await afterIdentityAuth(req, res, out);
+  }
+
+  /** GET /identity/session：这枚 SSO cookie 是谁（未登录就 401，不建任何东西） */
+  async function handleIdentitySession(req, res) {
+    requireIdentity();
+    const token = readCookie(req.headers.cookie, SSO_COOKIE);
+    if (!token) throw new HttpError(401, 'not_logged_in');
+    const info = await userinfo(config, token, { fetchImpl });
+    if (!info.ok) throw new HttpError(401, 'not_logged_in');
+    send(res, 200, { user: info.user });
+  }
+
+  /** POST /identity/logout：清掉父域 cookie（各域读到的是同一枚） */
+  async function handleIdentityLogout(req, res) {
+    requireIdentity();
+    sendWithCookie(res, 200, { ok: true }, clearSsoCookie(config));
+  }
+
   // ---------------------------------------------------------------- 路由表
 
   const routes = [
@@ -401,6 +553,11 @@ export function createApp({ config, pool, limiter, fetchImpl = globalThis.fetch,
     { method: 'POST', path: `${API}/ink`, auth: true, run: (req, res, ctx) => handleInkPost(req, res, ctx) },
     { method: 'GET', path: `${API}/ink`, auth: true, run: (req, res, ctx, url) => handleInkGet(req, res, ctx, url) },
     { method: 'POST', path: `${API}/identity/bind`, auth: false, run: (req, res) => handleBind(req, res) },
+    { method: 'POST', path: `${API}/identity/code`, auth: false, run: (req, res) => handleIdentityCode(req, res) },
+    { method: 'POST', path: `${API}/identity/login`, auth: false, run: (req, res) => handleIdentityLogin(req, res) },
+    { method: 'POST', path: `${API}/identity/signup`, auth: false, run: (req, res) => handleIdentitySignup(req, res) },
+    { method: 'GET', path: `${API}/identity/session`, auth: false, run: (req, res) => handleIdentitySession(req, res) },
+    { method: 'POST', path: `${API}/identity/logout`, auth: false, run: (req, res) => handleIdentityLogout(req, res) },
   ];
 
   /** 把任意错误映射成统一错误体（不回显内部细节） */
