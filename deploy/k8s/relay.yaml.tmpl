@@ -70,8 +70,9 @@ spec:
             - name: KS_RELAY_PER_IP
               value: "240"
           resources:
+            # 命名空间的 LimitRange 要求单个容器至少 25m / 32Mi（见 yiwen-defaults）
             requests:
-              cpu: 20m
+              cpu: 50m
               memory: 48Mi
             limits:
               cpu: 300m
