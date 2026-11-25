@@ -195,11 +195,20 @@ function petDog(k: Anlewo, F: Fauna): Act {
     },
     enter() {
       happy = 0; holding = false; belly = false; scratched = 0;
-      const av = k.player.av, p = k.player.pos;
+      // 远远点了它走过来的，常是狗迎上来又跟在身后，人到了还得掉过身来——没转完就开始了（Anlewo 等转身最多一两秒），
+      // 所以按他转完以后面朝的那一边算（faceTo）：狗绕到那一边坐下，镜头也按那一边摆
+      const av = k.player.av, p = k.player.pos, y = k.player.faceTo ?? k.player.yaw;
       av.setPose('crouch', 1.0); av.setHands('free');
-      D.pet('come', { x: p.x, z: p.z, yaw: k.player.yaw });
-      // 机位：从人身后偏右那一面起，找一处与人、狗之间没有墙挡着的地方（狗常卧在甲家矮墙根，镜头别落到墙后去）；拖动时绕着人与狗转
-      k.nav.setPose(openShot(V(p.x + Math.sin(k.player.yaw) * 0.5, p.y + 0.35, p.z + Math.cos(k.player.yaw) * 0.5), k.player.yaw + Math.PI * 0.62, 2.6, 0.9, 0.0, 42, { up: 28, down: 8, orbit: 160 }), 1.4);
+      // 狗过来坐在他跟前 0.72 米（dog.ts 的 Pet）
+      D.pet('come', { x: p.x, z: p.z, yaw: y });
+      // 机位：从侧面看人与狗（两个都是侧影，摸它的右手在近处），看的是两个当中、齐手高的那一点。
+      // 先试右手那一侧（略偏后一点，狗的脸转过来一些），挡着就试左边，再试前面斜着；人的正背后不去——从那里看，狗全被他的身子挡住了。
+      // 狗常卧在甲家矮墙根：哪一面有墙、篱笆、过路的人挡着，就换一面（openShot）。拖动时绕着转，也只转到背后斜四十五度为止。
+      const c = V(p.x + Math.sin(y) * 0.36, p.y + 0.42, p.z + Math.cos(y) * 0.36), deg = Math.PI / 180;
+      const side = [-100, -88, -112, -76, 100, 88, 112, 76, -55, 55, -35, 35, -15, 15];
+      const s = openShot(c, side.map((a) => y + a * deg), k.world.camera.aspect < 1 ? 3.0 : 2.6, 0.85, 0, 42, { up: 28, down: 8 });
+      const th = Math.atan2(Math.sin(s.dirYaw - y), Math.cos(s.dirYaw - y)) / deg;
+      k.nav.setPose({ ...s, orbit: [-135 - th, 135 - th] }, 1.4);
       snd(k, 'dogWhine', D.pos.x, D.pos.z, 0.4);
       show();
     },

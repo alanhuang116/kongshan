@@ -62,6 +62,8 @@ export interface Saved {
   guided: boolean;
   /** 时辰流转的快慢是自己在天时页上挑过的（没挑过的跟着默认走，默认改了也跟着改） */
   flowChosen: boolean;
+  /** 总音量是自己在声音页上调过的（没调过的跟着默认走：初来的人先轻一些，各人自己往上调） */
+  masterChosen: boolean;
 }
 /** 一处落脚的地方：位置、朝向、在哪一层（地上、亭上……）、是哪一处 */
 export interface Spot { x: number; z: number; yaw: number; zone: string; place: string; t: number }
@@ -75,8 +77,8 @@ export const FLOWS: Array<[number, string, string]> = [
 ];
 // 寻常的一次来访：春天的上午，晴，从桃林走进来；时辰慢慢地走（缓：画里一个钟头是这里两分钟——试玩的人说「跑着跑着就黑天了」）。之后改过的天时都记着
 const DEFAULT: Saved = {
-  v: 1, time: 'day', weather: 'clear', season: 'spring', master: 0.8, muted: false, sound: {}, haptics: true, quality: 'auto',
-  visits: 0, journal: [], found: [], walked: false, runTold: false, world: {}, flow: 1 / 120, day: 0, spot: null, guided: false, flowChosen: false,
+  v: 1, time: 'day', weather: 'clear', season: 'spring', master: 0.45, muted: false, sound: {}, haptics: true, quality: 'auto',
+  visits: 0, journal: [], found: [], walked: false, runTold: false, world: {}, flow: 1 / 120, day: 0, spot: null, guided: false, flowChosen: false, masterChosen: false,
 };
 /** 落脚处：一样一样认过（数在合理的范围里，名字是短字串） */
 function spotOf(v: unknown): Spot | null {
@@ -106,7 +108,8 @@ function load(): Saved {
         time: typeof o.time === 'number' && Number.isFinite(o.time) ? ((o.time % 24) + 24) % 24 : oneOf(o.time, ['now', 'dawn', 'day', 'dusk', 'night'] as const, DEFAULT.time as TimeMode),
         weather: oneOf(o.weather, ['clear', 'mist', 'rain', 'snow'] as const, DEFAULT.weather),
         season: oneOf(o.season, ['spring', 'summer', 'autumn', 'winter'] as const, DEFAULT.season),
-        master: unit(o.master, DEFAULT.master), muted: o.muted === true,
+        // 总音量：自己没调过的（以前存的多半是旧的默认 0.8）跟着现在的默认走
+        master: o.masterChosen === true ? unit(o.master, DEFAULT.master) : DEFAULT.master, muted: o.muted === true,
         sound: Object.fromEntries(Object.entries(o.sound && typeof o.sound === 'object' ? o.sound : {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v)).map(([k, v]) => [k, unit(v, 1)])),
         haptics: o.haptics !== false,
         quality: oneOf(o.quality, ['auto', 'low', 'mid', 'high'] as const, 'auto'),
@@ -122,6 +125,7 @@ function load(): Saved {
         spot: spotOf(o.spot),
         guided: o.guided === true,
         flowChosen: o.flowChosen === true,
+        masterChosen: o.masterChosen === true,
       };
     }
   } catch { /* 读不到就用默认 */ }

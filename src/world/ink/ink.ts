@@ -177,6 +177,10 @@ ${WIND_V}
 #ifdef INK_SWAY
 attribute float sway;
 #endif
+#ifdef INK_COLOR2
+attribute vec3 color2;
+uniform float uColMix;
+#endif
 varying vec3 vW; varying vec3 vN; varying vec3 vC; varying vec2 vUv;
 void main() {
   mat4 m = modelMatrix;
@@ -191,7 +195,11 @@ void main() {
   vN = normalize(mat3(m) * normal);
   vC = vec3(1.0);
   #ifdef USE_COLOR
-    vC *= color;
+    #ifdef INK_COLOR2
+      vC *= mix(color, color2, uColMix);
+    #else
+      vC *= color;
+    #endif
   #endif
   #ifdef USE_INSTANCING_COLOR
     vC *= instanceColor;
@@ -315,6 +323,8 @@ export interface WashOpts {
   glow?: RGB;
   side?: THREE.Side;
   vertexColors?: boolean;
+  /** 第二套顶点色（几何上要有 color2）：画的颜色在 color 与 color2 之间按 uColMix（0…1）插——换季时地色慢慢换过去 */
+  color2?: boolean;
 }
 
 /** 一种画法（淡彩 / 粉彩的面）。同样参数的材质会共用一个着色器 */
@@ -322,6 +332,7 @@ export function wash(o: WashOpts = {}): THREE.ShaderMaterial {
   const defines: Record<string, string | number> = {};
   if (o.sway) defines.INK_SWAY = o.sway.toFixed(3);
   if (o.map) { defines.INK_MAP = 1; if (o.cut) defines.INK_CUT = 1; }
+  if (o.color2) defines.INK_COLOR2 = 1;
   const s = o.streak ?? [0, 0, 0];
   const m = new THREE.ShaderMaterial({
     defines,
@@ -335,6 +346,7 @@ export function wash(o: WashOpts = {}): THREE.ShaderMaterial {
       uR: { value: new THREE.Vector4(o.crack?.[0] ?? 1, o.crack?.[1] ?? 0, 0, 0) },
       uGlow: { value: col(o.glow ?? [0, 0, 0]) },
       map: { value: o.map ?? null },
+      ...(o.color2 ? { uColMix: { value: 0 } } : {}),
     },
     vertexShader: WASH_V,
     fragmentShader: WASH_F,

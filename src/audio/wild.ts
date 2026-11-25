@@ -1,8 +1,10 @@
 /**
  * 野（wild）：村外、林间、远山里的几样——喜鹊、寒鸦、鹿、松鼠。没有常驻的声音，到时候排一声（与「村」那一层一样）。
  *
- *   喜鹊：白天，离村、离树近的地方；早上最勤，一天里也就那么几回「喳喳喳」；
- *   寒鸦：秋冬的黄昏一群群归林（「寒鸦数点」），早上出林时也有一阵；别的时候偶尔一两只远远地「哇」；
+ *   喜鹊：白天，离村、离树近的地方；早上最勤，一天里也就那么几回「喳喳喳」；刚进门的头一分半钟不叫（那一串沙哑的「喳」
+ *         是一进门最先听见的一声鸟叫，试玩的人觉得瘆人）；
+ *   寒鸦：只在秋冬——黄昏一群群归林（「寒鸦数点」），早上出林时也有一阵，白天偶尔一两只远远地「哇」；春夏不叫
+ *         （乌鸦叫不吉利，试玩的人一进门听见一声就觉得瘆人），刚进门的头一分半钟也不叫；
  *   鹿：远山里，晨昏与夜里，秋天最多（那是它们叫得勤的时节），远而短的一两声「呦」；
  *   松鼠：白天，在松树、在林子里，吱吱一阵（冬天少些）。
  * 世界若自己放了同一种声音（看得见的那只喜鹊在叫），这里就让开一阵。观星时远处的鹿也还有，别的就歇了。
@@ -33,14 +35,15 @@ export class Wild extends Base {
     this.due('magpie', from, to, (t) => {
       // 喜鹊：白天在村边、树上；早上多叫几回
       const where = Math.max(n.village, 0.7 * trees, 0.4);
-      if (day > 0.7 && s.rain < 0.3 && !stars) this.say('magpie', t, { vel: rand(0.4, 0.65), dist: clamp(0.95 - 0.6 * where + rand(-0.05, 0.1), 0.2, 0.93), pan: pan() });
+      if (day > 0.7 && s.rain < 0.3 && !stars && t >= this.e.calmUntil + 30) this.say('magpie', t, { vel: rand(0.4, 0.6), dist: clamp(0.95 - 0.6 * where + rand(-0.05, 0.1), 0.25, 0.93), pan: pan() });
       return rand(70, 200) / (0.6 + Math.max(s.dawn, 0.3));
     });
     this.due('crow', from, to, (t) => {
       // 寒鸦：秋冬的黄昏一群群归林，早上出林；别的时候偶尔一两只
-      const flock = cold && Math.max(s.dusk, 0.7 * s.dawn) > 0.3 && s.rain < 0.4 && !stars;
+      const settling = t < this.e.calmUntil + 30;
+      const flock = cold && Math.max(s.dusk, 0.7 * s.dawn) > 0.3 && s.rain < 0.4 && !stars && !settling;
       if (flock) this.say('crow', t, { vel: rand(0.45, 0.7), dist: rand(0.55, 0.85), pan: pan(), variant: 'flock' });
-      else if (day > 0.6 && s.rain < 0.3 && !stars && Math.random() < (cold ? 0.6 : 0.3)) this.say('crow', t, { vel: rand(0.35, 0.55), dist: rand(0.65, 0.92), pan: pan() });
+      else if (cold && day > 0.6 && s.rain < 0.3 && !stars && !settling && Math.random() < 0.5) this.say('crow', t, { vel: rand(0.35, 0.55), dist: rand(0.65, 0.92), pan: pan() });
       return flock ? rand(35, 80) : rand(120, 300);
     });
     this.due('deer', from, to, (t) => {

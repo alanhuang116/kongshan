@@ -213,7 +213,7 @@ export const ANIMAL_SHOTS: Pick<Record<Shot, Fn>, 'frog' | 'oriole' | 'magpie' |
     const a = 0.5 + 0.7 * v.vel, p = v.pitch * rand(0.92, 1.08), f0: Line = [], amp: Line = [];
     let t = 0;
     for (let b = 0, bouts = Math.random() < 0.4 ? 2 : 1; b < bouts; b++) {
-      const n = 5 + Math.floor(rand(0, 6)), gap = rand(0.11, 0.14), f = rand(780, 980) * p;
+      const n = 4 + Math.floor(rand(0, 4)), gap = rand(0.11, 0.14), f = rand(780, 980) * p;
       for (let i = 0; i < n; i++) {
         const d = rand(0.055, 0.075), ff = f * (1 - 0.015 * i) * rand(0.97, 1.03), A = (i === 0 ? 0.8 : 1) * (1 - (0.25 * i) / n) * rand(0.85, 1);
         f0.push([t, ff * 1.06], [t + d * 0.3, ff], [t + d, ff * 0.9]);
@@ -222,7 +222,8 @@ export const ANIMAL_SHOTS: Pick<Record<Shot, Fn>, 'frog' | 'oriole' | 'magpie' |
       }
       t += rand(0.35, 0.6);
     }
-    voiced(v, { f0, amp, formants: [[1650, 3, 1], [2800, 4, -0.6], [4100, 5, 0.4]], tilt: 6000, jitter: 45, breath: 0.85, rough: { rate: rand(95, 125), depth: 0.7 }, gain: 0.16 * a });
+    // （沙哑收了一些：气声、嗓子里的毛都少一点，一串也短一点——太哑像乌鸦，一进门听着瘆人）
+    voiced(v, { f0, amp, formants: [[1650, 3, 1], [2800, 4, -0.6], [4100, 5, 0.4]], tilt: 6000, jitter: 38, breath: 0.6, rough: { rate: rand(95, 125), depth: 0.5 }, gain: 0.15 * a });
     return t + 0.1;
   },
   /**
@@ -441,28 +442,29 @@ export const ANIMAL_SHOTS: Pick<Record<Shot, Fn>, 'frog' | 'oriole' | 'magpie' |
   /** 母鸡下了蛋之后那一串「咯咯咯咯——哒！」（就是 hen 的 egg；世界那边传不了 variant，所以另给一个名字） */
   cackle: (v) => VILLAGE_SHOTS.hen({ ...v, raw: { ...v.raw, variant: 'egg' } }),
   /**
-   * 绵羊「咩——」：比山羊低（母羊 175–245Hz，山羊 330–420Hz）、长（0.85–1.25 秒，山羊不到一秒），颤得慢而匀（每秒五六下，不像山羊那样一抖一抖），气声多些；
-   * 从闭着的嘴里张开（m 到 a：口张得比山羊的「e」大，第二共振峰低，声音暗而圆）。一群里此起彼伏：四分之一的时候远一些、另一边还有一只应一声
+   * 绵羊「咩——」：比山羊低（母羊 225–285Hz，山羊 330–420Hz），0.7–1.0 秒；一声里一抖一抖的（每秒六七下，音高与响度一齐颤，比山羊抖得浅些）——
+   * 羊叫就靠这一抖；从闭着的嘴里张开成「咩」的 e（第二共振峰一千六七，比山羊略暗），带一点鼻音。一群里此起彼伏：四分之一的时候另一边还有一只应一声。
+   * （先前是 175–245Hz、慢而匀的颤、口张成「啊」：在羊群边上听着像有人在呻吟，试玩的人说瘆人）
    */
   sheep(v) {
     const a = 0.5 + 0.7 * v.vel, p = v.pitch * rand(0.93, 1.07);
     const bleat = (t: number, f: number, d: number, g: number, dest: AudioNode = v.out) => {
-      const vr = rand(5, 6.5);
+      const vr = rand(6.2, 7.4);
       voiced(v, {
-        t, f0: [[0, f * 0.9], [0.1, f], [d * 0.55, f * 1.02], [d, f * 0.84]], amp: [[0, 0], [0.07, 0.5], [0.18, 1], [d * 0.7, 0.8], [d, 0]],
-        formants: [[[[0, 300], [0.14, 780], [d, 700]], 4, 1], [[[0, 1000], [0.14, 1250], [d, 1200]], 6, -0.6], [2400, 8, 0.2]],
-        tilt: 2200, jitter: 14, breath: 0.28, vib: { rate: vr, depth: 32 }, rough: { rate: vr, depth: 0.35 }, gain: 0.2 * a * g, dest,
+        t, f0: [[0, f * 0.92], [0.08, f], [d * 0.55, f * 1.02], [d, f * 0.86]], amp: [[0, 0], [0.05, 0.55], [0.14, 1], [d * 0.7, 0.8], [d, 0]],
+        formants: [[[[0, 320], [0.11, 600], [d, 560]], 4, 1], [[[0, 1250], [0.11, 1680], [d, 1600]], 6, -0.6], [2600, 8, 0.22]],
+        tilt: 2900, jitter: 14, breath: 0.22, vib: { rate: vr, depth: 46 }, rough: { rate: vr, depth: 0.55 }, gain: 0.16 * a * g, dest,
       });
     };
-    const d = rand(0.85, 1.25);
-    bleat(v.t, rand(175, 245) * p, d, 1);
+    const d = rand(0.7, 1.0);
+    bleat(v.t, rand(225, 285) * p, d, 1);
     let end = d;
     if (Math.random() < 0.25) {
-      const pan = v.ctx.createStereoPanner(), lp = v.ctx.createBiquadFilter(), at = d * rand(0.5, 1.1), d2 = rand(0.75, 1.1);
+      const pan = v.ctx.createStereoPanner(), lp = v.ctx.createBiquadFilter(), at = d * rand(0.5, 1.1), d2 = rand(0.6, 0.9);
       pan.pan.value = rand(-0.7, 0.7);
       lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.5;
       lp.connect(pan); pan.connect(v.out);
-      bleat(v.t + at, rand(170, 260) * p, d2, 0.45, lp);
+      bleat(v.t + at, rand(225, 300) * p, d2, 0.45, lp);
       end = Math.max(end, at + d2);
     }
     return end + 0.3;

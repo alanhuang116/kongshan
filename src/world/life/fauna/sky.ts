@@ -71,7 +71,8 @@ export class SkyBirds {
   private perches: THREE.Vector3[] = [];
   private roost = { on: false, t: 0, day: -1, cx: 6, cz: -40 };
   private crane = { on: false, s: 0, next: 60, dir: 1, call: 0 };
-  private cuckoo = { on: false, s: 0, next: 40, x0: 0, z0: 0, x1: 0, z1: 0, calls: 0 };
+  // （头一只布谷在进来一分半钟以后才飞过：刚进门的那一会儿静一些）
+  private cuckoo = { on: false, s: 0, next: 100, x0: 0, z0: 0, x1: 0, z1: 0, calls: 0 };
   private dayN = 0; private lastHour = 0;
   /** 头一回看见了：给浮一句话用（雁、鹤） */
   onSight: ((what: 'geese' | 'crane' | 'crows') => void) | null = null;

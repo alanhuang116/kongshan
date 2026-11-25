@@ -175,6 +175,40 @@ export class Painter {
     r.setRenderTarget(null);
   }
 
+  /**
+   * 把平时藏着、到时候才露面的东西（别的季节那几套田与荷叶、冬天藏起来的老龟、夏夜的萤火……）先照它真正画的去处画一回：
+   * 设色那一层画进那两张图，罩染那一层画到画面上——都只画一个像素那么大（下一帧整幅照常重画，看不见）。
+   * 着色器编好了还不算完：显卡那头头一回真拿它画时还要再编一道（Windows 上一回两三百毫秒，那一下整个画面停住），趁开场把这一道做掉。
+   */
+  warm(objs: THREE.Object3D[], camera: THREE.Camera) {
+    const r = this.renderer, rt = this.rt;
+    const rsc = rt.scissor.clone(), rst = rt.scissorTest, sc = r.getScissor(new THREE.Vector4()), st = r.getScissorTest(), auto = r.autoClear, mask = camera.layers.mask;
+    r.autoClear = false;
+    try {
+      for (const o of objs) {
+        const keep: Array<[THREE.Object3D, boolean, boolean]> = [];
+        o.traverse((x) => { keep.push([x, x.visible, x.frustumCulled]); x.visible = true; x.frustumCulled = false; });
+        try {
+          // 设色：画进两张图（与 render 的第一步同一个去处）
+          rt.scissor.set(0, 0, 1, 1); rt.scissorTest = true;
+          r.setRenderTarget(rt);
+          camera.layers.mask = mask & ~(1 << FX_LAYER);
+          r.render(o, camera);
+          // 罩染：直接画到画面上（与 render 的第三步同一个去处）
+          r.setRenderTarget(null);
+          r.setScissor(0, 0, 1, 1); r.setScissorTest(true);
+          camera.layers.set(FX_LAYER);
+          r.render(o, camera);
+        } finally { for (const [x, v, f] of keep) { x.visible = v; x.frustumCulled = f; } }
+      }
+    } finally {
+      camera.layers.mask = mask; r.autoClear = auto;
+      rt.scissor.copy(rsc); rt.scissorTest = rst;
+      r.setRenderTarget(null);
+      r.setScissor(sc); r.setScissorTest(st);
+    }
+  }
+
   render(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     const r = this.renderer, buf = r.getDrawingBufferSize(new THREE.Vector2());
     this.setSize(buf.x, buf.y);

@@ -1,12 +1,14 @@
 /**
  * 把草木搭出来：照一张「单子」（Plan：哪些树、地势、田、菜畦、菊圃、池）一样样长好，并成二十来次绘制。
  * 四季不重建：树上的每一层（花、叶、枯枝……）各有四季的颜料、浓淡与疏密，换季时慢慢过渡过去（layers.ts）；
- * 田里、水边那些四季形状不同的（庄稼、芦苇、菊、荷），每季一套（field.ts），用到时才搭、搭过留着，换季时一套淡出、一套淡入。
+ * 田里、水边那些四季形状不同的（庄稼、芦苇、菊、荷），每季一套（field.ts），开场时四季都搭好（一季十毫秒上下），换季时一套淡出、一套淡入。
+ * 不等到换季才搭：现搭的那一套里荷叶是一种新的画法，着色器要现编，画面会停住半秒多（开场时 Anlewo.warmSeasons 还把它们先画过一遍）。
+ * 换季的快慢与积雪、地色、日月同一个数（atmos.ts 的 SEASON_FADE）。
  *
  * index.ts 的 createFlora 用总图（site.ts）开单子（plan.ts）；台子（src/lab/ink/flora.ts）用小单子单看一种。
  */
 import * as THREE from 'three';
-import type { Season } from '../atmos';
+import { SEASON_FADE, type Season } from '../atmos';
 import type { Flora, FloraOpts } from './index';
 import { U, dabMat, dabMesh, wash } from '../../ink/ink';
 import { atlas } from '../../ink/brush';
@@ -70,6 +72,8 @@ function nodeMap(): THREE.Texture {
 /** 一季的一套（田、菜、菊、荷、芦苇）：淡彩一层、粉一层、荷叶的面 */
 interface FieldMeshes { wash: THREE.Mesh | null; body: THREE.Mesh | null; pads: THREE.Mesh | null }
 const BODY = 0.8;
+const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+const ease = (x: number) => x * x * (3 - 2 * x);
 
 export function buildFlora(o: FloraOpts, plan: Plan): Flora {
   const q = o.q, group = new THREE.Group();
@@ -164,7 +168,7 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
     layers.push(L); group.add(L.mesh);
   }
 
-  // —— 每季一套的：用到才搭 ——
+  // —— 每季一套的：开场时四季都搭好，只显这一季的 ——
   const sets = new Map<Season, FieldMeshes>();
   const alphaOf = (m: THREE.Mesh | null, a: number) => { if (!m) return; ((m.material as THREE.ShaderMaterial).uniforms.uQ.value as THREE.Vector4).z = a; m.visible = a > 0.01; };
   const show = (s: Season, a: number) => { const f = sets.get(s); if (!f) return; alphaOf(f.wash, a); alphaOf(f.body, a); if (f.pads) f.pads.visible = a > 0.5; };
@@ -182,7 +186,15 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
     sets.set(s, f);
     return f;
   };
-  fieldOf(o.season); show(o.season, 1);
+  /**
+   * 每一套此刻淡入到几成（线性的，画时再缓一缓）：这一季的往 1 走，别的往 0 走，各走各的。
+   * 接连点几季也是各自从此刻的样子接着走——不会有一套一下子没了、或者一下子冒满。
+   */
+  const lin = new Map<Season, number>();
+  for (const s of SEASONS) { fieldOf(s); lin.set(s, s === o.season ? 1 : 0); show(s, s === o.season ? 1 : 0); }
+  /** 随季节露面、藏起的那几套（开场时先画一遍：Anlewo.warmSeasons） */
+  const seasonal: THREE.Object3D[] = [];
+  for (const f of sets.values()) for (const m of [f.wash, f.body, f.pads]) if (m) seasonal.push(m);
 
   // —— 雨后的蘑菇：另成一份，下起雨来慢慢冒出来，雨停了还留一阵（冬天不出） ——
   const extraTrunks = (ex?.trees ?? []).map((t) => ({ x: t.x, z: t.z, r: t.r }));
@@ -190,25 +202,29 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
   let wetK = 0;
   if (mush) { mush.name = 'flora:mushrooms'; mush.visible = false; group.add(mush); }
 
-  let season: Season = o.season, from: Season = o.season, fade = 1;
+  let season: Season = o.season, fade = 1;
   return {
     group,
     bloomSpots: blooms.sort((a, b) => b.w - a.w).slice(0, 12).map((b) => b.p),
     extraTrunks,
+    seasonal,
     setSeason(s) {
       if (s === season) return;
-      // 上一回还没换完：把半路上的那一套收起来
-      if (fade < 1 && from !== s) show(from, 0);
-      from = season; season = s; fade = 0;
+      // 树上各层从此刻的样子往新的一季去（换到一半又换也是从半路接着走：Layer.go）
+      season = s; fade = 0;
       for (const L of layers) L.go(s, false);
-      fieldOf(s);
     },
     update(dt, _t, env) {
       if (fade < 1) {
-        fade = Math.min(1, fade + dt / 1.4);
-        const k = fade * fade * (3 - 2 * fade);
+        fade = Math.min(1, fade + dt / SEASON_FADE);
+        const k = ease(fade);
         for (const L of layers) L.blend(k);
-        show(from, 1 - k); show(season, k);
+      }
+      for (const s of SEASONS) {
+        const a = lin.get(s) ?? 0, want = s === season ? 1 : 0;
+        if (a === want) continue;
+        const v = want > a ? Math.min(1, a + dt / SEASON_FADE) : Math.max(0, a - dt / SEASON_FADE);
+        lin.set(s, v); show(s, ease(v));
       }
       // 夜里的花：月下是淡的，不像白天那样亮
       const dim = 1 - 0.3 * env.night;
