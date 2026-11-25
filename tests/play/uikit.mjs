@@ -19,6 +19,10 @@ export const SIZES = {
   iphone: { w: 393, h: 714, mobile: true, dpr: 2 },
   se: { w: 375, h: 548, mobile: true, dpr: 2 },
   landscape: { w: 714, h: 393, mobile: true, dpr: 2 },
+  // 六种之外再看的：最窄的安卓（360 宽，竖着、横着）、平板横着
+  android: { w: 360, h: 640, mobile: true, dpr: 3 },
+  androidLand: { w: 640, h: 360, mobile: true, dpr: 3 },
+  padLand: { w: 1180, h: 820, mobile: true, dpr: 2 },
   // 装到主屏幕、全屏打开时：有刘海与底下那条横杠的安全区（上、右、下、左），拿这几个数盖过 --sat 那几个量
   iphoneApp: { w: 393, h: 852, mobile: true, dpr: 2, safe: [59, 0, 34, 0] },
   landApp: { w: 852, h: 393, mobile: true, dpr: 2, safe: [0, 59, 21, 59] },
@@ -187,6 +191,17 @@ export async function fit(page, label, o = {}) {
         taps.push({ el, r: vr, n: name(el) });
       }
     }
+    // 字压着键：画面上浮着的字（走法提示、画面下方的那句话）压在一枚键上——量字自己的框（不量带晕的整个盒子）
+    for (const el of document.querySelectorAll('.walk-hint:not(.is-gone), .notes .note')) {
+      if (!shown(el)) continue;
+      const rg = document.createRange(), rects = [];
+      for (const n of el.querySelectorAll('*')) for (const t of n.childNodes) if (t.nodeType === 3 && t.textContent.trim()) { rg.selectNodeContents(t); rects.push(...rg.getClientRects()); }
+      for (const t of el.childNodes) if (t.nodeType === 3 && t.textContent.trim()) { rg.selectNodeContents(t); rects.push(...rg.getClientRects()); }
+      for (const tp of taps) for (const r of rects) {
+        const ix = Math.min(r.right, tp.r.right) - Math.max(r.left, tp.r.left), iy = Math.min(r.bottom, tp.r.bottom) - Math.max(r.top, tp.r.top);
+        if (ix > 3 && iy > 3) { out.push(`字压着键 ${name(el)} × ${tp.n}`); break; }
+      }
+    }
     // 相叠：两枚键压着（一枚在另一枚里头的不算）
     for (let i = 0; i < taps.length; i++) for (let j = i + 1; j < taps.length; j++) {
       const a = taps[i], b = taps[j];
@@ -208,7 +223,17 @@ export async function fit(page, label, o = {}) {
  * 算 (亮 + 0.05) / (暗 + 0.05)。字的笔画落在一头、底落在另一头，所以这就是字与底的对比（不管底是磨砂还是画）。
  */
 export async function contrast(page, scope, min = 3) {
-  const png = (await page.screenshot()).toString('base64');
+  // 截图前先把正在走的动画（话浮起、淡去，纸滑进来）停在这一刻，量完再放开：截图与下面量的那一步差着几百毫秒，
+  // 不停的话，截到的是半透明的字，量的时候它已经全显了，「正在浮起的不量」就落了空
+  await page.evaluate(() => { window.__ksHeld = document.getAnimations().filter((a) => a.playState === 'running'); for (const a of window.__ksHeld) a.pause(); });
+  try {
+    const png = (await page.screenshot()).toString('base64');
+    return await measure(page, png, scope, min);
+  } finally {
+    await page.evaluate(() => { for (const a of window.__ksHeld ?? []) { try { a.play(); } catch { /* 已经拿掉了 */ } } window.__ksHeld = null; }).catch(() => {});
+  }
+}
+function measure(page, png, scope, min) {
   return page.evaluate(async ([png, scope, min]) => {
     const img = new Image();
     img.src = `data:image/png;base64,${png}`;

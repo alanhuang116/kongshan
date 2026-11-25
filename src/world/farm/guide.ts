@@ -3,7 +3,7 @@
  *
  *   去处 —— 麦捆、谷穗挑到晒场去打；水挑去浇此刻缺水的那一畦（几畦都缺就挑近的）。
  *           没有去处（地里都不缺水、下着雨、天黑了、冬天地冻）就说为什么，请他放下。
- *   认路 —— 找一条路（walk.ts 的 findPath：挑起来时找一回，走偏了再找），顺着它说「往东北，踩汀步过溪，约九十步」，
+ *   认路 —— 找一条路（travel.ts：隔着溪的走石桥、汀步；挑起来时找一回，走偏了再找），顺着它说「往东北，踩汀步过溪，约九十步」，
  *           走着走着跟着变；画里目的地上空立一笔淡墨（顶上一点朱，远远就看得见；在后头被挡着也淡淡地透出来），走到跟前隐去。
  *   到了 —— 走进那件事的圈子、站住（手离了摇杆、方向键），那件事就开始（打场、浇水）。
  *           开始过一回的（比如下雨没打成），走开再回来才再开始。
@@ -17,7 +17,8 @@ import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
 import type { Act } from '../acts/types';
 import { FX_LAYER, FX_PARS, INK_PARS, U } from '../ink/ink';
-import { findPath, groundAt, placeAt, standable } from '../walk';
+import { groundAt, placeAt, standable } from '../walk';
+import { travel } from '../travel';
 import { SITE, ground } from '../site';
 import { cn } from '../../util/cn';
 import { BED_GEO, FLOOR } from './layout';
@@ -251,7 +252,7 @@ export class Guide {
     const p = this.k.player.pos;
     this.routeKey = d.key; this.routeAt = performance.now() / 1000;
     let pts: P2[] | null = null;
-    try { pts = findPath(p.x, p.z, gy(p.x, p.z), d.tx, d.tz); } catch { pts = null; }
+    try { pts = travel(p.x, p.z, gy(p.x, p.z), d.tx, d.tz); } catch { pts = null; }
     this.route = [[p.x, p.z], ...(pts && pts.length ? pts : [[d.tx, d.tz] as P2])];
   }
 

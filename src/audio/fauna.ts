@@ -6,7 +6,8 @@
  *                   叫上二三十秒到一分多钟就飞走，换一只来。远的更轻、高处少、隔着枝叶忽强忽弱。
  *                   怎么合成的见 song.ts：一声是几个很短的音素，音高在音素里走得快，带谐波与气声——不是一个正弦一路唱下去
  *                  （头一版那样做，量下来七成是纯音，听着像口哨、像电子音，在静处瘆人）。
- *                   刚进门的头一分钟更静：头一只鸟隔几秒才叫、在远处，过二十来秒才有第二只（engine.calmUntil）。
+ *                   刚进门的头一分钟更静：头一只鸟隔几秒才叫、在远处，过二十来秒才有第二只（engine.calmUntil）；
+ *                   头一分半钟里只来细碎明亮的小鸟——斑鸠、布谷那种低低的「咕」远远隔着回声，像夜里的鸮，试玩的人一进门就觉得瘆人。
  *   燕（swallows）  一只燕子掠过：一串又细又急的呢喃从一边到另一边。
  *   蝉（cicadas）   三处蝉声各自一涨一落（不同步），叫的时候音高一扬一落；远处另有薄薄的一层底。只取远听的那种，不刺耳。
  *                   鼓膜每秒一百来下的开合是算在噪声的波形里的（pulsedNoise），每处只要「声源 → 窄带 → 涨落 → 方位」四个节点。
@@ -53,6 +54,8 @@ export class Birds extends Base {
     else bag = ['sparrow', 'sparrow', 'sparrow', 'bulbul', 'bulbul', 'whiteeye', 'whiteeye', 'tit', 'oriole', 'trill', 'dove'];
     // 布谷要稀：十几只里才有一只，而且同时只有一只
     if (warm && s.dusk < 0.3 && !this.flock.some((b) => b.kind === 'cuckoo')) bag.push('cuckoo');
+    // 刚进门的头一分半钟：只要明亮的小鸟
+    if (t < this.e.calmUntil + 30) bag = bag.filter((k) => k !== 'dove' && k !== 'cuckoo');
     const kind = pick(bag), sp = SPECIES[kind], pitch = rand(sp.pitch[0], sp.pitch[1]);
     // 刚进门的头一只总在远处
     const far = Math.max(rand(sp.far[0], sp.far[1]), t < this.e.calmUntil && !this.flock.length ? 0.6 : 0);

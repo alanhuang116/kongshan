@@ -3,18 +3,19 @@
  *
  * 地是一张淡淡染过的纸：路与院子是不染的土色，草地是一层极淡的汁绿（疏密不匀），田按庄稼与时令上色，
  * 水边潮、色深；树下、屋脚、石根各压一圈淡墨（东西才「落」在地上——这里没有影子）；春天桃树底下是落红。
- * 颜料全写在顶点色里（材质的颜料是纯白），换季时只重算颜色。
+ * 颜料全写在顶点色里（材质的颜料是纯白），换季时只重算颜色：顶点上有两套颜色（color、color2），新的一季算进另一套，
+ * 着色器按 uColMix 从这一套慢慢插到那一套——与草木、积雪同一段时间（SEASON_FADE）换完，地色不会一下子跳，也不会落在后头。
  *
  * 近处一张细网（溪床、田埂要分明），外面套一张粗网接到远景的平畴上；两张网各自在接缝处往下沉一点，互相盖住。
  * 溪、池是画在勾完线之后的水（env/water.ts），自己按水深淡出岸边。石头沿溪散着（位置在 site.ts 的 ROCKS）。
  */
 import * as THREE from 'three';
 import type { Quality } from '../core/World';
-import { PIG, wash, type RGB } from '../ink/ink';
+import { PIG, U, wash, type RGB } from '../ink/ink';
 import { Builder, M, V, grid, rockGeo } from '../core/geo';
 import { fbm, smooth } from '../core/rng';
 import { PLOTS, ROCKS, SITE, STREAM, TREES, YARD_Y, ground, pathDist, plotAt, rectDist, streamAt, type Crop } from '../site';
-import type { Season } from './atmos';
+import { SEASON_FADE, type Season } from './atmos';
 import { ripple, waterMat, waterMesh } from './water';
 
 export interface Land {
@@ -107,10 +108,25 @@ export function createLand(q: Quality, season: Season): Land {
   };
   const step = q.tier === 'high' ? 1.25 : q.tier === 'mid' ? 1.6 : 2.1;
   const sheets = [sheet(IN.x0, IN.x1, IN.z0, IN.z1, step, true), sheet(OUT.x0, OUT.x1, OUT.z0, OUT.z1, q.tier === 'low' ? 6 : 4, false)];
-  const mat = wash({ pig: [1, 1, 1], dens: 1, shade: 1.22, grain: 0.3, cun: 0.7, line: 0.42, streak: [0.4, 1.5, 0.09] });
-  for (const s of sheets) { const m = new THREE.Mesh(s.geo, mat); m.name = 'ground'; group.add(m); }
+  const mat = wash({ pig: [1, 1, 1], dens: 1, shade: 1.22, grain: 0.3, cun: 0.7, line: 0.42, streak: [0.4, 1.5, 0.09], color2: true });
+  const mix = mat.uniforms.uColMix as { value: number };
+  /** 换季时地色从 uColMix = from 插到 to（按画里的时间 U.uTime 走，与草木的淡入淡出同一个钟）；没在换就是 null */
+  let fade: { from: number; to: number; t0: number } | null = null;
+  const advance = () => {
+    if (!fade) return;
+    const k = Math.min(1, (U.uTime.value - fade.t0) / SEASON_FADE);
+    mix.value = fade.from + (fade.to - fade.from) * k * k * (3 - 2 * k);
+    if (k >= 1) fade = null;
+  };
+  for (const s of sheets) {
+    s.geo.setAttribute('color2', new THREE.BufferAttribute(new Float32Array(s.geo.attributes.color.count * 3), 3));
+    const m = new THREE.Mesh(s.geo, mat); m.name = 'ground'; group.add(m);
+    // 画这块地之前把换季的那一步走了（地总在画面里；自己走，不用别人每帧来推）
+    m.onBeforeRender = advance;
+  }
 
-  const paint = (se: Season) => {
+  /** 把这一季的地色算进 into 那一套顶点色 */
+  const paint = (se: Season, into: 'color' | 'color2' = 'color') => {
     const T = TONE[se], bedC = pw(PIG.mo, 0.75);
     for (const s of sheets) {
       const col = new Float32Array(s.n * 3);
@@ -133,12 +149,29 @@ export function createLand(q: Quality, season: Season): Land {
         if (s.far[k] > 0) { const f = s.far[k], p = pw([0.78, 0.83, 0.72], 0.75); c = [c[0] + (p[0] - c[0]) * f, c[1] + (p[1] - c[1]) * f, c[2] + (p[2] - c[2]) * f]; }
         col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
       }
-      const attr = s.geo.attributes.color as THREE.BufferAttribute, a = attr.array as Float32Array;
+      const attr = s.geo.attributes[into] as THREE.BufferAttribute, a = attr.array as Float32Array;
       for (let i = 0; i < s.order.length; i++) { const k = s.order[i] * 3; a[i * 3] = col[k]; a[i * 3 + 1] = col[k + 1]; a[i * 3 + 2] = col[k + 2]; }
       attr.needsUpdate = true;
     }
   };
   paint(season);
+  /**
+   * 换季：新的一季算进此刻没在显的那一套，再慢慢插过去。正插到一半又换了（接连点几季）：先把此刻画上的样子
+   * （两套按此刻的比例插出来的）落进 color，新的一季进 color2，从 0 重新插——每一步都从画上此刻的样子接着走，不跳。
+   */
+  const setSeason = (se: Season) => {
+    const m = mix.value;
+    if (m <= 0) { paint(se, 'color2'); fade = { from: 0, to: 1, t0: U.uTime.value }; return; }
+    if (m >= 1) { paint(se, 'color'); fade = { from: 1, to: 0, t0: U.uTime.value }; return; }
+    for (const s of sheets) {
+      const A = s.geo.attributes.color as THREE.BufferAttribute, B = s.geo.attributes.color2 as THREE.BufferAttribute, a = A.array as Float32Array, b = B.array as Float32Array;
+      for (let i = 0; i < a.length; i++) a[i] += (b[i] - a[i]) * m;
+      A.needsUpdate = true;
+    }
+    mix.value = 0;
+    paint(se, 'color2');
+    fade = { from: 0, to: 1, t0: U.uTime.value };
+  };
 
   // —— 石 ——
   const stone = wash({ pig: [0.66, 0.67, 0.68], dens: 0.5, shade: 2.3, cun: 1.0, grain: 1.1, crack: [0.9, 0.45] });
@@ -176,7 +209,7 @@ export function createLand(q: Quality, season: Season): Land {
   return {
     group,
     height(x, z) { const a = on(sheets[0], x, z), b = on(sheets[1], x, z); return a == null ? b ?? ground(x, z) : b == null ? a : Math.max(a, b); },
-    setSeason: paint,
+    setSeason,
     ripple(x, z, size = 1) {
       const inPond = Math.hypot((x - P.x) / P.rx, (z - P.z) / P.rz) < 1.15;
       ripple(inPond ? pondM : streamM, x, z, size);

@@ -86,6 +86,8 @@ export class SheepFlock implements SheepApi {
   private mode: 'graze' | 'lead' | 'follow' | 'pen' = 'pen';
   private ax = 0; private az = 0; private ar = 8; private who: Mover | null = null;
   private inPen = true; private alarm = 0; private last = 0;
+  /** 整群歇着不叫的秒数：一只叫过，别的隔一阵再叫（一群九只各叫各的，在羊群边上几秒就是一声，太吵） */
+  private hush = 0;
   /** 默认的草地（东头村外，村路北边那一片） */
   pasture = { x: 137.5, z: 22, r: 8 };
   constructor() {
@@ -165,7 +167,7 @@ export class SheepFlock implements SheepApi {
     this.last += c.dt;
     if (c.frame % stride && !c.wound) return;
     const dt = Math.min(0.25, this.last); this.last = 0;
-    this.alarm -= dt;
+    this.alarm -= dt; this.hush -= dt;
     // 去处：跟人时在他身后，赶的时候朝着那一点
     let gx = this.ax, gz = this.az, gr = this.ar, moving = false;
     if (this.mode === 'follow' && this.who) {
@@ -223,7 +225,11 @@ export class SheepFlock implements SheepApi {
     const q = s.q, R = this.R, goat = s.kind === 'goat';
     s.t -= dt; s.bleat -= dt;
     const STAND = goat ? STAND_G : STAND_S, GRAZE = goat ? GRAZE_G : GRAZE_S, LIE = goat ? LIE_G : LIE_S;
-    if (s.bleat < 0) { s.bleat = 25 + R() * 50; if (Math.hypot(c.player.x - q.x, c.player.z - q.z) < 60) sfx(c, s.kind === 'lamb' ? 'lamb' : goat ? 'goat' : 'sheep', q.x, q.z, s.kind === 'lamb' ? 0.35 : 0.45); }
+    // 叫一声：人在四十来米以内、整群这一阵没叫过才叫；叫过整群歇十几二十秒
+    if (s.bleat < 0) {
+      s.bleat = 30 + R() * 60;
+      if (this.hush <= 0 && Math.hypot(c.player.x - q.x, c.player.z - q.z) < 45) { this.hush = 14 + R() * 18; sfx(c, s.kind === 'lamb' ? 'lamb' : goat ? 'goat' : 'sheep', q.x, q.z, s.kind === 'lamb' ? 0.32 : 0.4); }
+    }
     // 回圈：走到圈门，不见了
     if (this.mode === 'pen') {
       q.goal = STAND;

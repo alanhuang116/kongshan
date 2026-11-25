@@ -15,6 +15,8 @@ import type { Remote } from '../../world/net/remote';
  *   画里：别人头上一枚小名签（墨字，像画里那些事的签）；说的话浮在名签上面一会儿；自己说的浮在自己头上。
  *   有人向你作揖、对你说话：下面浮一句（世界那边的 note）。
  * 没有可连的中转（开发服务器、自动测试默认不连）时，这里什么也不出。
+ * 手机上那张纸差不多盖住半个画面：点了作揖、说一句、同行，纸就自己收起来——好看见自己向他作的那一揖、头上浮着的那句话
+ * （试玩的人说手机上纸挡着，看不见给对面的人做了什么）。电脑上纸在右边一条，不挡，照旧开着。
  */
 
 const EMPTY: NetView = { enabled: false, on: false, status: 'off', me: { label: '', robe: '', c: 0, n: [0, 0] }, peers: [], others: 0, near: 0, following: null };
@@ -172,7 +174,7 @@ function seek(tg: Tg, id: number) {
     if (Date.now() - t0 > 300 && !k.nav.busy) { window.clearInterval(iv); tg.follow(id); }
   }, 150);
 }
-function Row({ tg, p, open, onOpen }: { tg: Tg; p: PeerView; open: boolean; onOpen: () => void }) {
+function Row({ tg, p, open, onOpen, onAct }: { tg: Tg; p: PeerView; open: boolean; onOpen: () => void; onAct: () => void }) {
   const says = useMemo(phrasesNow, [open]);
   return (
     <li className={`tg-row${open ? ' is-open' : ''}${p.hidden ? ' is-hidden' : ''}`} data-testid={`tg-row-${p.id}`}>
@@ -182,12 +184,12 @@ function Row({ tg, p, open, onOpen }: { tg: Tg; p: PeerView; open: boolean; onOp
         <small className="tg-where">{p.far}{p.doing ? `，${p.doing}` : ''}</small>
       </button>
       <div className="tg-acts">
-        {p.close && <button className={`key${p.invite ? ' is-main' : ''}`} onClick={() => tg.greet(p.id)} data-testid={`tg-bow-${p.id}`}>{p.invite ? '还礼' : '作揖'}</button>}
-        {!p.hidden && <button className={`key${p.following ? ' is-on' : ''}`} onClick={() => (p.following ? tg.follow(null) : seek(tg, p.id))} aria-pressed={p.following} data-testid={`tg-follow-${p.id}`}>{p.following ? '不跟了' : p.dist > 30 ? '去寻' : '同行'}</button>}
+        {p.close && <button className={`key${p.invite ? ' is-main' : ''}`} onClick={() => { tg.greet(p.id); onAct(); }} data-testid={`tg-bow-${p.id}`}>{p.invite ? '还礼' : '作揖'}</button>}
+        {!p.hidden && <button className={`key${p.following ? ' is-on' : ''}`} onClick={() => { if (p.following) tg.follow(null); else { seek(tg, p.id); onAct(); } }} aria-pressed={p.following} data-testid={`tg-follow-${p.id}`}>{p.following ? '不跟了' : p.dist > 30 ? '去寻' : '同行'}</button>}
       </div>
       {open && p.close && (
         <div className="tg-say" role="group" aria-label={`对${p.label}说`}>
-          {says.map((i) => <button key={i} className="key tg-ph" onClick={() => tg.say(p.id, i)} data-testid={`tg-say-${p.id}-${PHRASES[i].id}`}>{PHRASES[i].text}</button>)}
+          {says.map((i) => <button key={i} className="key tg-ph" onClick={() => { tg.say(p.id, i); onAct(); }} data-testid={`tg-say-${p.id}-${PHRASES[i].id}`}>{PHRASES[i].text}</button>)}
         </div>
       )}
       {open && !p.close && !p.hidden && <p className="tg-hint">走到十来步以内，才好作揖、说话。</p>}
@@ -195,7 +197,7 @@ function Row({ tg, p, open, onOpen }: { tg: Tg; p: PeerView; open: boolean; onOp
   );
 }
 
-function Panel({ tg, v, pick, setPick, onClose }: { tg: Tg; v: NetView; pick: number | null; setPick: (id: number | null) => void; onClose: () => void }) {
+function Panel({ tg, v, pick, setPick, onClose, onAct }: { tg: Tg; v: NetView; pick: number | null; setPick: (id: number | null) => void; onClose: () => void; onAct: () => void }) {
   // 打开的那一位：点过的；没点过就是最近的、走得到跟前的那一位
   const openId = pick ?? v.peers.find((p) => p.close)?.id ?? null;
   return (
@@ -217,7 +219,7 @@ function Panel({ tg, v, pick, setPick, onClose }: { tg: Tg; v: NetView; pick: nu
         {statusText(v) && <p className="tg-status" data-testid="tg-status">{statusText(v)}</p>}
         {v.on && v.status === 'online' && v.peers.length > 0 && (
           <ul className="tg-list">
-            {v.peers.map((p) => <Row key={p.id} tg={tg} p={p} open={openId === p.id} onOpen={() => setPick(openId === p.id ? -1 : p.id)} />)}
+            {v.peers.map((p) => <Row key={p.id} tg={tg} p={p} open={openId === p.id} onOpen={() => setPick(openId === p.id ? -1 : p.id)} onAct={onAct} />)}
           </ul>
         )}
         <p className="tg-foot">各人的天时各自定：你这里是黄昏，他那里也许正是清早。名字与话都是现成的，不必打字。</p>
@@ -270,6 +272,12 @@ export default function Together() {
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [open]);
+  // 纸开着：body 上挂一个 data-tg-open，画面下方的走法提示先让开（它在纸的下沿底下，会从纸下透出来、把下面那句话也顶上来）
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (open) document.body.dataset.tgOpen = ''; else delete document.body.dataset.tgOpen;
+    return () => { delete document.body.dataset.tgOpen; };
+  }, [open]);
   // 点过的那位走了：回到默认
   useEffect(() => { if (pick != null && pick >= 0 && !v.peers.some((p) => p.id === pick)) setPick(null); }, [v.peers, pick]);
   const list = useMemo(() => v.peers.map((p) => ({ id: p.id, c: p.c })), [v.peers.map((p) => `${p.id}:${p.c}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -288,7 +296,7 @@ export default function Together() {
           {v.on && !live && <i className="tg-wait" aria-hidden />}
         </button>
       )}
-      {!away && open && <Panel tg={tg} v={v} pick={pick} setPick={setPick} onClose={() => setOpen(false)} />}
+      {!away && open && <Panel tg={tg} v={v} pick={pick} setPick={setPick} onClose={() => setOpen(false)} onAct={() => { if (touch || innerWidth <= 560) setOpen(false); }} />}
     </div>
   );
 }

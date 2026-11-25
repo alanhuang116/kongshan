@@ -297,8 +297,16 @@ export function setFlow(rate: number) {
 /** 「疾」：一直跑 / 不跑（手机上摇杆旁那一枚） */
 export function setRun(on: boolean) { ks?.setRun(on); buzz(6); }
 export function setWeather(w: Weather) { patch({ weather: w }); ks?.setWeather(w); }
-export function setSeason(s: Season) { patch({ season: s }); ks?.setSeason(s); sense(); }
-export function setMaster(v: number) { patch({ master: v }); snd.setMaster(v); }
+/**
+ * 换季：世界里不罩雾，一段工夫里整幅画一起换过去（Anlewo.setSeason）。雪是冬天的——离了冬天雪就停了、天放晴，
+ * 所以天气照世界换过之后的记下来（「天」那一排跟着从「雪」回到「晴」）。
+ */
+export function setSeason(s: Season) {
+  ks?.setSeason(s);
+  patch(ks ? { season: s, weather: ks.atmos.weather } : { season: s });
+  sense();
+}
+export function setMaster(v: number) { patch({ master: v, masterChosen: true }); snd.setMaster(v); }
 export function setMuted(m: boolean) { patch({ muted: m }); snd.setMuted(m); }
 /** 一样环境声的音量（风、水、禽、虫、雨雪、村、远琴） */
 export function setLevel(id: string, v: number) { patch({ sound: { ...saved.get().sound, [id]: v } }); snd.setLevel(id, v); }

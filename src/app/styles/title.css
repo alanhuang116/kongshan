@@ -40,10 +40,22 @@
 .intro.is-out { opacity: 0; }
 .intro p { font-family: var(--kai); font-size: clamp(16px, 2.5vh, 20px); line-height: 1.9; letter-spacing: 0.3em; text-indent: 0.3em; text-align: center; color: var(--ink); animation: rise 1.5s var(--out) backwards; }
 
-.loading { display: grid; gap: 12px; align-content: center; min-height: 60px; }
-.loading-line { width: 132px; height: 1px; background: var(--rule); overflow: hidden; }
-.loading-line b { display: block; height: 100%; background: var(--ink); transform-origin: left center; transition: transform 0.6s var(--out); }
-.loading span { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.56em; color: var(--ink-2); min-height: 1.5em; animation: fade 0.8s backwards; }
+/* 铺画时：画面正中一圈正在画满的墨环（尺寸随屏：手机上也一眼看得见），环里几成，环下正在做的那一步；身后垫一片没有边的纸色 */
+.loading { --d: clamp(84px, 13vmin, 112px); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -46%); display: grid; justify-items: center; gap: 12px; padding: 18px 28px; pointer-events: none; animation: fade 0.8s var(--out) backwards; }
+.loading::before { content: ''; position: absolute; inset: -10px -26px; background: radial-gradient(closest-side, var(--wash), transparent); filter: blur(10px); opacity: 0.92; z-index: -1; }
+.loading-ring { position: relative; width: var(--d); height: var(--d); display: grid; place-items: center; }
+.loading-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.loading-track { fill: none; stroke: var(--rule); stroke-width: 1.6; }
+.loading-arc { fill: none; stroke: var(--ink); stroke-width: 4.2; stroke-linecap: round; }
+/* 笔尖：一点朱，一直一息一息地动（进度停着时也看得出没卡住） */
+.loading-tip { fill: var(--mark); transform-box: fill-box; transform-origin: center; animation: tip-breathe 1.2s ease-in-out infinite; }
+@keyframes tip-breathe { 0%, 100% { transform: scale(0.75); opacity: 0.75; } 50% { transform: scale(1.25); opacity: 1; } }
+.loading-pct { font-family: var(--kai); font-weight: 400; font-size: calc(var(--d) * 0.24); line-height: 1; letter-spacing: 0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.loading-pct small { font-size: 0.55em; margin-left: 0.08em; color: var(--ink-2); }
+.loading-stage { font-family: var(--kai); font-size: clamp(14.5px, 2vh, 16.5px); letter-spacing: 0.4em; text-indent: 0.4em; color: var(--ink); min-height: 1.5em; animation: fade 0.8s backwards; }
+.loading-slow { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.16em; color: var(--ink-2); text-align: center; max-width: 18em; opacity: 0; transition: opacity 1.2s var(--out); }
+.loading-slow.is-on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .loading-tip { animation: none; } }
 
 /* 竖着的手机：签贴在左上（天空那一角），话与「入」落到下面当中 */
 @media (max-aspect-ratio: 4/5) {
@@ -52,7 +64,8 @@
   .title-foot { position: absolute; left: 0; right: 0; bottom: calc(var(--sab) + clamp(34px, 7vh, 72px)); flex-direction: column-reverse; gap: 16px; text-align: center; }
   .title-foot::before { left: 8%; right: 8%; top: -22px; bottom: -22px; }
   .title-invite { max-width: 15em; }
-  .loading { justify-items: center; }
+  /* 签在左上占了上半屏：铺画的墨环落在签下面那一片空处的当中 */
+  .loading { top: 68%; }
 }
 /* 横着的手机：屋矮，签小一些，「入」排到签的右边 */
 @media (max-height: 520px) and (min-aspect-ratio: 4/5) {

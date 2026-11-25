@@ -19,7 +19,7 @@ import { FX_LAYER, PIG, dabMat, dabMesh, wash, type Dab, type RGB } from '../ink
 import { atlas } from '../ink/brush';
 import { fbm, mulberry32, smooth, type Rng } from '../core/rng';
 import { RIVER_Y, SITE, ground } from '../site';
-import type { Season } from './atmos';
+import { SEASON_FADE, type Season } from './atmos';
 import { azOf, crestPeaks, fan, polar, quilt, relief, type Field, type Peak, type ReliefOpts, type Sheet } from './far/field';
 import { stoneMat } from './far/stone';
 import { Crag, peak } from './far/crag';
@@ -569,24 +569,40 @@ export function createFar(o: FarOpts & { season: Season }): Far {
   const geese = new Geese(markA, new THREE.Vector3(2600, 430, 1250), new THREE.Vector3(-2600, 380, 2050));
   g.add(boats.mesh, birds.mesh, geese.mesh);
 
-  const paint = (s: Season) => {
+  // —— 随季节变的：远树与芦苇的颜料、点缀色、浓淡、不透明。换季时从此刻的样子插到新的一季（SEASON_FADE 秒，与近处的草木、地色同步） ——
+  type Look = { pig: THREE.Color; accent: THREE.Color; dens: number; alpha: number };
+  const tinted = [mats.wood, mats.woodFar, mats.reed, mats.reedNear];
+  const looks = (s: Season): Look[] => {
+    const T = TONE[s], c = (v: RGB) => new THREE.Color(v[0], v[1], v[2]);
+    return [{ pig: c(T.wood), accent: c(T.wood), dens: T.woodD, alpha: T.woodA }, { pig: c(T.far), accent: c(T.far), dens: T.woodD, alpha: T.woodA }, { pig: c(T.reed), accent: c(T.plume), dens: T.reedD, alpha: 1 }, { pig: c(T.reed), accent: c(T.plume), dens: T.reedD + 0.25, alpha: 1 }];
+  };
+  const read = (m: THREE.ShaderMaterial): Look => ({ pig: (m.uniforms.uPig.value as THREE.Color).clone(), accent: (m.uniforms.uAccent.value as THREE.Color).clone(), dens: (m.uniforms.uP.value as THREE.Vector4).x, alpha: (m.uniforms.uQ.value as THREE.Vector4).z });
+  const put = (m: THREE.ShaderMaterial, a: Look, b: Look, k: number) => {
+    (m.uniforms.uPig.value as THREE.Color).copy(a.pig).lerp(b.pig, k); (m.uniforms.uAccent.value as THREE.Color).copy(a.accent).lerp(b.accent, k);
+    (m.uniforms.uP.value as THREE.Vector4).x = a.dens + (b.dens - a.dens) * k; (m.uniforms.uQ.value as THREE.Vector4).z = a.alpha + (b.alpha - a.alpha) * k;
+  };
+  let blend: { k: number; from: Look[]; to: Look[] } | null = null;
+  /** 换到这一季：now 为真则立刻（开场），否则从此刻的样子慢慢插过去（换到一半又换也从半路接着走） */
+  const paint = (s: Season, now = false) => {
     season = s;
-    const T = TONE[s];
-    const set = (m: THREE.ShaderMaterial, pig: RGB, dens: number, alpha = 1, accent?: RGB) => {
-      (m.uniforms.uPig.value as THREE.Color).setRGB(pig[0], pig[1], pig[2]);
-      (m.uniforms.uAccent.value as THREE.Color).setRGB((accent ?? pig)[0], (accent ?? pig)[1], (accent ?? pig)[2]);
-      (m.uniforms.uP.value as THREE.Vector4).x = dens; (m.uniforms.uQ.value as THREE.Vector4).z = alpha;
-    };
-    set(mats.wood, T.wood, T.woodD, T.woodA); set(mats.woodFar, T.far, T.woodD, T.woodA); set(mats.reed, T.reed, T.reedD, 1, T.plume); set(mats.reedNear, T.reed, T.reedD + 0.25, 1, T.plume);
+    const to = looks(s);
+    if (now) { tinted.forEach((m, i) => put(m, to[i], to[i], 1)); blend = null; } else blend = { k: 0, from: tinted.map(read), to };
     geese.mesh.userData.on = s === 'autumn';
   };
-  paint(season);
+  paint(season, true);
 
   return {
     group: g,
-    setSeason: paint,
+    setSeason: (s) => paint(s),
     update(dt, t, f) {
       if (f.season !== season) paint(f.season);
+      if (blend) {
+        const b = blend;
+        b.k = Math.min(1, b.k + dt / SEASON_FADE);
+        const e = b.k * b.k * (3 - 2 * b.k);
+        tinted.forEach((m, i) => put(m, b.from[i], b.to[i], e));
+        if (b.k >= 1) blend = null;
+      }
       boats.update(dt, t);
       const day = f.night < 0.55;
       birds.mesh.visible = day;

@@ -15,7 +15,8 @@ import * as THREE from 'three';
 import { Idle } from './avatar/idle';
 import type { Avatar } from './avatar/types';
 import { U } from './ink/ink';
-import { findPath, groundAt, move, placeAt, standable, type Zone } from './walk';
+import { travel } from './travel';
+import { clearLine, groundAt, move, placeAt, standable, type Zone } from './walk';
 
 /** 平时是从容地走——这里是散步的地方；摇杆推到头快走（一路小跑）；按住（或点一下锁住）Shift、点界面上的「疾」是跑 */
 export const WALK = 1.4, FAST = 3.0, RUN = 4.6;
@@ -25,7 +26,10 @@ const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ?
 const smooth = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** 自己走的一条路：pts 是依次要到的点，i 是正往哪一个去 */
-interface Goal { pts: Array<[number, number]>; i: number; r: number; then?: () => void; fail?: () => void; t: number; mark: number; d0: number }
+interface Goal {
+  pts: Array<[number, number]>; i: number; r: number; then?: () => void; fail?: () => void; t: number; mark: number; d0: number;
+  /** 终点；被挡住后让过、重新认过几回 */ x: number; z: number; tries: number;
+}
 
 export class Player {
   pos = new THREE.Vector3();
@@ -96,14 +100,34 @@ export class Player {
    * 到了（离终点 r 以内）调用 then；没有路、或半路卡住，调用 fail。
    */
   goTo(x: number, z: number, o: { r?: number; then?: () => void; fail?: () => void } = {}) {
-    const pts = findPath(this.pos.x, this.pos.z, this.ground, x, z, this.zone) ?? [[x, z]];
+    // 隔着溪的走桥、走汀步（travel.ts）；没有路就直着走，被挡住了再说
+    const found = travel(this.pos.x, this.pos.z, this.ground, x, z, this.zone), pts: Array<[number, number]> = found?.length ? found : [[x, z]];
     const p0 = pts[0];
-    this.goal = { pts, i: 0, r: o.r ?? 0.14, then: o.then, fail: o.fail, t: 0, mark: 0, d0: Math.hypot(p0[0] - this.pos.x, p0[1] - this.pos.z) };
+    this.goal = { pts, i: 0, r: o.r ?? 0.14, then: o.then, fail: o.fail, t: 0, mark: 0, d0: Math.hypot(p0[0] - this.pos.x, p0[1] - this.pos.z), x, z, tries: 0 };
     this.faceTo = null; this.settle = null;
   }
   /** 正走着的那条路（给调试与测试看） */
   get path() { return this.goal ? this.goal.pts.slice(this.goal.i) : null; }
   stop() { this.goal = null; this.vel.multiplyScalar(this.speed > 2.2 ? 1 : 0); }
+  /**
+   * 走着走着被挡住了：往左或往右让开一两步（那一处得站得住、直着走得到——会走动的东西也算在内），从那里重新认路到终点；
+   * 两边都让不开，就从脚下重新认一回。认出来了返回 true
+   */
+  private detour(g: Goal): boolean {
+    const p = g.pts[g.i], dx = p[0] - this.pos.x, dz = p[1] - this.pos.z, l = Math.hypot(dx, dz) || 1, fx = dx / l, fz = dz / l;
+    for (const s of [1.1, -1.1, 1.9, -1.9]) {
+      const sx = this.pos.x - fz * s + fx * 0.5, sz = this.pos.z + fx * s + fz * 0.5;
+      const sy = standable(sx, sz, this.zone);
+      if (sy == null || clearLine(this.pos.x, this.pos.z, this.ground, sx, sz, this.zone) == null) continue;
+      const r = travel(sx, sz, sy, g.x, g.z, this.zone), rest: Array<[number, number]> = r?.length ? r : [[g.x, g.z]];
+      g.pts = [[sx, sz], ...rest]; g.i = 0; g.d0 = Math.hypot(sx - this.pos.x, sz - this.pos.z);
+      return true;
+    }
+    const again = travel(this.pos.x, this.pos.z, this.ground, g.x, g.z, this.zone);
+    if (!again?.length) return false;
+    g.pts = again; g.i = 0; g.d0 = Math.hypot(again[0][0] - this.pos.x, again[0][1] - this.pos.z);
+    return true;
+  }
   /** 不问挡不挡，迈一小步挪到准确的位置（走到一件事跟前的最后半步；脚是真的在走，不是滑过去） */
   settleAt(x: number, z: number) { this.settle = { x, z, t: 0 }; this.goal = null; this.vel.set(0, 0); }
   /**
@@ -165,8 +189,12 @@ export class Player {
           const vc = Math.max(WALK, gear * (0.3 + 0.7 * smooth(-0.2, 1, (wx * bx + wz * bz) / bl)));
           mag = Math.min(1, Math.sqrt(vc * vc + 2 * DEC * 0.55 * Math.max(0, d - 0.2)) / gear);
         }
-        // 走不动了（被挡着）或走了太久：算走不到
-        if (g.t - g.mark > 0.8) { if (g.d0 - d < 0.1) { this.goal = null; this.vel.set(0, 0); g.fail?.(); } else { g.mark = g.t; g.d0 = d; } }
+        // 走不动了（被挡着）：先往旁边让一步、重新认路（挡着的多半是会走动的——牛、狗、村里人），让过两回还不行才算走不到；走了太久也算
+        if (g.t - g.mark > 0.8) {
+          if (g.d0 - d >= 0.1) { g.mark = g.t; g.d0 = d; }
+          else if (g.tries < 2 && this.detour(g)) { g.tries++; g.mark = g.t; }
+          else { this.goal = null; this.vel.set(0, 0); g.fail?.(); }
+        }
         if (g.t > 90) { this.goal = null; g.fail?.(); }
       }
     }

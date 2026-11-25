@@ -132,7 +132,7 @@ export class Anlewo {
   private seatT = 0; private riseT = 0;
   /** 走到一件事跟前、正在站定转身（站好了就开始） */
   private arrive: { t: number; start(): void } | null = null;
-  private inHall = false; private outPitch = 0.14; private outDist = 8;
+  private inHall = false;
   /** 题名页背后的俯瞰（镜头在高处缓缓移着，看得见整片山水） */
   private over: { pos: THREE.Vector3; look: THREE.Vector3; t: number } | null = null;
   /** 题名页那幅俯瞰正开着 */
@@ -279,9 +279,11 @@ export class Anlewo {
     k.world.tick.push((dt, t) => k.update(dt, t));
     k.update(0.016, 0);
     mark('acts');
-    // 先把着色器都编好，免得第一次转头时卡一下
+    // 先把着色器都编好，免得第一次转头时卡一下；换季才露面的东西也先画一遍（换季时不停顿）
     await k.world.compile();
     mark('compile');
+    k.warmSeasons();
+    mark('warm');
     prog(1, '');
     return k;
   }
@@ -375,13 +377,30 @@ export class Anlewo {
     return mode === 'dawn' ? s[0] + 0.3 : mode === 'day' ? 9.2 : mode === 'dusk' ? s[1] - 0.25 : 21.5;
   }
   setWeather(w: Weather, instant = false) { this.atmos.setWeather(w, instant); }
+  /**
+   * 换季。不罩雾、不停顿：天时（雨雪、积雪、晨昏、日月）、地色、草木、远树在同一段（atmos.ts 的 SEASON_FADE）里
+   * 一起从此刻的样子换到新的一季；接连点几季，每一回都从画上此刻的样子接着走。屋里屋外换的器物（瓶花、火盆、晒的东西）一下子换。
+   * 雪是冬天的：离了冬天，雪就停了、天放晴，地上的雪随着这一段化尽（界面照世界此刻的天气记下来；要在别的季节看雪，再点「雪」）。
+   */
   setSeason(s: Season) {
+    if (s === this.season) return;
+    if (s !== 'winter' && this.atmos.weather === 'snow') this.setWeather('clear');
     this.season = s; this.atmos.setSeason(s);
     this.land.setSeason(s); this.flora?.setSeason(s); this.life?.setSeason(s); this.fx?.setSeason(s); this.far?.setSeason(s);
     this.safe('build', () => this.build?.setSeason?.(s));
     if (this.kiln) this.kiln.on = s !== 'winter';
     for (const a of Object.values(this.acts)) (a as Act & { setSeason?(s: Season): void }).setSeason?.(s);
     if (typeof this.timeMode !== 'number' && this.timeMode !== 'now') this.atmos.setHour(this.hourFor(this.timeMode));
+  }
+  /**
+   * 开场时（画还没出来）把换季才露面的东西先画一遍：四季的田、芦苇、荷叶（草木开场就四季都搭好了），
+   * 随季节出没的人与生灵（冬天藏着的老龟、夏夜的萤火、这一季不出门的村人……）。
+   * 着色器在显卡那头头一回真画时还要再编一道（Windows 上一回两三百毫秒），不趁这时做掉，换季那一下画面就停住了。
+   */
+  private warmSeasons() {
+    const objs: THREE.Object3D[] = [...((this.flora as (FloraLike & { seasonal?: THREE.Object3D[] }) | null)?.seasonal ?? [])];
+    if (this.life) objs.push(this.life.group);
+    try { this.world.painter.warm(objs, this.world.camera); } catch (e) { console.warn('换季的东西没能先画一遍', e); }
   }
 
   // —— 开场 ——
@@ -600,7 +619,8 @@ export class Anlewo {
       return;
     }
     this.pending = null;
-    this.player.goTo(g.x, g.z, { r: 0.12 });
+    // 走不到（隔着伊水、四面围着的地方，或让了两回还是被挡着）：停下，说一声，别不声不响地站住
+    this.player.goTo(g.x, g.z, { r: 0.12, fail: () => this.note('前面过不去了，换一处走吧') });
     this.tapRing.position.set(g.x, g.y + 0.03, g.z); this.tapT = 0;
   }
 
@@ -653,13 +673,13 @@ export class Anlewo {
     if (this.life) setDynamic(this.life.blockers ?? []);
     p.snow = a.w.snow;
     p.update(dt, t, this.nav.camYaw);
-    // 进了草堂：屋顶、南墙隐去，镜头从南面高处往里看；出来再还原
-    const pl = this.nav.place, indoor = pl.indoor >= 1;
+    // 进了草堂：屋顶、南墙隐去，镜头从南面高处往里看（nav.setHall）；出来再还原。
+    // 出来要走出前檐底下才算——门口檐下那两步还照屋里看：不然镜头还在高处、屋顶先回来了，正好把檐下的人遮住；人在门槛上来回也不跳
+    const pl = this.nav.place, HL = SITE.hall;
+    const indoor = this.inHall ? Math.abs(p.pos.x - HL.x) < HL.w / 2 - 0.05 && p.pos.z - HL.z < HL.d / 2 + 1.05 && p.pos.z - HL.z > -HL.d / 2 : pl.indoor >= 1;
     if (indoor !== this.inHall) {
       this.inHall = indoor;
-      const n = this.nav;
-      if (indoor) { this.outPitch = n.pitch; this.outDist = n.dist; n.open = true; n.yaw = 0; n.pitch = 0.66; n.dist = 9.2; }
-      else { n.open = false; n.pitch = this.outPitch; n.dist = this.outDist; }
+      this.nav.setHall(indoor);
       if (this.build) { this.build.hallRoof.visible = !indoor; this.build.hallFront.visible = !indoor; }
       U.uRoofCut.value = indoor ? 1 : 0;
     }

@@ -4,14 +4,15 @@
  *        拖动绕着他转（一圈三百六十度都有景）、上下看；滚轮 / 双指拉近推远；
  *        走起来而手没在转镜头时，镜头会慢慢转到他身后；被高墙挡住时把镜头收近。
  *        跑起来镜头稍退、视野略宽、跟得紧些（人不会冲到画面边上去）；停下来再慢慢回去。都是缓的，不晕、不抖。
- *   进了草堂：屋顶与南墙隐去，镜头从南面高处往里看（像看一出戏台）。
- *   做事时：活动给一个机位（pose），镜头缓缓过去，可在小范围内张望；做完再回到身后。
+ *   进了草堂：屋顶与南墙隐去，镜头从南面高处往里看（像看一出戏台）。只在南面敞着的那一个扇面里转，
+ *        人走近东西山墙时镜头往南让一让（人不躲到墙后去）；俯仰、远近也收在一个范围里（不钻进院里的树）。进出都是从原处缓缓滑过去。
+ *   做事时：活动给一个机位（pose），镜头缓缓过去，可在小范围内张望；做完再回到身后（草堂里回到南面那个看进去的镜头）。
  *   换处（村图上点一处）：画面淡成一片雾，人到了那里，再显出来。
  */
 import * as THREE from 'three';
 import type { World } from './core/World';
 import type { Player } from './player';
-import { PLACES as SITE_PLACES, SITE } from './site';
+import { PLACES as SITE_PLACES, SITE, YARD_Y } from './site';
 import { boom, groundAt, placeAt, type Place, type Zone, blocked } from './walk';
 
 /** 跟随时的视角（度）、俯仰（弧度）、远近（米） */
@@ -31,8 +32,9 @@ export const PLACE = new Map(PLACES.map((p) => [p.id, p]));
 /**
  * 活动的机位。yaw / up / down：拖动时能往左右、上下张望几度。
  * orbit（度）：给了就不是在原地张望，而是绕着看的那一点转（左右最多转这么多度、上下按 up / down），被墙挡着就收近一些——摸狗这样的近景用它。
+ *   给 [a, b] 是两边不一样多：方位角往小里最多 a 度（负数）、往大里最多 b 度（转到人背后挡着狗的那一面就停）。
  */
-export interface Pose { pos: THREE.Vector3; look: THREE.Vector3; fov?: number; yaw?: number; up?: number; down?: number; orbit?: number }
+export interface Pose { pos: THREE.Vector3; look: THREE.Vector3; fov?: number; yaw?: number; up?: number; down?: number; orbit?: number | [number, number] }
 
 const ease5 = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -40,6 +42,38 @@ const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ?
 
 /** 抬头看天：俯仰能往下拖到多少（平时最低 −0.12）；仰到底时镜头离人多远、视线仰角多大 */
 const UP_MIN = -0.75, UP_DIST = 1.8, UP_EL = 0.92;
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/**
+ * 草堂里（屋顶、南墙连门窗都隐去了）：镜头只在南面敞着的那一个扇面里——从正南往左右各偏 HALL_YAW 弧度为止（再偏，人就躲到东西山墙后头，
+ * 往西北还要钻进院子西北角那株梧桐里去）；俯仰、远近各收在一个范围里：[最低 / 最近, 进门时, 最高 / 最远]。
+ * 俯仰低了、离得近了，人走到山墙边就被墙头挡住（扇面也被挤得很窄）；再高就成了一张平面图；再远，镜头退到院里的松、东厢的屋顶跟前去了。
+ */
+const HALL_YAW = 0.95, HALL_PITCH = [0.46, 0.66, 1.02] as const, HALL_DIST = [5.4, 9.2, 11.5] as const;
+/** 竖着拿的手机上画幅窄：进门时退远一点，东西两间（榻、琴、茶炉、书案）也在画里 */
+const HALL_DIST_TALL = 10.8;
+/** 进出草堂时镜头从原处滑过去要几秒 */
+const HALL_GLIDE = 0.9;
+const HW = SITE.hall, HALL_TOP = YARD_Y + HW.floor + HW.wall;
+/** 草堂的东、西、北三面墙（连墙厚、四角的柱，略放宽一点）：[x0, x1, z0, z1] */
+const HALL_WALLS: Array<[number, number, number, number]> = (() => {
+  const x0 = HW.x - HW.w / 2, x1 = HW.x + HW.w / 2, z0 = HW.z - HW.d / 2, z1 = HW.z + HW.d / 2, t = 0.42;
+  return [[x0 - 0.05, x0 + t, z0 - 0.05, z1 + 0.15], [x1 - t, x1 + 0.05, z0 - 0.05, z1 + 0.15], [x0 - 0.05, x1 + 0.05, z0 - 0.05, z0 + t]];
+})();
+/** 从 b 看 c 的那一条线越不越得过草堂三面墙的墙头（屋顶隐去了，墙头以上都是空的） */
+function overHallWalls(bx: number, by: number, bz: number, cx: number, cy: number, cz: number): boolean {
+  const dx = cx - bx, dz = cz - bz;
+  for (const [x0, x1, z0, z1] of HALL_WALLS) {
+    // 平面上这条线进、出这一段墙的那一截（t0…t1）
+    let t0 = 0, t1 = 1;
+    if (Math.abs(dx) < 1e-9) { if (bx < x0 || bx > x1) continue; } else { const a = (x0 - bx) / dx, b = (x1 - bx) / dx; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+    if (Math.abs(dz) < 1e-9) { if (bz < z0 || bz > z1) continue; } else { const a = (z0 - bz) / dz, b = (z1 - bz) / dz; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+    if (t0 > t1) continue;
+    // 线是往上走的：在墙里最低的一点就是进墙的那一点，那里要高过墙头一点
+    if (by + (cy - by) * t0 < HALL_TOP + 0.12) return false;
+  }
+  return true;
+}
 
 export class Nav {
   /** 人此刻在哪一处 */
@@ -51,8 +85,16 @@ export class Nav {
   /** 跟随：绕人的方位、俯仰、远近（都是目标值，另有平滑后的） */
   yaw = 0; pitch = FOLLOW_PITCH; dist = FOLLOW_DIST;
   private yawS = 0; private pitchS = FOLLOW_PITCH; private distS = FOLLOW_DIST; private boomS = 1;
-  /** 人在草堂里（屋顶、南墙已隐去）：镜头不必躲墙、不必钻在屋檐下 */
+  /** 人在草堂里（屋顶、南墙已隐去）：镜头不必躲墙、不必钻在屋檐下，只在南面的扇面里（由 setHall 开关） */
   open = false;
+  /** 草堂里此刻往左右能偏到哪（东西山墙限着，follow 里每帧算） */
+  private hallLo = -HALL_YAW; private hallHi = HALL_YAW;
+  /** 进草堂前屋外的俯仰、远近（出来时还原） */
+  private outPitch = FOLLOW_PITCH; private outDist = FOLLOW_DIST;
+  /** 进出草堂时画面上的镜头从原处滑过去：滑了几成、要几秒；起点（镜头与看的那一点，都相对于人的头记，人走着也跟得上） */
+  private glideK = 1; private glideDur = HALL_GLIDE; private gOff = new THREE.Vector3(); private gLook = new THREE.Vector3();
+  /** snapBehind 之后过了几帧（人刚被放到别处的那一两帧里，进出草堂照 snapBehind 摆的来，不另外滑、不另外收） */
+  private snapAge = 9;
   private tgt = new THREE.Vector3(); private inited = false;
   private idle = 9;
   /** 跑了几成（0…1）：起来得快些，回去得慢 */
@@ -86,22 +128,61 @@ export class Nav {
   snapBehind(pitch = FOLLOW_PITCH, dist = FOLLOW_DIST) {
     this.yaw = this.yawS = wrap(this.player.yaw + Math.PI);
     this.pitch = this.pitchS = pitch; this.dist = this.distS = dist; this.boomS = 1; this.runK = 0;
-    this.inited = false; this.pose = null; this.poseOut = false; this.poseK = 1;
+    this.inited = false; this.pose = null; this.poseOut = false; this.poseK = 1; this.glideK = 1; this.snapAge = 0;
     this.offYaw = this.offPitch = this.offYawG = this.offPitchG = this.zoom = this.zoomG = 0;
+    // 还在草堂里（屋里换了个地方站）：仍从南面看进去，出草堂时还原成上面这一份
+    if (this.open && placeAt(this.player.pos.x, this.player.pos.z).indoor >= 1) { this.outPitch = pitch; this.outDist = dist; this.hallView(); }
+  }
+  /** 草堂里的镜头一下子摆好：进门时的俯仰、远近；左右取人背后那一侧、最多偏一小半（面朝北站着就是正南；背后是北墙的，就正南） */
+  private hallView() {
+    const b = wrap(this.player.yaw + Math.PI);
+    this.yaw = this.yawS = Math.abs(b) <= Math.PI / 2 ? clamp(b, -HALL_YAW / 2, HALL_YAW / 2) : 0;
+    this.pitch = this.pitchS = HALL_PITCH[1]; this.dist = this.distS = this.hallDist0(); this.boomS = 1; this.glideK = 1;
+  }
+  /** 进草堂时的远近（竖屏退远一点） */
+  private hallDist0() { return this.world.camera.aspect < 0.8 ? HALL_DIST_TALL : HALL_DIST[1]; }
+  /**
+   * 进出草堂（Anlewo 按人在哪里来叫）。进去：屋外的俯仰远近记下，镜头升到南面高处往里看——原本就在南面一带的照原来的偏向，偏得多的收进扇面里；
+   * 出来：还原（偏向照旧）。画面上的镜头都是从原处缓缓滑过去（不绕着人转大圈，就不会从墙里、树里穿过去）；画面正暗着、正在做事时直接换；
+   * 人刚被放过来（snapBehind 才摆过）的，照它摆的。
+   */
+  setHall(on: boolean) {
+    if (on === this.open) return;
+    this.open = on;
+    const fresh = this.snapAge <= 1, cut = fresh || this.fade > 0.3 || !!this.pose;
+    if (on) {
+      this.outPitch = this.pitch; this.outDist = this.dist;
+      if (cut) { this.hallView(); return; }
+      this.yaw = clamp(this.yaw, -HALL_YAW, HALL_YAW); this.pitch = HALL_PITCH[1]; this.dist = this.hallDist0();
+    } else {
+      this.glideK = 1;
+      if (fresh) return;
+      this.pitch = this.outPitch; this.dist = this.outDist;
+      if (cut) { this.yawS = this.yaw; this.pitchS = this.pitch; this.distS = this.dist; this.boomS = 1; return; }
+    }
+    // 跟随的那一套直接到位；画面上的镜头另外从原处滑过去
+    this.yawS = this.yaw; this.pitchS = this.pitch; this.distS = this.dist; this.boomS = 1; this.idle = 0;
+    this.gOff.copy(this.pos).sub(this.tgt); this.gLook.copy(this.look).sub(this.tgt);
+    this.glideK = 0; this.glideDur = HALL_GLIDE;
   }
 
-  /** 活动的机位；null 即回到人的身后 */
+  /** 活动的机位；null 即回到人的身后（草堂里回到南面那个看进去的镜头） */
   setPose(p: Pose | null, dur = 1.3) {
     const cam = this.world.camera;
     this.from.pos.copy(cam.position);
     this.from.look.copy(cam.getWorldDirection(this.tmp)).multiplyScalar(8).add(cam.position);
     this.from.fov = this.fov;
-    this.offYawG = this.offPitchG = 0; this.zoomG = 0;
+    this.offYawG = this.offPitchG = 0; this.zoomG = 0; this.glideK = 1;
     if (!p) {
       if (!this.pose) return;
       this.poseOut = true; this.poseK = 0; this.poseDur = dur;
-      // 回到身后时别从很怪的角度绕回来：就取人此刻的背后
-      this.yaw = this.yawS = wrap(this.player.yaw + Math.PI); this.pitch = this.pitchS = this.open ? 0.62 : FOLLOW_PITCH; this.boomS = 1;
+      if (this.open) {
+        // 草堂里：回到做事以前那个从南面看进去的镜头（人背后多半是北墙、山墙，绕过去就看不见人了）
+        this.yawS = this.yaw; this.pitchS = this.pitch; this.distS = this.dist; this.boomS = 1;
+      } else {
+        // 回到身后时别从很怪的角度绕回来：就取人此刻的背后
+        this.yaw = this.yawS = wrap(this.player.yaw + Math.PI); this.pitch = this.pitchS = FOLLOW_PITCH; this.boomS = 1;
+      }
       return;
     }
     this.pose = p; this.poseOut = false; this.poseK = 0; this.poseDur = dur;
@@ -116,7 +197,8 @@ export class Nav {
       if (p.orbit) {
         // 绕着转：手往右拖，镜头往左绕（景跟着手走）；往上拖，镜头低下去、往上看
         // 转到有墙、有屋、有柱子挡着的那一面就停住（不往东西里挤）
-        const next = Math.max(-p.orbit, Math.min(p.orbit, this.offYawG - dx * 0.32));
+        const [o0, o1] = Array.isArray(p.orbit) ? p.orbit : [-p.orbit, p.orbit];
+        const next = Math.max(o0, Math.min(o1, this.offYawG - dx * 0.32));
         if (this.orbitClear(p, next)) this.offYawG = next;
         this.offPitchG = Math.max(-(p.down ?? 10), Math.min(p.up ?? 25, this.offPitchG + dy * 0.2));
         return;
@@ -125,21 +207,33 @@ export class Nav {
       this.offPitchG = Math.max(-(p.down ?? 8), Math.min(p.up ?? 8, this.offPitchG + dy * k));
       return;
     }
+    this.idle = 0;
+    if (this.open) {
+      // 草堂里：只在南面的扇面里转（再偏，人就躲到山墙后头去了），俯仰也收在那个范围里
+      this.yaw = clamp(this.yaw - dx * 0.0052, this.hallLo, this.hallHi);
+      this.pitch = clamp(this.pitch + dy * 0.0042, HALL_PITCH[0], HALL_PITCH[2]);
+      return;
+    }
     this.yaw = wrap(this.yaw - dx * 0.0052);
     this.pitch = Math.max(this.upOk() ? UP_MIN : -0.12, Math.min(1.15, this.pitch + dy * 0.0042));
-    this.idle = 0;
   }
   /** 能不能抬头看天：在屋外（屋里有顶，草堂里屋顶虽隐去了也不往上仰） */
   private upOk() { return !this.open && this.place.indoor < 0.5; }
+  /** 远近：平时 2.2…18 米；草堂里收在看得清屋里、又碰不着院里东西的那一段 */
+  private zoomTo(d: number) { return this.open ? clamp(d, HALL_DIST[0], HALL_DIST[2]) : clamp(d, 2.2, 18); }
   wheel(dy: number) {
     if (this.pose && !this.poseOut) { this.zoomG = Math.max(0, Math.min(1, this.zoomG - dy * 0.0012)); return; }
-    this.dist = Math.max(2.2, Math.min(18, this.dist * Math.exp(dy * 0.0011)));
+    this.dist = this.zoomTo(this.dist * Math.exp(dy * 0.0011));
     this.idle = 0;
   }
   /** 键盘转镜头（Q / E、左右方向键）：rate 是弧度/秒，正为往右转 */
-  turn(rate: number, dt: number) { if (this.busy || (this.pose && !this.poseOut)) return; this.yaw = wrap(this.yaw - rate * dt); this.idle = 0; }
+  turn(rate: number, dt: number) {
+    if (this.busy || (this.pose && !this.poseOut)) return;
+    this.yaw = this.open ? clamp(this.yaw - rate * dt, this.hallLo, this.hallHi) : wrap(this.yaw - rate * dt);
+    this.idle = 0;
+  }
   /** 双指：scale > 1 是张开（拉近） */
-  pinch(scale: number) { this.dist = Math.max(2.2, Math.min(18, this.dist / scale)); this.idle = 0; }
+  pinch(scale: number) { this.dist = this.zoomTo(this.dist / scale); this.idle = 0; }
 
   /** 画面沉入墨色 → 做 fn（把人放到别处）→ 再亮起来 */
   travel(fn: () => void): Promise<void> {
@@ -178,6 +272,8 @@ export class Nav {
     }
     // 抬着头的时候一迈步（或进了屋）就慢慢低回来（进屋一下子回来）
     if (this.pitch < -0.12 && (p.moving || !this.upOk())) this.pitch += (-0.12 - this.pitch) * (this.upOk() ? sm(1.6) : 1);
+    // 草堂里：人走近东西山墙时，从他脚下到镜头那条线要越得过墙头——越不过就把镜头往南推一些（不让人躲到墙后去）
+    if (this.open && this.snapAge > 0) { this.hallLimits(); this.yaw = clamp(this.yaw, this.hallLo, this.hallHi); }
     this.yawS = wrap(this.yawS + wrap(this.yaw - this.yawS) * sm(13));
     this.pitchS += (this.pitch - this.pitchS) * sm(13);
     // 抬头看天（屋外往上拖过了平时的最低处，up 0…1）：镜头再低一些、凑到身后，往天上仰到五十来度；人的头肩留在画面下沿
@@ -234,11 +330,36 @@ export class Nav {
       this.fov = this.from.fov + ((this.poseOut ? FOLLOW_FOV : this.pose.fov ?? 40) - this.from.fov) * k;
       if (this.poseOut && this.poseK >= 1) { this.pose = null; this.poseOut = false; }
     } else {
-      this.pos.copy(this.fpos); this.look.copy(this.flook);
+      if (this.glideK < 1) {
+        // 进出草堂：从原处（跟着人）缓缓滑到跟随的位置
+        this.glideK = Math.min(1, this.glideK + dt / this.glideDur);
+        const k = ease5(this.glideK);
+        this.pos.copy(this.gOff).add(this.tgt).lerp(this.fpos, k); this.look.copy(this.gLook).add(this.tgt).lerp(this.flook, k);
+      } else { this.pos.copy(this.fpos); this.look.copy(this.flook); }
       // 跑起来视野略宽（四度上下）
       this.fov += (FOLLOW_FOV + 4 * this.runK - this.fov) * Math.min(1, dt * 4);
     }
     this.apply(t);
+    this.snapAge = Math.min(9, this.snapAge + 1);
+  }
+
+  /** 草堂里此刻往左右能偏到哪：从正南往两边一点一点试，试到人的脚被山墙挡住为止（再二分几回取准） */
+  private hallLimits() {
+    const p = this.player.pos, t = this.tgt, r = Math.cos(this.pitchS) * this.distS, cy = t.y + Math.sin(this.pitchS) * this.distS, fy = p.y + 0.04;
+    const sees = (a: number) => overHallWalls(p.x, fy, p.z, t.x + Math.sin(a) * r, cy, t.z + Math.cos(a) * r);
+    const edge = (s: number) => {
+      const N = 16;
+      let ok = 0;
+      for (let i = 1; i <= N; i++) {
+        const a = (HALL_YAW * i) / N;
+        if (sees(s * a)) { ok = a; continue; }
+        let lo = ok, hi = a;
+        for (let j = 0; j < 5; j++) { const m = (lo + hi) / 2; if (sees(s * m)) lo = m; else hi = m; }
+        return lo;
+      }
+      return HALL_YAW;
+    };
+    this.hallHi = edge(1); this.hallLo = -edge(-1);
   }
 
   private apply(t: number) {

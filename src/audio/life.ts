@@ -4,7 +4,9 @@
  *   村（village） 鸡犬牛鸭——没有常驻的声音，只是到时候排一声：
  *                   清晨雄鸡一阵一阵地叫（近处一只，远处常有一只应它；离村远也听得见，只是远），白天偶尔一声；
  *                   母鸡、小鸡、鸭、麻雀、井上的辘轳要离村近了才听得见；犬白天隔一两分钟远远吠两声，夜里隔很久才有一回；
- *                   牛在田那边低低地哞。远近都按 near.village（牛看 near.fields）算。
+ *                   牛只在田边低低地哞一声（人得真到了田头），驴只在村里叫。远近都按 near.village（牛看 near.fields）算。
+ *                   远处的、看不见是谁的那几样嗓子（牛哞、驴叫、羊咩）隔着回声听，像有人在呻吟——试玩的人说瘆人：
+ *                   羊不再在这一层里叫（羊群自己在牧处叫，见 life/fauna/sheep.ts），牛、驴只在近处，刚进门的头一分半钟都不出。
  *   塾（school）  书声：一班孩子一句一句地念一篇课文（上句悬着、下句落下来），念完歇一歇，再念一遍或换一篇。
  *                 人声关着时（界面上默认如此）不念出声，只有翻书与先生的戒尺（见 recite.ts 的 lessonCue）。
  *   工（work）    修桥：锤几下、锯一阵、刨几下，中间歇手。
@@ -56,6 +58,8 @@ export class Village extends Base {
   }
   schedule(from: number, to: number) {
     const s = this.e.scene, v = s.near.village, day = s.day, warm = s.season === 'spring' || s.season === 'summer';
+    // 刚进门的头一分半钟：远处的大牲口（牛、驴）都不出声
+    const settling = from < this.e.calmUntil + 30;
     // 离村越近越清楚：跟前是 0.1，离村很远的地方（桃林、自家院里）是 0.8 上下——远，但清晨的鸡鸣还听得真
     const far = (jitter = 0.06) => clamp(0.82 - 0.72 * v + rand(-jitter, jitter), 0.06, 0.9);
     const pan = () => rand(-0.7, 0.7);
@@ -107,15 +111,11 @@ export class Village extends Base {
       if (s.night > 0.75 && s.rain < 0.5 && !stars) this.say('clapper', t, { vel: rand(0.45, 0.7), dist: clamp(rand(0.72, 0.92) - 0.2 * v, 0.5, 0.93), pan: pan() });
       return rand(180, 420);
     });
-    this.due('goat', from, to, (t) => {
-      // 羊：白天在村边、田头，「咩——」一两声
-      if (Math.max(v, 0.6 * s.near.fields) > 0.2 && day > 0.6 && s.rain < 0.4) this.say('goat', t, { vel: rand(0.35, 0.6), dist: clamp(0.85 - 0.6 * Math.max(v, 0.6 * s.near.fields) + rand(-0.05, 0.1), 0.15, 0.92), pan: pan() });
-      return rand(50, 140);
-    });
+    // （羊不在这一层里叫了：羊群在牧处自己叫，人走到跟前才听见）
     this.due('donkey', from, to, (t) => {
-      // 驴：难得叫一回，一叫满村都听得见
-      if (day > 0.6 && s.rain < 0.3) this.say('donkey', t, { vel: rand(0.4, 0.6), dist: clamp(far(0.08) + 0.12, 0.35, 0.92), pan: pan() });
-      return rand(160, 420);
+      // 驴：难得叫一回，人在村里才听得见（远远隔着回声的一声驴叫，像人哭）
+      if (v > 0.45 && day > 0.6 && s.rain < 0.3 && !settling) this.say('donkey', t, { vel: rand(0.4, 0.6), dist: clamp(far(0.08) + 0.08, 0.3, 0.7), pan: pan() });
+      return rand(200, 480);
     });
     this.due('peck', from, to, (t) => {
       // 母鸡在院里啄食：要走到邻家跟前才听得见
@@ -123,9 +123,10 @@ export class Village extends Base {
       return rand(12, 35);
     });
     this.due('ox', from, to, (t) => {
-      const near = Math.max(v, s.near.fields);
-      if (near > 0.2 && day > 0.6) this.say('ox', t, { vel: rand(0.35, 0.6), dist: clamp(0.9 - 0.5 * near + rand(-0.1, 0.1), 0.35, 0.92), pan: pan(), variant: Math.random() < 0.2 ? 'breath' : undefined });
-      return rand(90, 240);
+      // 牛：人到了田头才听得见，不远（远处隔着回声的一声长哞像人在呻吟）；多半只是喷一口气
+      const near = s.near.fields;
+      if (near > 0.6 && day > 0.6 && !settling) this.say('ox', t, { vel: rand(0.35, 0.55), dist: clamp(0.72 - 0.4 * near + rand(-0.05, 0.05), 0.25, 0.6), pan: pan(), variant: Math.random() < 0.45 ? 'breath' : undefined });
+      return rand(180, 420);
     });
     this.due('sparrow', from, to, (t) => {
       if (v > 0.3 && day > 0.6 && s.rain < 0.3) this.say('sparrow', t, { vel: rand(0.35, 0.6), dist: clamp(0.6 - 0.5 * v + rand(0, 0.2)), pan: pan() });

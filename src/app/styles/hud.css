@@ -183,6 +183,10 @@
   .roll::before { top: 9px; }
   .roll::after { bottom: 9px; }
 }
+/* 竖着的手机：「疾」原在摇杆右上，正落在屏幕当中（试玩的人说占着中间）——挪到摇杆正上方，左手拇指往上一够就到 */
+@media (max-width: 560px) {
+  .run-key { left: calc(var(--sal) + clamp(18px, 5vw, 44px) + (clamp(108px, 28vw, 132px) - 50px) / 2); bottom: calc(var(--sab) + clamp(22px, 6vh, 56px) + clamp(108px, 28vw, 132px) + 22px); }
+}
 @media (max-width: 560px) {
   .when { gap: 8px; padding: 0 11px 0 9px; }
   .when span { font-size: 14.5px; }
@@ -202,4 +206,7 @@
 /* 触屏时提示别压着摇杆与印 */
 /* 触屏时提示落在「疾」那一枚上面（「疾」在摇杆右上：摇杆离底的距离 + 摇杆高的六成 + 自己的高） */
 .hud.is-touch .dock { bottom: calc(var(--sab) + clamp(22px, 6vh, 56px) + clamp(108px, 28vw, 132px) * 0.62 + 60px); }
-@media (max-height: 460px) { .hud.is-touch .dock { bottom: auto; top: calc(var(--sat) + 70px); } }
+/* 横着的手机：走法提示在上沿，落在左上的处名与右上的「同游」那一枚之间 */
+@media (max-height: 460px) { .hud.is-touch .dock { bottom: auto; top: calc(var(--sat) + 70px); left: calc(var(--sal) + 120px); right: calc(var(--sar) + 120px); padding: 0; } }
+/* 竖着的手机：左边一列是摇杆与它上面的「疾」——走法提示让开这一列，落在右边那一片的当中 */
+@media (max-width: 560px) { .hud.is-touch .dock { left: calc(var(--sal) + clamp(18px, 5vw, 44px) + clamp(108px, 28vw, 132px)); padding: 0 8px 0 4px; } }

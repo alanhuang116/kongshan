@@ -5,7 +5,7 @@
 //   最后放十个机器人进来围着甲走，量同游每帧花多少（net 的每帧、画一帧的 CPU、多了多少三角与绘制）；
 //   面板、名签在 393×714、375×548、714×393 与电脑上的样子（截图、出界、截断、键太小、相叠、对比）。
 // 用法：KS_URL=http://localhost:3817/ node tests/play/together.mjs [--no-perf] [--no-ui]
-//   （先起一个不做热更新的开发服务器；KS_RELAY_PORT 换中转的端口）
+//   （先起一个不做热更新的开发服务器；KS_RELAY_PORT 换中转的端口；KS_TG_SIZES=android,androidLand 换第八段量的屏幕，uikit 的尺寸名）
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -182,7 +182,10 @@ try {
   const saidA = waitNote(A.page, /：后会有期$/);
   await B.page.click(`[data-testid=tg-say-${a.id}-bye]`);
   R.ok('乙回「后会有期」：甲收到一句', await saidA);
-  await B.page.click('[data-testid=tg-close]');
+  // 手机上：说完一句，那张纸自己收起（好看见自己头上浮着的那句话，不被纸挡着）
+  await B.page.waitForTimeout(300);
+  R.ok('手机上说完一句，同游那张纸自己收起', await B.page.evaluate(() => !document.querySelector('[data-testid=tg-panel]')));
+  if (await B.page.$('[data-testid=tg-close]')) await B.page.click('[data-testid=tg-close]');
 
   // ———— 四、同行 ————
   console.log('四、同行');
@@ -193,7 +196,9 @@ try {
   const toldA = waitNote(A.page, /与你同行/, 9000);
   await B.page.click('[data-testid=tg-key]');
   await B.page.click(`[data-testid=tg-follow-${a.id}]`);
-  await B.page.click('[data-testid=tg-close]');
+  // 手机上点了同行，纸也自己收起
+  R.ok('手机上点了同行，那张纸自己收起', await B.page.evaluate(() => !document.querySelector('[data-testid=tg-panel]')));
+  if (await B.page.$('[data-testid=tg-close]')) await B.page.click('[data-testid=tg-close]');
   const caught = await B.page.waitForFunction((id) => { const r = window.__net.remotes.get(id); return r && r.dist < 2.8; }, a.id, { timeout: 12000 }).then(() => true, () => false);
   R.ok('乙点「同行」：走到甲跟前', caught);
   R.ok('甲收到「与你同行」', await toldA);
@@ -252,7 +257,7 @@ try {
   if (!args.has('--no-ui')) {
     console.log('八、界面');
     const issues = [];
-    for (const size of ['pc', 'laptop', 'pad', 'iphone', 'se', 'landscape']) {
+    for (const size of (process.env.KS_TG_SIZES ?? 'pc,laptop,pad,iphone,se,landscape').split(',')) {
       const C = await page(size);
       await online(C.page, 2);
       await placeAt(C.page, 0.6, 12.2, Math.PI);

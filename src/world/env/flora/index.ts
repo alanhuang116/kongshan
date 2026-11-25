@@ -19,6 +19,8 @@ export interface Flora {
   bloomSpots: THREE.Vector3[];
   /** 总图的 TREES 之外、草木自己添的树（人家的果树、茶棚边的老柳）：树干在哪、多粗——走路的要绕开 */
   extraTrunks: Array<{ x: number; z: number; r: number }>;
+  /** 随季节露面、藏起的那几套（田、芦苇、荷叶……四季的都有）：开场时先画一遍（Anlewo.warmSeasons），换季时着色器不用现编 */
+  seasonal: THREE.Object3D[];
 }
 export function createFlora(o: FloraOpts): Flora {
   return buildFlora(o, sitePlan());

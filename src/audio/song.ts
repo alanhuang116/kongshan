@@ -148,9 +148,12 @@ export function orioleSong(p: number, n = 3 + Math.floor(rand(0, 2))): El[] {
   }
   return out;
 }
-/** 斑鸠：「咕咕——咕」，低，闷，带气，嗓子里有一点抖（不是吹出来的纯音） */
+/**
+ * 斑鸠：「咕咕——咕」，低，闷，带一点气（不是吹出来的纯音）。嗓子里的抖只留一点：抖得深了、气多了，远远隔着回声像夜里的鸮，
+ * 试玩的人觉得瘆人
+ */
 function doveSong(p: number): El[] {
-  const m = { h2: 0.32, h3: 0.16, breath: 0.35, am: [rand(24, 32), 0.28] as const, att: 0.03, fall: 0.55 };
+  const m = { h2: 0.32, h3: 0.16, breath: 0.24, am: [rand(24, 32), 0.12] as const, att: 0.03, fall: 0.55 };
   return [
     { at: 0, len: 0.18, f0: 468 * p, f1: 480 * p, amp: 0.8, ...m },
     { at: 0.28, len: 0.3, f0: 498 * p, mid: 520 * p, midAt: 0.35, f1: 476 * p, amp: 1, ...m },
@@ -159,7 +162,7 @@ function doveSong(p: number): El[] {
 }
 /** 布谷：两个音，下行小三度；软起，带一点气（真的布谷也是圆的，所以只在远处、很少） */
 export function cuckooSong(p: number): El[] {
-  const m = { h2: 0.22, h3: 0.1, breath: 0.5, am: [rand(18, 26), 0.22] as const, att: 0.025, fall: 0.5 };
+  const m = { h2: 0.22, h3: 0.1, breath: 0.36, am: [rand(18, 26), 0.12] as const, att: 0.025, fall: 0.5 };
   return [{ at: 0, len: 0.16, f0: 642 * p, f1: 630 * p, amp: 1, ...m }, { at: 0.3, len: 0.2, f0: 512 * p, f1: 498 * p, amp: 0.9, ...m }];
 }
 /** 一串颤音：每秒十三到十八个往下扫的小音，中间响两头轻 */
@@ -200,7 +203,7 @@ export const SPECIES: Record<BirdKind, Species> = {
   tit: { rest: [6, 12], level: 0.85, far: [0.35, 0.85], pitch: [0.92, 1.08], motif: titSong },
   whiteeye: { rest: [6, 13], level: 0.75, far: [0.35, 0.9], pitch: [0.92, 1.1], motif: whiteEyeSong },
   oriole: { rest: [9, 18], level: 1, far: [0.45, 0.92], pitch: [0.92, 1.08], motif: (p) => orioleSong(p) },
-  dove: { rest: [12, 24], level: 1.2, far: [0.6, 0.95], pitch: [0.95, 1.06], motif: doveSong },
+  dove: { rest: [16, 32], level: 0.85, far: [0.6, 0.95], pitch: [0.95, 1.06], motif: doveSong },
   cuckoo: { rest: [14, 34], level: 1.1, far: [0.75, 1], pitch: [0.96, 1.04], motif: cuckooSong },
   trill: { rest: [8, 16], level: 0.75, far: [0.4, 0.9], pitch: [0.9, 1.1], motif: trillSong },
 };
