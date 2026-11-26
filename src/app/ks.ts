@@ -13,6 +13,7 @@ import { addEntry, addFound, addNote, patch, saveWorld, saved, setUi, ui, type S
 import { PLACES } from '../world/site';
 import { WORDS, guaOf } from './texts';
 import type { Wear } from '../world/avatar/dress';
+import { monthOfYmd, seasonOfMonth } from '../world/env/months';
 import { getTogether } from '../world/net';
 import { nameOf } from '../world/net/proto';
 
@@ -33,13 +34,20 @@ function hourOf(time: TimeMode | number, season: Season): number {
   if (time === 'now') { const d = new Date(); return d.getHours() + d.getMinutes() / 60; }
   return time === 'dawn' ? SUN[season][0] + 0.3 : time === 'day' ? 9.2 : time === 'dusk' ? SUN[season][1] - 0.25 : 21.5;
 }
+/** 这里此刻是哪一月（月建：以节交月，子 0 … 亥 11） */
+export function nowMonth(): number { const d = new Date(); return monthOfYmd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+/**
+ * 开门时的天时：默认是此刻——这里此刻的节气（月与季）、此刻的钟点（随此刻）；人可以再随意拨，「天时」里点「回到此刻」就回来。
+ * 网址给了的照网址（截图、自动检查用）。天气照上回存着的
+ */
 const START = (() => {
   const q = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search), s = saved.get();
-  const season = SEASONS.find((x) => x === q.get('season')) ?? s.season, weather = WEATHERS.find((x) => x === q.get('w')) ?? s.weather;
-  const time = parseTime(q.get('t')) ?? s.time, hour = hourOf(time, season);
+  const qs = SEASONS.find((x) => x === q.get('season')), qt = parseTime(q.get('t')), month = qs ? null : nowMonth();
+  const season = qs ?? seasonOfMonth(month ?? 0), weather = WEATHERS.find((x) => x === q.get('w')) ?? s.weather;
+  const time = qt ?? 'now', hour = hourOf(time, season);
   // 时辰流转的快慢：flow=0 让时辰停着（截图、自动检查时用），也可以给每秒几个钟头
   const fq = q.get('flow'), flow = fq != null && /^\d+(\.\d+)?$/.test(fq) ? Math.min(1, Number(fq)) : s.flow;
-  return { q, season, weather, time, hour, flow, auto: q.has('auto') || q.get('ui') === '0' };
+  return { q, season, weather, time, hour, flow, month, own: !qs && !qt, auto: q.has('auto') || q.get('ui') === '0' };
 })();
 
 // —— 昼与夜：界面用哪一套颜色 ——
@@ -171,6 +179,9 @@ export async function boot(canvas: HTMLCanvasElement) {
   }
   const k = ks;
   for (const n of s.found) k.found.add(n);
+  // 默认此刻：月也落到此刻的那一月（季已经是那一季）；存档跟着记下此刻（右上那道日影线按存档里的季量日出日落）
+  if (START.month != null && k.month !== START.month) k.setMonth(START.month);
+  if (START.own && (s.season !== START.season || s.time !== START.time)) patch({ season: START.season, time: START.time });
   // 今天的节气：农夫说话时用
   k.term = t.termName || null;
   k.setTime(START.time, true);
@@ -306,18 +317,42 @@ export function leaveAct() { if (ks?.act) ks.exitAct(); else setUi({ act: null, 
 export function actCmd(name: string, arg?: unknown) { ks?.cmd(name, arg); }
 
 /**
- * 同游时园中天时随最早来的那一位（按真实的钟点、节气；天气也随那一位）：自己拨的时辰、流转、季、月都不管用，说一声。
- * 自己就是最早来的那一位时，天气还能拨（同屋的人跟着你）。
+ * 同游时园中天时随最早来的那一位（按真实的钟点、节气；天气也随那一位）。这时也能拨：拨了时辰、流转、季、月（或拨了别人定的天气），
+ * 画里就是你自己的天时——同屋的人看到的仍是园中此刻；「天时」里点「回到此刻」再随园中。
+ * 自己就是最早来的那一位时，拨天气不算出来（同屋的人跟着你变）。
  */
 const shared = () => !!ks?.shared;
-const lockNote = () => addNote('同游时，园中天时随最早来的那一位；要自己拨，先在「同游」里改成独游', 'time');
-export function setTime(mode: TimeMode | number) { if (shared()) { lockNote(); return; } patch({ time: mode }); ks?.setTime(mode); sense(); }
+function goOwn() {
+  const k = ks;
+  if (!k?.shared) return;
+  getTogether()?.setOwnSky(true);
+  // 先还回进园中天时以前自己的那一套，再照拨的走
+  k.setShared(null);
+  addNote('拨的是你自己的天时，同屋的人看到的仍是园中此刻；「天时」里点「回到此刻」再随园中', 'time');
+}
+export function setTime(mode: TimeMode | number) { if (shared()) goOwn(); patch({ time: mode }); ks?.setTime(mode); sense(); }
+/**
+ * 回到此刻：这里此刻的节气（月与季）、此刻的钟点（随此刻）。同游时自己拨过的：回到园中此刻（随最早来的那一位）
+ */
+export function backToNow() {
+  const k = ks;
+  if (!k) return;
+  const tg = getTogether(), rejoin = !!(tg?.skyOwn && tg.view.sky);
+  // （同游时自己拨过：自己的那一套也先回到此刻——这时还没随园中，拨得动——再随园中；改回独游时就停在此刻，不回到先前拨的那一刻）
+  const m = nowMonth();
+  if (k.month !== m) k.setMonth(m);
+  patch({ time: 'now', season: k.season, weather: k.atmos.weather });
+  k.setTime('now');
+  if (rejoin) tg!.setOwnSky(false);
+  sense();
+  addNote(rejoin ? '回到园中此刻' : '回到此刻', 'time');
+}
 /**
  * 时辰流转得多快（每秒几个钟头；0 停）。「随此刻」时时辰跟着钟点走、不流转：这时选了一档会走的，
  * 就从此刻的钟点起，让它照这一档走下去。
  */
 export function setFlow(rate: number) {
-  if (shared()) { lockNote(); return; }
+  if (shared()) goOwn();
   const r = Math.max(0, Math.min(1, rate));
   patch({ flow: r, flowChosen: true });
   ks?.setFlow(r);
@@ -326,7 +361,7 @@ export function setFlow(rate: number) {
 /** 「疾」：一直跑 / 不跑（手机上摇杆旁那一枚） */
 export function setRun(on: boolean) { ks?.setRun(on); buzz(6); }
 export function setWeather(w: Weather) {
-  if (ks?.shared?.weather) { lockNote(); return; }
+  if (ks?.shared?.weather) goOwn();
   patch({ weather: w }); ks?.setWeather(w);
 }
 /**
@@ -334,14 +369,14 @@ export function setWeather(w: Weather) {
  * 所以天气照世界换过之后的记下来（「天」那一排跟着从「雪」回到「晴」）。
  */
 export function setSeason(s: Season) {
-  if (shared()) { lockNote(); return; }
+  if (shared()) goOwn();
   ks?.setSeason(s);
   patch(ks ? { season: s, weather: ks.atmos.weather } : { season: s });
   sense();
 }
 /** 拨到某一月（十二消息卦按月拨）：季跟着换，存档记下季与天气（离了冬天雪就停了） */
 export function setMonth(m: number) {
-  if (shared()) { lockNote(); return; }
+  if (shared()) goOwn();
   if (!ks) return;
   ks.setMonth(m);
   patch({ season: ks.season, weather: ks.atmos.weather });

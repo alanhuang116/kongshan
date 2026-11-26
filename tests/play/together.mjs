@@ -4,7 +4,7 @@
 //   中转停了两页照样能走（不报错），中转回来两页自己连回来、又互相看见；
 //   最后放十个机器人进来围着甲走，量同游每帧花多少（net 的每帧、画一帧的 CPU、多了多少三角与绘制）；
 //   面板、名签在 393×714、375×548、714×393 与电脑上的样子（截图、出界、截断、键太小、相叠、对比）；
-//   园中天时：两页在不同的时区（上海、巴黎），后来的随最早来的那一位（时辰、季、月、天气），天时页锁着；
+//   园中天时：两页在不同的时区（上海、巴黎），后来的随最早来的那一位（时辰、季、月、天气）；天时页也能拨（拨了是自己的天时，「回到此刻」再随园中）；
 //   人数连自己、断线先记暂离、回来认得；同行着自己点了事不被吞掉；那一位走了换下一位；独游还回自己拨的。
 // 用法：KS_URL=http://localhost:3817/ node tests/play/together.mjs [--no-perf] [--no-ui]
 //   （先起一个不做热更新的开发服务器；KS_RELAY_PORT 换中转的端口；KS_TG_SIZES=android,androidLand 换第八段量的屏幕，uikit 的尺寸名）
@@ -323,12 +323,23 @@ try {
     const rained = await D.page.waitForFunction(() => window.__ks.atmos.weather === 'rain', null, { timeout: 8000 }).then(() => true, () => false);
     R.ok('甲的天时页写着随你、天气能拨；拨了雨，乙那边也下起雨来', /此刻是你/.test(cLock ?? '') && rained, cLock ?? '');
     await C.page.click('[data-testid=sheet-close]').catch(() => {});
-    // 乙的天时页：写着随甲、那里快七个钟头；拨的几样都锁着
+    // 乙的天时页：写着随甲、那里快七个钟头；也能拨——拨了「夜」就是乙自己的天时（甲那边照旧），点「回到此刻」再随甲
     await D.page.click('[data-testid=key-when]');
     await D.page.waitForSelector('[data-testid=sky-lock]', { timeout: 4000 }).catch(() => {});
-    const dLock = await D.page.evaluate(() => ({ text: document.querySelector('[data-testid=sky-lock]')?.textContent ?? '', locked: [...document.querySelectorAll('[data-testid^=dial-], [data-testid^=season-], [data-testid^=weather-], [data-testid^=time-], [data-testid^=flow-]')].every((b) => b.disabled) }));
+    const dLock = await D.page.evaluate(() => ({ text: document.querySelector('[data-testid=sky-lock]')?.textContent ?? '', open: [...document.querySelectorAll('[data-testid^=season-], [data-testid^=time-], [data-testid^=dial-]')].every((b) => !b.disabled), back: !!document.querySelector('[data-testid=sky-back-now]') }));
     await shotTo(D.page, 'sky-lock-phone');
-    R.ok('乙的天时页写着随甲、那里快七个钟头，拨的几样都锁着', dLock.locked && dLock.text.includes(c1.me.replace(/（.*$/, '')) && /快七个钟头/.test(dLock.text), dLock.text);
+    R.ok('乙的天时页写着随甲、那里快七个钟头；拨的几样都能拨，此刻随着园中（不出「回到此刻」）', dLock.open && !dLock.back && dLock.text.includes(c1.me.replace(/（.*$/, '')) && /快七个钟头/.test(dLock.text), dLock.text);
+    const cBefore = await sky(C.page);
+    await D.page.click('[data-testid=time-night]');
+    await D.page.waitForTimeout(700);
+    const dOwn = await D.page.evaluate(() => ({ shared: !!window.__ks.shared, own: window.__net.skyOwn, back: !!document.querySelector('[data-testid=sky-back-now]'), mode: window.__ks.timeMode }));
+    const cAfter = await sky(C.page);
+    R.ok('乙拨了「夜」：画里是乙自己的天时（不随园中了），出「回到此刻」；甲那边照旧', !dOwn.shared && dOwn.own && dOwn.back && dOwn.mode === 'night' && cAfter.shared && dh(cAfter.hour, cBefore.hour) < 0.3, JSON.stringify(dOwn));
+    await D.page.click('[data-testid=sky-back-now]');
+    await settle(D.page);
+    await D.page.waitForTimeout(800);
+    const dBack = await sky(D.page), cNow = await sky(C.page);
+    R.ok('乙点「回到此刻」：又随甲（时辰、雨）', dBack.shared && dh(dBack.hour, cNow.hour) < 0.3 && dBack.weather === 'rain', `甲 ${cNow.hour.toFixed(2)} 乙 ${dBack.hour.toFixed(2)} ${dBack.weather}`);
     await D.page.click('[data-testid=sheet-close]').catch(() => {});
     await D.page.waitForTimeout(400);
 
@@ -367,14 +378,14 @@ try {
     await D.page.waitForTimeout(1500);
     const d3 = await sky(D.page);
     R.ok('甲走了：乙排第一，天时随乙自己这里的此刻，天气还回自己的', d3.self === true && dh(d3.hour, d3.local) < 0.25 && d3.weather === 'clear', `乙 ${d3.hour.toFixed(2)}（本地 ${d3.local.toFixed(2)}）${d3.weather}`);
-    // 乙改成独游：天时还回自己拨的那一套（网址上的十点、春）
+    // 乙改成独游：天时还回自己的那一套——乙在园中拨过「夜」、又点了「回到此刻」：自己的那一套也回到了此刻（乙那里此刻的钟点）
     await D.page.click('[data-testid=tg-key]');
     await D.page.click('[data-testid=tg-off]');
     await D.page.waitForFunction(() => !window.__ks.shared, null, { timeout: 5000 }).catch(() => {});
     await D.page.waitForTimeout(300);
     await D.page.waitForFunction(() => !window.__ks.atmos.transitioning, null, { timeout: 20000 }).catch(() => {});
     const d4 = await sky(D.page);
-    R.ok('乙改成独游：天时还回自己拨的（十点、春）', !d4.shared && dh(d4.hour, 10) < 0.3 && d4.season === 'spring', `${d4.hour.toFixed(2)} ${d4.season}`);
+    R.ok('乙改成独游：天时还回自己的——点过「回到此刻」，就是乙那里的此刻', !d4.shared && dh(d4.hour, d4.local) < 0.3, `${d4.hour.toFixed(2)}（本地 ${d4.local.toFixed(2)}）${d4.season}`);
     const skyErrs = real(D.logs);
     R.ok('园中天时这一段没有报错', skyErrs.length === 0, skyErrs.slice(0, 3).join(' | '));
     await D.ctx.close(); pages.splice(pages.indexOf(D), 1);

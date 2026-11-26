@@ -4,7 +4,7 @@ import { getTogether } from '../../world/net';
 import type { Season, Weather } from '../../world/env/atmos';
 import { GuaGlyph } from '../Gua';
 import { branchOf, cn, hourOfBranch, today, tzDiff } from '../calendar';
-import { SUN, getKs, setFlow, setMonth, setSeason, setTime, setWeather, setXiaoxiMode } from '../ks';
+import { SUN, backToNow, getKs, nowMonth, setFlow, setMonth, setSeason, setTime, setWeather, setXiaoxiMode } from '../ks';
 import { FLOWS, saved, ui, useStore } from '../store';
 import { HOU_SOURCE, TERMS, XIAOXI, XIAOXI_NOTE, YUE } from '../texts';
 import { SEASON_GUA } from '../yi';
@@ -16,8 +16,9 @@ import Sheet from './Sheet';
  *   按月（默认）：圈上写月，点哪一卦就到哪一月（季跟着换），当中写「某月之卦」；
  *   按时辰：圈上写时辰，点哪一卦画里就到那个时辰，当中写「某时之卦」。
  * 也可以随此刻的钟点，或只说晨、昼、昏、夜。时辰流转有停、缓、常、疾四档。
- * 同游时园中天时随最早来的那一位（真实的钟点与节气，天气也随那一位）：这一页上拨的几样都锁着，上头写一句随谁；
- * 自己就是那一位时，天气还能拨（同屋的人跟着你）。
+ * 开门时默认是此刻（这里此刻的节气与钟点）；随意拨了以后，顶上一枚「回到此刻」一点就回来。
+ * 同游时园中天时随最早来的那一位（真实的钟点与节气，天气也随那一位），上头写一句随谁；这时也能拨——拨了是你自己的天时
+ * （同屋的人看到的仍是园中此刻），「回到此刻」再随园中。自己就是那一位时，拨天气大家跟着变。
  * 下面是四时（各有一花、三个月各一卦）与晴雾雨雪。几排选项都是一道凹槽，选中的那一格凸起来。
  *
  * 时辰流转着、或点过圆上某一时辰时，画里的时辰是一个数，不再是「晨昼昏夜」里的哪一样：
@@ -36,12 +37,12 @@ const SEASONS: Array<[Season, string, string]> = [['spring', '春', '桃'], ['su
 const WEATHERS: Array<[Weather, string]> = [['clear', '晴'], ['mist', '雾'], ['rain', '雨'], ['snow', '雪']];
 const noop = () => () => {};
 /** 同游时园中天时随谁（独游是 null）。取一串字作快照，免得那边一秒四回重算时这页跟着重画 */
-function useSkyLock(): { self: boolean; host: string; tz: number } | null {
+function useSkyLock(): { self: boolean; host: string; tz: number; own: boolean } | null {
   const tg = getTogether();
-  const key = useSyncExternalStore(tg?.subscribe ?? noop, () => { const s = tg?.view.sky; return s ? `${s.self ? 1 : 0}|${s.tz}|${s.host}` : ''; });
+  const key = useSyncExternalStore(tg?.subscribe ?? noop, () => { const s = tg?.view.sky; return s ? `${s.self ? 1 : 0}|${s.own ? 1 : 0}|${s.tz}|${s.host}` : ''; });
   if (!key) return null;
-  const [a, tz, ...h] = key.split('|');
-  return { self: a === '1', tz: Number(tz), host: h.join('|') };
+  const [a, o, tz, ...h] = key.split('|');
+  return { self: a === '1', own: o === '1', tz: Number(tz), host: h.join('|') };
 }
 
 /** 一天里的钟点落在圆上的哪里（子在正下，卯在左，午在正上，酉在右；r 是半径占几成） */
@@ -50,7 +51,9 @@ const at = (h: number, r: number): [number, number] => [50 - Math.sin((h / 24) *
 export default function SkySheet() {
   const picked = useStore(saved, (s) => s.time), weather = useStore(saved, (s) => s.weather), season = useStore(saved, (s) => s.season), flow = useStore(saved, (s) => s.flow);
   const hour = useStore(ui, (s) => s.hour), day = useStore(ui, (s) => s.day), xx = useStore(ui, (s) => s.xx), month = useStore(ui, (s) => s.month);
-  const lock = useSkyLock(), k = getKs();
+  const sky = useSkyLock(), k = getKs();
+  // 随着园中天时（同游、没自己拨）：这一页照园中的显；自己拨了就照自己的
+  const lock = sky && !sky.own ? sky : null;
   // 同游时画里的季与天气是园中的（不是自己存着的那一样）
   const seasonNow: Season = lock ? k?.season ?? season : season, weatherNow: Weather = lock && !lock.self ? k?.atmos.weather ?? weather : weather;
   const byMonth = xx === 'month', mx = XIAOXI[month];
@@ -64,13 +67,24 @@ export default function SkySheet() {
   const period = typeof time === 'number' ? periodOf(hour, seasonNow) : null;
   const flowAt = FLOWS.reduce((best, f, i) => (Math.abs(f[0] - flow) < Math.abs(FLOWS[best][0] - flow) ? i : best), 0);
   const followNow = time === 'now';
+  // 此刻在不在此刻：独游时看时辰随不随此刻、月是不是此刻的那一月；同游时看是不是自己拨过
+  const realM = nowMonth(), atNow = sky ? !sky.own : followNow && month === realM;
+  const nowLabel = `${YUE[realM]}·${XIAOXI[realM].gua.name}，${XIAOXI[branchOf(new Date().getHours() + new Date().getMinutes() / 60)].branch}时`;
   return (
-    <Sheet title="天时" sub={t.lunar ? `${t.lunar}　${t.term}` : undefined}>
-      {lock && (
+    <Sheet title="天时" sub={(
+      <>
+        {t.lunar ? <span className="sky-date">{`${t.lunar}　${t.term}`}</span> : null}
+        {/* 拨到了别的时辰、别的月份（或同游时自己拨过）：题头一枚「回到此刻」——题头不跟着滚，拨到哪儿都看得见 */}
+        {!atNow && <button className="key is-main sky-back" onClick={() => backToNow()} data-testid="sky-back-now" aria-label={`回到此刻：${sky ? '随园中此刻' : nowLabel}`} title={sky ? '随园中此刻' : nowLabel}><span>回到此刻</span></button>}
+      </>
+    )}>
+      {sky && (
         <p className="sheet-note sky-lock" data-testid="sky-lock">
-          {lock.self
-            ? '同游中，园中天时随最早来的一位——此刻是你：按你这里真实的钟点与节气走，同屋的人都随你。天气你可以拨，大家跟着变。'
-            : `同游中，园中天时随最早来的一位「${lock.host}」：按那里真实的钟点与节气走，天气也随那一位${tzDiff(lock.tz) ? `（${tzDiff(lock.tz)}）` : ''}。要自己拨，先在「同游」里改成独游。`}
+          {sky.own
+            ? '你拨的是自己的天时，同屋的人看到的仍是园中此刻。点上面「回到此刻」，再随园中。'
+            : sky.self
+              ? '同游中，园中天时随最早来的一位——此刻是你：按你这里真实的钟点与节气走，同屋的人都随你。天气你可以拨，大家跟着变；别的也能拨，拨了只是你自己的。'
+              : `同游中，园中天时随最早来的一位「${sky.host}」：按那里真实的钟点与节气走，天气也随那一位${tzDiff(sky.tz) ? `（${tzDiff(sky.tz)}）` : ''}。你也可以自己拨，拨了只是你自己的，「回到此刻」再随园中。`}
         </p>
       )}
       <div className="dial">
@@ -82,7 +96,7 @@ export default function SkySheet() {
         {XIAOXI.map((x) => {
           const [px, py] = at(hourOfBranch(x.i), 42.5), on = byMonth ? x.i === month : x.i === cur;
           return (
-            <button key={x.i} className={`dial-gua${on ? ' is-now' : ''}`} style={{ left: `${px.toFixed(2)}%`, top: `${py.toFixed(2)}%` }} disabled={!!lock}
+            <button key={x.i} className={`dial-gua${on ? ' is-now' : ''}`} style={{ left: `${px.toFixed(2)}%`, top: `${py.toFixed(2)}%` }}
               onClick={() => (byMonth ? setMonth(x.i) : setTime(hourOfBranch(x.i)))} aria-label={byMonth ? `${x.month}，${x.gua.name}卦` : `${x.branch}时，${x.gua.name}卦`} aria-pressed={on} data-testid={`dial-${x.i}`}>
               <GuaGlyph lines={x.gua.lines} />
               <span>{byMonth ? YUE[x.i] : x.branch}</span>
@@ -113,7 +127,7 @@ export default function SkySheet() {
       </div>
       <div className="seg seg-modes" role="group" aria-label="时辰">
         {MODES.map(([v, label]) => (
-          <button key={v} className={`${time === v && !lock ? 'is-on' : ''}${period === v ? ' is-cur' : ''}`} disabled={!!lock} onClick={() => setTime(v)} aria-pressed={time === v && !lock} data-testid={`time-${v}`}>{label}</button>
+          <button key={v} className={`${time === v && !lock ? 'is-on' : ''}${period === v ? ' is-cur' : ''}`} onClick={() => setTime(v)} aria-pressed={time === v && !lock} data-testid={`time-${v}`}>{label}</button>
         ))}
       </div>
       <div className="pick">
@@ -121,7 +135,7 @@ export default function SkySheet() {
         <div className={`pick-col${followNow ? ' is-idle' : ''}`}>
           <div className="seg" role="group" aria-label="时辰流转">
             {FLOWS.map(([v, label], i) => (
-              <button key={label} className={i === flowAt && !lock ? 'is-on' : ''} disabled={!!lock} onClick={() => setFlow(v)} aria-pressed={i === flowAt && !lock} data-testid={`flow-${i}`}>{label}</button>
+              <button key={label} className={i === flowAt && !lock ? 'is-on' : ''} onClick={() => setFlow(v)} aria-pressed={i === flowAt && !lock} data-testid={`flow-${i}`}>{label}</button>
             ))}
           </div>
           <p className="pick-note">{lock ? '同游时跟着真实的钟点走，一个钟头就是一个钟头' : followNow ? '随此刻时，跟着你那里的钟点走；选一档会走的，就从此刻起照那一档走' : FLOWS[flowAt][2]}</p>
@@ -131,7 +145,7 @@ export default function SkySheet() {
         <i className="pick-mark">季</i>
         <div className="seasons">
           {SEASONS.map(([v, name, flower]) => (
-            <button key={v} className={`season${seasonNow === v ? ' is-on' : ''}`} disabled={!!lock} onClick={() => setSeason(v)} aria-pressed={seasonNow === v} aria-label={`${name}，${flower}花，${SEASON_GUA[v].map((x) => x.month + x.gua.name).join('、')}`} data-testid={`season-${v}`}>
+            <button key={v} className={`season${seasonNow === v ? ' is-on' : ''}`} onClick={() => setSeason(v)} aria-pressed={seasonNow === v} aria-label={`${name}，${flower}花，${SEASON_GUA[v].map((x) => x.month + x.gua.name).join('、')}`} data-testid={`season-${v}`}>
               <b>{name}<small>{flower}</small></b>
               <span>{SEASON_GUA[v].map((x) => <GuaGlyph key={x.i} lines={x.gua.lines} />)}</span>
             </button>
@@ -141,7 +155,7 @@ export default function SkySheet() {
       <div className="pick">
         <i className="pick-mark">天</i>
         <div className="seg" role="group" aria-label="天气">
-          {WEATHERS.map(([v, label]) => <button key={v} className={weatherNow === v ? 'is-on' : ''} disabled={!!lock && !lock.self} onClick={() => setWeather(v)} aria-pressed={weatherNow === v} data-testid={`weather-${v}`}>{label}</button>)}
+          {WEATHERS.map(([v, label]) => <button key={v} className={weatherNow === v ? 'is-on' : ''} onClick={() => setWeather(v)} aria-pressed={weatherNow === v} data-testid={`weather-${v}`}>{label}</button>)}
         </div>
       </div>
       <p className="sheet-note">{XIAOXI_NOTE[0]}</p>

@@ -62,8 +62,8 @@ export interface NetView {
   /** 同屋另有几位；画面近处几位 */ others: number; near: number;
   /** 园中连你一共几位（暂离的几分钟里也算） */ total: number;
   /** 暂离的（手机收起、切到别处，连线断了）：几分钟内回来还认他 */ away: Array<{ key: string; label: string; robe: string; c: number }>;
-  /** 园中天时随谁：self 是你自己最早来（或只有你）；host 是那一位的名字；tz 是那里的时区（分钟）。独游是 null */
-  sky: { self: boolean; host: string; tz: number } | null;
+  /** 园中天时随谁：self 是你自己最早来（或只有你）；host 是那一位的名字；tz 是那里的时区（分钟）；own 是你此刻拨的是自己的天时。独游是 null */
+  sky: { self: boolean; host: string; tz: number; own: boolean } | null;
   following: number | null;
   /** 中转认得样子、名片、玩法、路标 */ ext: boolean;
   /** 路标的枚数（变了界面重画） */ marks: number;
@@ -109,6 +109,11 @@ export class Together {
   private autoPlay: boolean;
   /** 同游时天时随园中（默认）；?share=0 不随（自动测试里要定在某个时辰、某一季时用） */
   private shareSky: boolean;
+  /** 同游时自己拨了天时（拨了季、时辰、月、流转，或拨了别人定的天气）：这时画里是自己的天时，同屋的人看到的仍是园中此刻；「回到此刻」放开 */
+  private ownSky = false;
+  /** 自己拨天时 / 回到园中此刻 */
+  setOwnSky(on: boolean) { if (on === this.ownSky) return; this.ownSky = on; this.dirty = true; }
+  get skyOwn(): boolean { return this.ownSky; }
   /** 中转认得新添的几样（wel 的 x） */
   ext = false;
   /** 自己的样子、名片（还没给是 null：中转那边就不报） */
@@ -146,6 +151,8 @@ export class Together {
   setOnline(on: boolean) {
     if (on === this.me.on) return;
     this.me = { ...this.me, on }; saveIdentity(this.me);
+    // 换了独游、同游：自己拨的那一回作罢（再同游时先随园中此刻）
+    this.ownSky = false;
     if (!on) this.follow(null);
     this.sync(); this.emit();
   }
@@ -531,7 +538,7 @@ export class Together {
       const d: [number, number] = [localTz(), Math.max(0, WEATHERS.indexOf(k.atmos.weather))], key = d.join(',');
       if ((key !== this.skySent || now - this.skySentAt > 60000) && c.send({ t: 'sky', d })) { this.skySent = key; this.skySentAt = now; }
     }
-    k.setShared(sky ? { tz: sky.tz, weather: sky.weather } : null);
+    k.setShared(sky && !this.ownSky ? { tz: sky.tz, weather: sky.weather } : null);
     this.stepFollow(dt);
     // 给界面的：一秒四回（距离在变），有事立刻
     this.viewT -= dt;
@@ -596,7 +603,7 @@ export class Together {
       peers, others: this.remotes.size, near: peers.filter((p) => !p.hidden && p.dist < 40).length, following: this.following,
       total: 1 + this.remotes.size + this.away.size,
       away: [...this.away.entries()].map(([key, a]) => ({ key, label: a.label, robe: robeName(a.c), c: a.c })),
-      sky: sky ? { self: sky.self, host: sky.self ? (ls.get(0) ?? nameOf(me.n)) : (ls.get(sky.host) ?? nameOf(this.remotes.get(sky.host)?.n)), tz: sky.tz } : null,
+      sky: sky ? { self: sky.self, host: sky.self ? (ls.get(0) ?? nameOf(me.n)) : (ls.get(sky.host) ?? nameOf(this.remotes.get(sky.host)?.n)), tz: sky.tz, own: this.ownSky } : null,
       ext: this.ext && !!this.client?.online, marks: this.marks.size,
     };
   }
