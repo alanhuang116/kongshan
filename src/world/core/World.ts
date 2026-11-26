@@ -24,19 +24,16 @@ export function detectQuality(force?: string | null): Quality {
   const nav = typeof navigator !== 'undefined' ? navigator : ({} as Navigator);
   const ua = nav.userAgent ?? '';
   const mobile = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua) || ((nav.maxTouchPoints ?? 0) > 1 && Math.min(screen.width, screen.height) < 900);
-  const mem = (nav as Navigator & { deviceMemory?: number }).deviceMemory ?? 4, cores = nav.hardwareConcurrency ?? 4;
-  // iPhone / iPad（Safari、微信里的网页）不报内存（deviceMemory 是空的），按上面那一条一律落到 low：
-  // 三倍屏上只画 1.25 倍、贴图减半、草木减半，画面又糊又稀，和电脑上看起来像两种画。
-  // iOS 16 以后的机器（A11 起）撑得住 mid；真慢了还有 adapt 往下降清晰度。
-  const ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && (nav.maxTouchPoints ?? 0) > 1);
-  const iosMajor = Number(/OS (\d+)_/i.exec(ua)?.[1] ?? /Version\/(\d+)/i.exec(ua)?.[1] ?? 0);
-  const capableIOS = ios && iosMajor >= 16 && (typeof window === 'undefined' ? 2 : window.devicePixelRatio || 1) >= 2;
-  let tier: Tier = mobile ? ((mem >= 6 && cores >= 8) || capableIOS ? 'mid' : 'low') : cores >= 8 ? 'high' : 'mid';
+  const cores = nav.hardwareConcurrency ?? 4;
+  // 手机（2026-11-26 起，用户要手机上的人一进来就是高档）：一律用电脑那一档进园——两倍清晰度、全尺寸的笔触图集、地面一样细，
+  //   只是草木九成。哪台撑不住，进园后 adapt 一步步往下降清晰度（宽裕了再升回来），不会一直卡着。
+  //   「声与画」里选「清晰」：手机上到 2.5 倍（三倍屏上再清楚一层，更烫一些）；选「省电」是最低一档（1.5 倍、图集四分之三、草木一半）
+  let tier: Tier = mobile ? 'high' : cores >= 8 ? 'high' : 'mid';
   if (force === 'low' || force === 'mid' || force === 'high') tier = force;
   const T: Record<Tier, Omit<Quality, 'tier' | 'mobile'>> = {
-    low: { dpr: 1.25, msaa: 4, tex: 0.5, density: 0.5 },
-    mid: { dpr: 1.5, msaa: 4, tex: mobile ? 0.75 : 1, density: 0.75 },
-    high: { dpr: 2, msaa: 4, tex: 1, density: 1 },
+    low: { dpr: mobile ? 1.5 : 1.25, msaa: 4, tex: mobile ? 0.75 : 0.5, density: 0.5 },
+    mid: { dpr: mobile ? 1.75 : 1.5, msaa: 4, tex: 1, density: 0.75 },
+    high: { dpr: mobile && force === 'high' ? 2.5 : 2, msaa: 4, tex: 1, density: mobile ? 0.9 : 1 },
   };
   return { tier, mobile, ...T[tier] };
 }
@@ -138,14 +135,27 @@ export class World {
     screen.orientation?.addEventListener?.('change', burst);
   }
 
-  /** 画面太慢就降一点清晰度，宽裕了再升回来 */
+  /**
+   * 画面太慢就降一点清晰度，宽裕了再升回来。手机默认定得高（见 detectQuality），这里是兜底：
+   * 平均一帧超过 26 毫秒（不到四十帧）攒到九十帧就降一成半；手机上最低到 0.85 倍（再低就糊得看不清字画），电脑到 0.7。
+   * 一帧不到 13 毫秒攒到六百帧（约十秒）升一成，升到上限为止
+   */
   private adapt(ms: number) {
     this.frameMs += (ms - this.frameMs) * 0.05;
-    const cap = Math.min(window.devicePixelRatio || 1, this.quality.dpr);
+    const cap = Math.min(window.devicePixelRatio || 1, this.quality.dpr), floor = this.quality.mobile ? 0.85 : 0.7;
     if (this.frameMs > 26) { this.slow++; this.fast = 0; } else if (this.frameMs < 13) { this.fast++; this.slow = 0; } else { this.slow = this.fast = 0; }
-    if (this.slow > 90 && this.dprNow > 0.7) { this.dprNow = Math.max(0.7, this.dprNow * 0.85); this.slow = 0; this.resize(); }
+    if (this.slow > 90 && this.dprNow > floor) { this.dprNow = Math.max(floor, this.dprNow * 0.85); this.slow = 0; this.resize(); }
     else if (this.fast > 600 && this.dprNow < cap) { this.dprNow = Math.min(cap, this.dprNow * 1.12); this.fast = 0; this.resize(); }
   }
+  /** 清晰度的上限换了（「声与画」里选了画质）：当场换成新的上限，之后照旧随快慢起落 */
+  setDprCap(dpr: number) {
+    this.quality = { ...this.quality, dpr };
+    this.dprNow = Math.min(window.devicePixelRatio || 1, dpr);
+    this.slow = this.fast = 0;
+    this.resize();
+  }
+  /** 此刻的像素比（测试看清晰度落在几倍） */
+  get pixelRatio() { return this.dprNow; }
 
   private frame = (now: number) => {
     if (!this.running) return;

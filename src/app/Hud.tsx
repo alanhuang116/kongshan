@@ -211,12 +211,12 @@ function PlaceName({ id }: { id: string }) {
 
 /**
  * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（今日、村图、天时、行囊、衣饰、村人簿、星图），
- * 左边一卷是记下的与设置（观象册、修为、起居注、声音、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
+ * 左边一卷是记下的与设置（观象册、修为、起居注、声与画、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
  * 村人簿、星图、修为、衣饰那几页的文件还没有时，那一枚不出。
  */
 const ROLLS: Array<Array<[Exclude<Sheet, null>, string]>> = [
   [['today', '今日'], ['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['wardrobe', '衣饰'], ['folk', '村人簿'], ['stars', '星图']],
-  [['xiang', '观象册'], ['xiu', '修为'], ['journal', '起居注'], ['sound', '声音'], ['about', '关于']],
+  [['xiang', '观象册'], ['xiu', '修为'], ['journal', '起居注'], ['sound', '声与画'], ['about', '关于']],
 ];
 const rolls = () => ROLLS.map((r) => r.filter(([id]) => hasSheet(id))).filter((r) => r.length > 0);
 function Menu() {
