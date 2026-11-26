@@ -366,13 +366,15 @@ export function createFar(o: FarOpts & { season: Season }): Far {
     c.shaft({ x: -380, z: -204, h: 72, r: 20, seed: 775, crown: 0.7, ribs: 0.9, green: 0.6 });
     c.shaft({ x: -410, z: -150, h: 130, r: 40, seed: 767, squash: 1.25, turn: 2.1, crownStyle: 'flat', taper: 0.3, ribs: 0.9, count: Math.round(13 * q), notch: [thF, 0.17], green: 0.6 });
     const pts = fallOn(c, thF, c.lastTop - 4, [2.5, 6], 14);
-    falls.ribbon(pts, (t) => 4.6 + 5 * t, [-Math.sin(thF), Math.cos(thF)]);
+    // 宽一些（四五百米外也看得出是一道瀑，不是一条白缝；观象「震」）：主的一股，旁边再挂一股细的
+    falls.ribbon(pts, (t) => 9 + 9 * t, [-Math.sin(thF), Math.cos(thF)]);
+    { const sx = -Math.sin(thF), sz = Math.cos(thF), side = pts.slice(2).map((p, i) => p.clone().add(new THREE.Vector3(sx * (8 + i * 0.35), -2, sz * (8 + i * 0.35)))); if (side.length > 3) falls.ribbon(side, (t) => 3.2 + 3.5 * t, [sx, sz]); }
     add(new THREE.Mesh(c.build(), stoneMat({ pig: [0.66, 0.645, 0.59], dens: 0.34, shade: 1.85, grain: 0.05, cun: 0.85, cunSize: 7, cunBreak: 0.2, strata: [6.5, 0.26], moss: [1.5, 0.65], line: 1, snow: 0.8, ink: 2.0, inkPig: [0.56, 0.6, 0.68], keep: 0.4, inkNear: [0.3, 240] })), '西口');
     dress(c, D.pineNear, [10, 19], { rim: 0.7, near: true });
     const foot = pts[pts.length - 1];
     brooks.push({ w: 3.5, pts: [[foot.x + 3, foot.z + 2], [foot.x + 40, foot.z + 8], [foot.x + 84, foot.z + 24], [foot.x + 116, foot.z + 44], [-256, -86]] });
     // 泉脚的水气、峡里的湿烟（高些的几片从北坡的林梢上露出来）
-    mist.push({ x: foot.x + 6, y: 12, z: foot.z + 4, w: 70, h: 34, amount: 1 }, { x: foot.x + 40, y: 10, z: foot.z + 10, w: 150, h: 28, amount: 0.9 }, { x: foot.x + 10, y: 50, z: foot.z + 14, w: 130, h: 46, amount: 0.75 }, { x: foot.x - 50, y: 64, z: foot.z + 60, w: 170, h: 40, amount: 0.6 });
+    mist.push({ x: foot.x + 5, y: 16, z: foot.z + 5, w: 92, h: 46, amount: 1 }, { x: foot.x + 40, y: 10, z: foot.z + 10, w: 150, h: 28, amount: 0.9 }, { x: foot.x + 10, y: 50, z: foot.z + 14, w: 130, h: 46, amount: 0.75 }, { x: foot.x - 50, y: 64, z: foot.z + 60, w: 170, h: 40, amount: 0.6 });
     // 门脚：贴地一带烟（从入口望过去门脚是虚的），烟前疏疏的树
     mist.push({ x: -282, y: 9, z: -12, w: 150, h: 24, amount: 1 }, { x: -280, y: 8, z: 96, w: 150, h: 22, amount: 1 }, { x: -300, y: 7, z: 40, w: 120, h: 16, amount: 0.8 }, { x: -278, y: 12, z: 150, w: 120, h: 26, amount: 0.8 });
     for (let i = 0; i < 40 * dn; i++) {

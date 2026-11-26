@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
-import { streamAt } from '../site';
+import { SITE, streamAt } from '../site';
 import { groundAt, waterDepth } from '../walk';
 import type { Act } from './types';
 import { makeRodKit, seatGeo } from '../play/rod';
@@ -27,11 +27,11 @@ type Kind = keyof typeof KINDS;
 
 export function create(k: Anlewo): Act | null {
   const { state, set, put, flush } = stateOf(k);
-  // 钓处：溪北岸，石桥西七米，柳树下
-  const sx = -7, gy0 = groundAt(sx, 25.9);
+  // 钓处：溪北岸，石桥西七米，柳树下（溪在这里是东西向，人面朝南）
+  const sx = SITE.bridge.x - 7, z0 = SITE.bridge.z - 6.2, gy0 = groundAt(sx, z0);
   if (gy0 == null) return null;
-  let wz = 25.9;
-  while (wz < 31 && waterDepth(sx, wz) <= 0.02) wz += 0.05;
+  let wz = z0;
+  while (wz < z0 + 8 && waterDepth(sx, wz) <= 0.02) wz += 0.05;
   const S = V(sx, groundAt(sx, wz - 1.15) ?? gy0, wz - 1.15);      // 坐的石头
   const F = V(0, 0, 1), Rt = V(-1, 0, 0);                         // 面朝南（溪），右手是西
   const st = streamAt(sx, wz + 2), waterY = st.y;

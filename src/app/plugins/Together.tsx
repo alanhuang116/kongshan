@@ -3,13 +3,14 @@ import * as THREE from 'three';
 import { getKs, go } from '../ks';
 import { ui, useStore } from '../store';
 import { getTogether, type NetView, type PeerView, type Together as Tg } from '../../world/net';
+import { tzDiff } from '../calendar';
 import { robeCss } from '../../world/net/looks';
 import { PHRASES, PLACE_IDS, phraseText } from '../../world/net/proto';
 import type { Remote } from '../../world/net/remote';
 
 /**
  * 同游：园子里遇见别的游人。
- *   右上（时辰那一条下面）一枚纸签：「同游 · 三」——同屋另有几位；「独游」是自己不连。点开是一张纸：
+ *   右上（时辰那一条下面）一枚纸签：「同游 · 三位」——园中连你一共几位（暂离的几分钟里也算）；「独游」是自己不连。点开是一张纸：
  *     自己的雅号（换一个）、独游 / 同游、此刻连上没有；底下是园中的各位，由近及远：在哪、在做什么；
  *     走到跟前（十来步内）可以作揖、说一句现成的话；同行（跟着他走）、远的「去寻」。
  *   画里：别人头上一枚小名签（墨字，像画里那些事的签）；说的话浮在名签上面一会儿；自己说的浮在自己头上。
@@ -19,7 +20,7 @@ import type { Remote } from '../../world/net/remote';
  * （试玩的人说手机上纸挡着，看不见给对面的人做了什么）。电脑上纸在右边一条，不挡，照旧开着。
  */
 
-const EMPTY: NetView = { enabled: false, on: false, status: 'off', me: { label: '', robe: '', c: 0, n: [0, 0] }, peers: [], others: 0, near: 0, following: null };
+const EMPTY: NetView = { enabled: false, on: false, status: 'off', me: { label: '', robe: '', c: 0, n: [0, 0] }, peers: [], others: 0, near: 0, total: 1, away: [], sky: null, following: null, ext: false, marks: 0 };
 const noop = () => () => {};
 const coarse = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
@@ -46,8 +47,17 @@ const STATUS: Record<NetView['status'], string> = {
 function statusText(v: NetView): string {
   if (!v.on) return STATUS.off;
   if (v.status !== 'online') return STATUS[v.status === 'off' ? 'connecting' : v.status];
-  if (!v.others) return '园中此刻只有你一位。有人来了，这里会写上。';
-  return `园中另有${cn(v.others)}位${v.near ? `，近处${v.near === v.others ? '都是' : `有${cn(v.near)}位`}` : ''}。走到跟前，可以作揖、说一句话。`;
+  if (!v.others && !v.away.length) return '园中此刻只有你一位。有人来了，这里会写上。';
+  const away = v.away.length ? `；${v.away.map((a) => a.label).join('、')}暂离，回来还在` : '';
+  return `园中连你${cn(v.total)}位${v.near ? `，近处${v.near === v.others ? '的都在' : `有${cn(v.near)}位`}` : ''}${away}。走到跟前，可以作揖、说一句话。`;
+}
+/** 园中天时随谁（同游时同屋的人看同一个时辰、节气、天气） */
+function skyText(v: NetView): string {
+  if (!v.on) return '独游时，天时自己拨（「天时」那一页）。';
+  if (!v.sky) return '';
+  if (v.sky.self) return '同游时，园中天时随最早来的一位——此刻是你：按你这里真实的钟点与节气走，天气也随你。';
+  const d = tzDiff(v.sky.tz);
+  return `同游时，园中天时随最早来的一位「${v.sky.host}」：按那里真实的钟点与节气走，天气也随那一位${d ? `（${d}）` : ''}。要自己拨，改成独游。`;
 }
 const DIG = '零一二三四五六七八九';
 const cn = (n: number) => (n < 10 ? DIG[n] : n < 20 ? `十${n % 10 ? DIG[n % 10] : ''}` : `${DIG[Math.floor(n / 10)]}十${n % 10 ? DIG[n % 10] : ''}`);
@@ -217,12 +227,21 @@ function Panel({ tg, v, pick, setPick, onClose, onAct }: { tg: Tg; v: NetView; p
           <button className="link" onClick={() => tg.reroll()} data-testid="tg-reroll">换一个</button>
         </p>
         {statusText(v) && <p className="tg-status" data-testid="tg-status">{statusText(v)}</p>}
-        {v.on && v.status === 'online' && v.peers.length > 0 && (
+        {v.on && v.status === 'online' && (v.peers.length > 0 || v.away.length > 0) && (
           <ul className="tg-list">
             {v.peers.map((p) => <Row key={p.id} tg={tg} p={p} open={openId === p.id} onOpen={() => setPick(openId === p.id ? -1 : p.id)} onAct={onAct} />)}
+            {v.away.map((a) => (
+              <li key={a.key} className="tg-row is-away" data-testid={`tg-away-${a.key}`}>
+                <div className="tg-who">
+                  <i className="tg-swatch" style={{ background: robeCss(a.c) }} aria-hidden />
+                  <span className="tg-name">{a.label}</span>
+                  <small className="tg-where">暂离</small>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
-        <p className="tg-foot">各人的天时各自定：你这里是黄昏，他那里也许正是清早。名字与话都是现成的，不必打字。</p>
+        <p className="tg-foot" data-testid="tg-sky">{skyText(v)}名字与话都是现成的，不必打字。</p>
       </div>
     </section>
   );
@@ -290,9 +309,9 @@ export default function Together() {
       {!sheet && !busy && live && <Tags tg={tg} list={list} faint={act} onPick={(id) => { setPick(id); setOpen(true); }} />}
       {!away && (
         <button className={`tg-key${open ? ' is-on' : ''}${v.on ? '' : ' is-off'}`} onClick={() => setOpen(!open)} aria-expanded={open}
-          aria-label={`${word}${live ? `：园中另有${cn(v.others)}位` : ''}。看同游的人`} data-testid="tg-key">
+          aria-label={`${word}${live ? `：园中连你${cn(v.total)}位` : ''}。看同游的人`} data-testid="tg-key">
           <span>{word}</span>
-          {live && v.others > 0 && <small data-testid="tg-count">{cn(v.others)}位</small>}
+          {live && v.total > 1 && <small data-testid="tg-count">{cn(v.total)}位</small>}
           {v.on && !live && <i className="tg-wait" aria-hidden />}
         </button>
       )}

@@ -290,7 +290,7 @@ export class Hens implements HensApi {
   /** 托事：乙家的一只母鸡走散 */
   stray(x?: number, z?: number): { x: number; z: number } {
     const fl = this.flocks[2], b = fl.birds[3];
-    const spots: Array<[number, number]> = [[-12.6, 26.8], [-24, -22], [88, 46.5], [36.5, 27.6], [64, 26.4]];
+    const spots: Array<[number, number]> = [[-21.5, 24.5], [-24, -22], [88, 46.5], [36.5, 27.6], [64, 26.4]];
     const p = x != null && z != null ? [x, z] : spots[Math.floor(this.R() * spots.length)];
     this.strayB = b; this.strayAt.x = p[0]; this.strayAt.z = p[1];
     b.st = S.Stray; b.t = 0; b.x = p[0] + 1.2; b.z = p[1]; b.tx = p[0]; b.tz = p[1];

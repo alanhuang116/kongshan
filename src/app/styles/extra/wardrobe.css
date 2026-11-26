@@ -1,0 +1,62 @@
+/* 衣饰：四栏（衣、冠髻、簪饰、佩）；选中的一样在上面放大写说明与价钱；下面一格格；底下「穿上这一身」与改换男女 */
+.wd { position: relative; display: grid; gap: 14px; }
+.wd-tabs { margin: -2px 0 0; }
+
+/* 选中的那一样：左边一幅大的小画，右边名字、价钱、一两句、「买」 */
+.wd-detail { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 14px; align-items: start; padding: 12px 12px 12px 10px; border-radius: 3px; background: color-mix(in srgb, var(--wash) 72%, transparent); animation: fade 0.45s var(--out) backwards; }
+.wd-detail-art { width: 78px; height: 78px; display: grid; place-items: center; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--paper) 90%, #fff), transparent); }
+.wd-detail-art .ai { width: 72px; height: 72px; }
+.wd-detail-text { display: grid; gap: 6px; min-width: 0; }
+.wd-detail h4 { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-family: var(--kai); font-weight: 400; font-size: 18px; letter-spacing: 0.1em; color: var(--ink); }
+.wd-detail h4 small { font-size: 12.5px; letter-spacing: 0.08em; }
+.wd-own { color: color-mix(in srgb, var(--ink-2) 75%, var(--ink)); }
+.wd-price, .wd-tag.is-price { color: var(--zhu); font-family: var(--serif); letter-spacing: 0.02em; }
+.wd-detail p { margin: 0; font-size: 13px; line-height: 1.75; letter-spacing: 0.04em; color: color-mix(in srgb, var(--ink-2) 70%, var(--ink)); }
+.wd-buy { justify-self: start; margin-top: 2px; }
+
+/* 一格一样 */
+.wd-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wd-item { position: relative; width: 100%; display: grid; justify-items: center; gap: 2px; padding: 9px 4px 8px; border-radius: 3px; border: 1px solid transparent; background: color-mix(in srgb, var(--wash) 38%, transparent); transition: background-color 0.25s, border-color 0.25s, transform 0.3s var(--out); }
+.wd-art { width: 54px; height: 54px; display: grid; place-items: center; }
+.wd-art .ai { width: 50px; height: 50px; transition: transform 0.4s var(--out); }
+.wd-name { font-family: var(--kai); font-size: 13.5px; line-height: 1.35; letter-spacing: 0.06em; color: var(--ink); text-align: center; }
+.wd-tag { font-size: 11.5px; letter-spacing: 0.06em; color: color-mix(in srgb, var(--ink-2) 75%, var(--ink)); }
+.wd-item.is-sel { border-color: var(--rule-2); background: color-mix(in srgb, var(--wash) 80%, transparent); }
+/* 身上穿着的：右上角一枚小朱印，名字是朱色 */
+.wd-item.is-on .wd-name { color: var(--zhu); }
+.wd-item.is-on::after { content: ''; position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 1px; background: var(--zhu); transform: rotate(8deg); opacity: 0.9; }
+.wd-item.is-on .wd-tag { color: var(--zhu); }
+@media (hover: hover) { .wd-item:hover { transform: translateY(-2px); background: color-mix(in srgb, var(--wash) 70%, transparent); } .wd-item:hover .ai { transform: scale(1.06); } }
+.wd-item:active { transform: scale(0.98); }
+
+.wd-msg { margin: 0; padding: 8px 12px; border-left: 2px solid var(--zhu); font-size: 13px; line-height: 1.7; letter-spacing: 0.04em; color: var(--ink); background: color-mix(in srgb, var(--wash) 60%, transparent); animation: fade 0.4s backwards; }
+.wd-foot { display: grid; justify-items: center; gap: 6px; padding-top: 4px; }
+.wd-foot .key.is-main { min-width: 180px; }
+.wd-hint { margin: 0; font-size: 12.5px; line-height: 1.7; letter-spacing: 0.06em; color: color-mix(in srgb, var(--ink-2) 75%, var(--ink)); text-align: center; }
+.wd-swap-link { font-size: 12.5px; }
+.wd-swap { margin: 0; font-size: 12.5px; line-height: 1.8; color: var(--ink); text-align: center; }
+.wd-swap .link { margin-left: 8px; }
+
+/* 买：压在册页上的一张小笺 */
+.wd-ask { position: absolute; inset: -10px -8px; z-index: 3; display: grid; place-items: start center; padding-top: 30px; background: color-mix(in srgb, var(--wash) 55%, transparent); animation: fade 0.3s backwards; }
+.wd-ask-card { width: min(300px, 100%); display: grid; justify-items: center; gap: 6px; padding: 18px 18px 10px; border-radius: 3px; box-shadow: var(--board-shadow); text-align: center; }
+.wd-ask-art .ai { width: 84px; height: 84px; }
+.wd-ask-card h4 { margin: 0; font-family: var(--kai); font-weight: 400; font-size: 19px; letter-spacing: 0.14em; color: var(--ink); }
+.wd-ask-price { margin: 0; font-family: var(--serif); font-size: 22px; color: var(--zhu); }
+.wd-ask-note { margin: 2px 0 6px; font-size: 13px; line-height: 1.7; color: color-mix(in srgb, var(--ink-2) 70%, var(--ink)); }
+.wd-ask-keys { display: grid; justify-items: center; gap: 4px; }
+
+/* 手机竖着：册页矮一些（人在上头照着镜子），一行四格 */
+@media (max-width: 720px) and (min-height: 521px), (max-aspect-ratio: 3/4) and (max-width: 900px) {
+  .sheet.sheet-wardrobe { max-height: min(56dvh, 560px); }
+  .wd { gap: 10px; }
+  .wd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .wd-item { padding: 7px 2px 6px; }
+  .wd-art, .wd-art .ai { width: 44px; height: 44px; }
+  .wd-name { font-size: 12.5px; letter-spacing: 0.02em; }
+  .wd-tag { font-size: 11px; letter-spacing: 0.02em; }
+  .wd-detail { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 9px; }
+  .wd-detail-art, .wd-detail-art .ai { width: 58px; height: 58px; }
+  .wd-detail p { font-size: 12.5px; line-height: 1.65; }
+}
+@media (max-width: 380px) { .wd-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

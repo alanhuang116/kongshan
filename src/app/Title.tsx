@@ -48,7 +48,7 @@ export default function Title() {
     return () => window.removeEventListener('keydown', k, true);
   }, [ready]);
   return (
-    <div className={`title${phase === 'intro' ? ' is-leaving' : ''}`}>
+    <div className={`title${phase === 'intro' || phase === 'select' ? ' is-leaving' : ''}`}>
       <div className="title-col">
         <header className="title-slip glass">
           <div className="title-sign">

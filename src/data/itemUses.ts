@@ -66,7 +66,7 @@ export interface GiftDef {
   /** 送人时一回送多少（行囊里不够，就有多少送多少） */ n: number;
   look: GiftLook;
   /** 篮里、袋里、碗里是什么（颜色、个数由它定） */ fill?: string;
-  /** 先生递过去时说的（不给就是「这四个鸡蛋，给你。」） */ say?: string;
+  /** 你递过去时说的（男客女客都说得出口；不给就是「这四个鸡蛋，给你。」） */ say?: string;
 }
 /**
  * 送得出去的东西。不在这里的不送人：水（浇地的，论桶）、铜钱、还没打的麦捆与谷穗、带壳的谷子。
@@ -101,7 +101,7 @@ export const GIFTS: Record<string, GiftDef> = {
   bun: { n: 2, look: 'bun' },
   tofu: { n: 1, look: 'tofu' },
 };
-/** 村里人回赠、见面塞给先生时一回给多少（鸡蛋、桃这些论个的给两个，别的一份） */
+/** 村里人回赠、见面塞给你时一回给多少（鸡蛋、桃这些论个的给两个，别的一份） */
 export const backN = (id: string) => Math.max(1, Math.min(2, GIFTS[id]?.n ?? 1));
 
 /** 话里的「{某人的 id}」换成名册里的名字 */

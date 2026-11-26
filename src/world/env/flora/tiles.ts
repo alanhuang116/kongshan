@@ -7,7 +7,7 @@
  * 缩小了（远树）透明度的门槛放低，它才显出来，把一团叶连成一片——远树不稀，近树不闷。
  */
 import { blob, ink, leaf, stroke, type Ctx, type Tile } from '../../ink/brush';
-import type { Rng } from '../../core/rng';
+import { mulberry32, type Rng } from '../../core/rng';
 
 type P2 = [number, number];
 const TAU = Math.PI * 2;
@@ -235,13 +235,56 @@ function antler(g: Ctx, r: Rng, x: number, y: number, ang: number, len: number, 
 const lujiao: Tile = (g, r) => { antler(g, r, 0.5, 0.97, -Math.PI / 2 + (r() - 0.5) * 0.3, 0.28, 0.058, 3, 0.9); };
 /** 蟹爪枝：往外探，梢头勾下来（老树） */
 const xiezhao: Tile = (g, r) => { const s = r() < 0.5 ? -1 : 1; antler(g, r, 0.5 - s * 0.2, 0.9, -Math.PI / 2 + s * 0.5, 0.3, 0.058, 3, 0.9, s * 0.2); };
-/** 冬柳：几条光的垂丝 */
-const liuBare: Tile = (g, r) => {
-  for (let i = 0; i < 6; i++) {
-    const x = 0.12 + 0.152 * i + (r() - 0.5) * 0.08, sw = (r() - 0.5) * 0.14, y1 = 0.55 + 0.43 * r();
-    stroke(g, [[x, 0], [x + sw * 0.3, y1 * 0.5], [x + sw, y1]], (t) => 0.026 * (1 - 0.55 * t), ink(0.75 + 0.25 * r()));
+/**
+ * 冬柳光的垂条（寒柳）：一缕四到七根细条。起笔在枝上，略重；越往下越细、越淡，收成一个尖；长短不齐。
+ * 起处挤在一小段枝上，往下略略散开；离枝时先往外一弯再垂下，垂着也不死直，带一点 S。
+ * 长的一缕是两三格竖着叠起来的（willow.ts：同一处，一格一笔）：几格画的是同一组条的上、中、下几截。
+ * 相邻两格叠着 LIU_OV 那一段：上一格的条在那里渐细收掉，下一格的条由细到足——静时接成一根；
+ * 风里几格摆得不齐（梢上的摆得多），也只像条弯了一弯，不断开。
+ */
+export const LIU_OV = 0.16;
+/** 一根条：起处（格宽为 1；y 从这一缕的顶上往下量，以格高计）、多长、起笔多粗多浓、离枝那一弯、通身的斜、S 的幅与频 */
+interface Tiao { x0: number; y0: number; len: number; w: number; d: number; hook: number; lean: number; amp: number; fq: number; ph: number }
+/** 一缕（K 格长、n 根）：头两根垂到底，余下的长短不齐；起处错落在一小段枝上（不攒成一个穗子），离枝那一弯大多朝一边 */
+function liuPlan(seed: number, K: number, n: number): Tiao[] {
+  const r = mulberry32(seed), tot = 1 + (K - 1) * (1 - LIU_OV), out: Tiao[] = [], side = r() < 0.5 ? -1 : 1;
+  for (let j = 0; j < n; j++) {
+    const len = (j < 2 ? 0.84 + 0.1 * r() : 0.3 + 0.52 * r()) * tot - 0.1;
+    out.push({ x0: 0.5 + (r() - 0.5) * 0.3, y0: 0.02 + 0.12 * r(), len, w: 0.0075 + 0.005 * r(), d: 0.55 + 0.35 * r(), hook: (r() < 0.75 ? side : -side) * (0.012 + 0.05 * r() * r()), lean: (r() - 0.5) * 0.1, amp: 0.012 + 0.028 * r(), fq: 1.4 + 2 * r(), ph: r() * TAU });
   }
-};
+  return out;
+}
+/** 一缕的第 i 格（共 K 格） */
+function liuBare(seed: number, K: number, n: number): (i: number) => Tile {
+  const plan = liuPlan(seed, K, n), ov = LIU_OV;
+  return (i) => (g) => {
+    const a = i * (1 - ov), px = g.getTransform().a || 192;
+    // 细到一像素以下，透明度的门槛一卡就成了断续的点：通身至少一像素多，到梢上最后一小段才收尖
+    const thin = 1.25 / px;
+    // 叠着的那一段：上一格收（留三成足的，余下渐细到格底），下一格起（三成之内由细到足）
+    const m = (y: number) => (i < K - 1 ? Math.min(1, Math.max(0, (1 - y) / (0.7 * ov))) : 1) * (i > 0 ? Math.min(1, Math.max(0, y / (0.3 * ov))) : 1);
+    const tiao: Array<{ pts: P2[]; wid: (t: number) => number; d0: number; d1: number }> = [];
+    for (const s of plan) {
+      const u0 = Math.max(0, a - s.y0 - 0.02), u1 = Math.min(s.len, a + 1.02 - s.y0);
+      if (u1 <= u0) continue;
+      const X = (u: number) => s.x0 + s.hook * (1 - Math.exp(-u / 0.09)) + s.lean * u + s.amp * Math.sin(s.fq * u + s.ph) * Math.min(1, u / 0.3);
+      const N = Math.max(3, Math.ceil((u1 - u0) / 0.03)), pts: P2[] = [];
+      for (let k = 0; k <= N; k++) { const u = u0 + ((u1 - u0) * k) / N; pts.push([X(u), s.y0 + u - a]); }
+      const D = (u: number) => s.d * (1 - 0.6 * (u / s.len));
+      tiao.push({ pts, d0: D(u0), d1: D(u1), wid: (t) => { const u = u0 + (u1 - u0) * t; return Math.max(thin, s.w * Math.pow(1 - u / s.len, 0.6)) * Math.min(1, (s.len - u) / 0.14) * m(s.y0 + u - a); } });
+    }
+    // 远看的淡影：先在另一张纸上把各条加粗了画满（叠处不加深），再整张以不到一半的透明度铺上来——
+    // 近处门槛高，它镂空看不见；缩小了门槛放低才显出来（同文件头的 haze）：远处一缕不断成几截、不只剩个穗子
+    const sh = document.createElement('canvas');
+    sh.width = sh.height = Math.max(8, Math.round(px));
+    const h = sh.getContext('2d')!;
+    h.scale(sh.width, sh.height);
+    for (const t of tiao) stroke(h, t.pts, (q) => t.wid(q) + 1.8 / px, ink(0.15));
+    g.save(); g.globalAlpha = 0.3; g.drawImage(sh, 0, 0, 1, 1); g.restore();
+    for (const t of tiao) bs(g, t.pts, t.wid, t.d0, t.d1);
+  };
+}
+const BARE_A = liuBare(101, 3, 7), BARE_B = liuBare(202, 3, 6), BARE_C = liuBare(303, 2, 6), BARE_D = liuBare(404, 2, 5), BARE_E = liuBare(505, 1, 5), BARE_F = liuBare(606, 1, 4);
 /** 远树的一团叶：浓淡相破的大点 */
 const far0: Tile = (g, r) => {
   for (let i = 0; i < 8; i++) { const a = r() * TAU, d = 0.24 * Math.sqrt(r()); blob(g, r, 0.5 + Math.cos(a) * d, 0.5 + Math.sin(a) * d * 0.8, 0.13 + 0.08 * r(), ink(0.28 + 0.36 * r()), 5, 0.88); }
@@ -264,9 +307,14 @@ export const TREE = sheet(6, [
   ['jie0', jie0], ['jie1', jie1], ['jie2', jie2], ['jie3', jie1], ['pepper0', pepper], ['pepper1', pepper],
   ['hun0', hun], ['hun1', hun], ['sang0', sang], ['sang1', sang], ['huai0', huai0], ['huai1', huai1],
   ['taoLeaf0', taoLeaf], ['taoLeaf1', taoLeaf], ['taoYoung', taoYoung], ['liu0', liu0], ['liu1', liu1], ['liuTip', liuTip],
-  ['lujiao0', lujiao], ['lujiao1', lujiao], ['xiezhao', xiezhao], ['liuBare0', liuBare], ['liuBare1', liuBare], ['far0', far0],
+  ['lujiao0', lujiao], ['lujiao1', lujiao], ['xiezhao', xiezhao], ['liuBareA0', BARE_A(0)], ['liuBareA1', BARE_A(1)], ['far0', far0],
   ['far1', far1], ['far2', far0], ['hanlin0', hanlin], ['hanlin1', hanlin], ['huai2', huai0], ['hun2', hun],
+  // 冬柳的缕添在末尾（前面各格的位置与随机数都不动）
+  ['liuBareA2', BARE_A(2)], ['liuBareB0', BARE_B(0)], ['liuBareB1', BARE_B(1)], ['liuBareB2', BARE_B(2)], ['liuBareC0', BARE_C(0)], ['liuBareC1', BARE_C(1)],
+  ['liuBareD0', BARE_D(0)], ['liuBareD1', BARE_D(1)], ['liuBareE0', BARE_E(0)], ['liuBareF0', BARE_F(0)],
 ]);
+/** 冬柳的六种缕：每种是从上到下相接的几格（三格的、两格的、一格的各两种） */
+export const LIU_BARE: number[][] = (['A3', 'B3', 'C2', 'D2', 'E1', 'F1'] as const).map((f) => Array.from({ length: Number(f[1]) }, (_, i) => (TREE.idx as Record<string, number>)[`liuBare${f[0]}${i}`]));
 
 // ———————————————————————————— 常青：松针、竹叶 ————————————————————————————
 /** 攒针：一把朝上张开的松针，根上一点浓墨 */

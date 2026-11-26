@@ -8,9 +8,9 @@ import SkySheet from './SkySheet';
 import SoundSheet from './SoundSheet';
 import TodaySheet from './TodaySheet';
 import XiangSheet from './XiangSheet';
-import { EXTRA } from './extra';
+import { EXTRA, isExtra } from './extra';
 
-/** 开着的那一页册子（今日、村图、天时、行囊、村人簿、星图、观象册、声音、起居注、关于） */
+/** 开着的那一页册子（今日、村图、天时、行囊、衣饰、村人簿、星图、观象册、修为、声音、起居注、关于） */
 export default function Sheets() {
   const sheet = useStore(ui, (s) => s.sheet);
   if (sheet === 'today') return <TodaySheet />;
@@ -21,7 +21,7 @@ export default function Sheets() {
   if (sheet === 'sound') return <SoundSheet />;
   if (sheet === 'journal') return <Journal />;
   if (sheet === 'about') return <About />;
-  if (sheet === 'folk' || sheet === 'stars') {
+  if (sheet && isExtra(sheet)) {
     const Page = EXTRA[sheet];
     return Page ? <Suspense fallback={null}><Page /></Suspense> : null;
   }

@@ -251,8 +251,8 @@ if (!only || only.includes('carry')) {
   const tp = (x, z, yaw = 0) => ev(p, ([x, z, yaw]) => { const k = window.__ks; if (k.act) k.exitAct(); k.player.teleport(x, z, yaw); k.nav.snapBehind(); }, [x, z, yaw]);
   const piles = () => ev(p, () => JSON.parse(JSON.stringify(window.__farm.farm.st.piles)));
   const actNow = async (ms = 7000) => { const t0 = Date.now(); let id = null; while (!id && Date.now() - t0 < ms) { await p.waitForTimeout(200); id = await ev(p, () => window.__ks.act?.id ?? null); } return id; };
-  // 挑起麦捆
-  await tp(1.5, 47.2, Math.PI);
+  // 挑起麦捆（自家那畦的北头：田随溪南移以后在 z = 71）
+  await tp(1.5, 71.4, Math.PI);
   await ev(p, () => window.__ks.bag.add('sheaf', 12, { quiet: true }));
   await p.waitForTimeout(1300);
   let v = await view();
@@ -261,7 +261,7 @@ if (!only || only.includes('carry')) {
   await shot(p, 'carry-field');
   // 走近了
   const left0 = v?.left ?? 0;
-  await tp(62, 36.5, Math.PI); await p.waitForTimeout(1300);
+  await tp(62, 62.5, Math.PI); await p.waitForTimeout(1300);
   v = await view();
   R.ok('走近了：提示跟着变（剩的路短了）', !!v && v.left < left0 - 25, `${left0.toFixed(0)}米 → ${v?.left?.toFixed(0)}米｜${v?.line}`);
   await shot(p, 'carry-near');

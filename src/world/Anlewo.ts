@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { World, detectQuality, type Pointer, type Quality } from './core/World';
 import { FX_LAYER, PIG, U, setRoofs, wash, type Roof } from './ink/ink';
 import { Atmos, SUN, type Season, type Weather } from './env/atmos';
+import { MID_MONTH, clockAt, monthOfYmd, seasonOfMonth } from './env/months';
 import { createLand, type Land } from './env/land';
 import { Nav, PLACE } from './nav';
 import { Player } from './player';
@@ -16,8 +17,9 @@ import type { Act, Spot } from './acts/types';
 import { createActs } from './acts';
 import { clearSky, pickSky, type SkyCard } from './acts/skyinfo';
 import { createGhost, type Ghost } from './ghost';
-import type { Avatar, PoseName } from './avatar/types';
-import { addDisc, placeAt, setDynamic, setTerrain, standable, useSolids, waterDepth, type SolidLike, type Zone } from './walk';
+import type { Avatar, Look, PoseName } from './avatar/types';
+import { DEFAULT_WEAR, cleanWear, lookOfWear, type Wear } from './avatar/dress';
+import { addDisc, boom, groundAt, placeAt, setDynamic, setTerrain, standable, useSolids, waterDepth, type SolidLike, type Zone } from './walk';
 import { Mem } from './mem';
 import { Bag } from './bag';
 
@@ -49,6 +51,8 @@ export interface KsEvents {
   open?(sheet: string): void;
   /** 世界自己把时辰拨了（榻上一觉到天亮、亭中小睡、时辰流转着）：界面好让存档跟上 */
   clock?(hour: number): void;
+  /** 月建变了（子 0 … 亥 11）：拨了月、拨了季、同游时随那一位到了新的一月 */
+  month?(m: number): void;
   /** 过了一夜，到了第几日（从头一回来算起，第一天是 0） */
   day?(n: number): void;
   /** 世界的存档里有一份变了（k.mem）：界面存到本机 */
@@ -103,6 +107,9 @@ const M_BUILD = import.meta.glob<Record<string, unknown>>('./build/index.ts');
 const M_LIFE = import.meta.glob<Record<string, unknown>>('./life/index.ts');
 const M_FX = import.meta.glob<Record<string, unknown>>('./fx/index.ts');
 const M_AVATAR = import.meta.glob<Record<string, unknown>>('./avatar/index.ts');
+/** 选人那一幕：两位站在桃林入口往东几步的路上（面朝西，镜头在西边），相距两倍 SHOW_GAP */
+const SHOW_AT = { x: SITE.entry.x + 9, z: SITE.entry.z }, SHOW_GAP = 0.6;
+const _sv = new THREE.Vector3();
 async function part<T>(mods: Record<string, () => Promise<Record<string, unknown>>>, name: string, use: (m: Record<string, unknown>) => T | Promise<T>): Promise<T | null> {
   const load = Object.values(mods)[0];
   if (!load) return null;
@@ -124,9 +131,266 @@ export class Anlewo {
   /** 开场时界面压在画面上的一层雾（0…1） */
   veil = 1;
   season: Season; timeMode: TimeMode | number = 'day';
+  /** 此刻是哪个月建（子 0 … 亥 11）：十二消息卦按月时用它；总在 season 那一季里 */
+  month = 3;
+  /**
+   * 同游时的园中天时（null：自己拨的那一套）。tz 是按哪个时区的此刻走（分钟）；weather 是随那一位的天气（null 是自己的）。
+   * stash：随上以前自己拨的那一套，不随了还回去。
+   */
+  shared: { tz: number; weather: Weather | null; stash: { mode: TimeMode | number; flow: number; season: Season; month: number; weather: Weather }; t: number } | null = null;
+  /**
+   * 眼前的天象（打坐、入定时）：只是画、只在自己这边——hour 是画里此刻几点（打坐的那一路每帧往前推，过了子夜不算过一夜），
+   * season 是画里哪一季（看物候）。这时不报 clock、不存月、不过日子、时辰流转停着；同游时园中天时照旧在走，收起时一下子回到园中此刻。
+   * stash 是看以前的样子，收起时还回去。见 setVision
+   */
+  vision: { hour: number | null; season: Season | null; stash: { season: Season; month: number; weather: Weather } } | null = null;
+  /**
+   * 你是谁：来安乐窝作客的外乡人——男（m）还是女（f），雅号。选人那一页定下，存在世界的存档里（mem 'player'）。
+   * 村里人怎么称呼你、说话怎么说，看这一份（acts/talk.ts 等）；身子的样子另在 player 那一份 look 里。
+   */
+  persona: { sex: 'm' | 'f'; name: string } = { sex: 'm', name: '' };
+  /** 定下你是谁（选人那一页）：记进存档 */
+  setPersona(p: Partial<{ sex: 'm' | 'f'; name: string }>) {
+    this.persona = { sex: p.sex === 'f' ? 'f' : p.sex === 'm' ? 'm' : this.persona.sex, name: typeof p.name === 'string' ? p.name.slice(0, 12) : this.persona.name };
+    this.mem.patch('player', { sex: this.persona.sex, name: this.persona.name });
+  }
+  /**
+   * 穿着（男女、衣、冠、簪、佩；见 avatar/dress.ts）：选人那一页、衣饰那一页定下，存在 mem 'player' 的 wear。
+   * 开场时照它画人；换了就重画（setWear）。别处想知道换了（同游报给别人）挂在 wearSubs 上
+   */
+  wear: Wear = cleanWear(null);
+  wearSubs = new Set<(w: Wear) => void>();
+  /** 选人那一页定过没有（定过了，下回「入」就不再问） */
+  get chosen(): boolean { return !!this.mem.get<{ chosen?: boolean }>('player', {}).chosen; }
+  /**
+   * 换一身穿着：身子照着重画（行者的淡影接到新的网上）。persist 为真：记进存档、男女跟着定、同游的人那边也换上；
+   * 为假是试穿（衣饰那一页挑着看的时候）：只画，不存不报——收起时 setWear(k.wear, false) 换回来
+   */
+  setWear(w: Partial<Wear>, persist = true) {
+    const c = cleanWear(w);
+    const av = this.player?.av as (Avatar & { setLook?(l: Partial<Look>): void }) | undefined;
+    if (av?.setLook) { av.setLook(lookOfWear(c)); this.regrowGhost(); }
+    if (!persist) return;
+    this.wear = c;
+    if (this.persona.sex !== c.sex) this.persona = { ...this.persona, sex: c.sex };
+    this.mem.patch('player', { sex: c.sex, wear: c });
+    for (const f of this.wearSubs) { try { f(c); } catch (e) { console.warn('换装：', e); } }
+  }
+  /** 选人那一页定下：男女、雅号、穿着；记下「定过了」 */
+  choose(o: { wear: Partial<Wear>; name?: string }) {
+    const c = cleanWear(o.wear);
+    this.setPersona({ sex: c.sex, ...(o.name != null ? { name: o.name } : {}) });
+    this.setWear(c);
+    this.mem.patch('player', { chosen: true });
+  }
+  /** 行者的身子重做了：淡影接到新的那张网上 */
+  private regrowGhost() {
+    try { this.ghost?.dispose(); } catch { /* 无妨 */ }
+    this.ghost = null;
+    this.safe('ghost', () => { this.ghost = createGhost(this.player.av.root); });
+  }
+  /** 造一个人（选人那一幕用；avatar 那一块载进来以后才有） */
+  private makeFigure: ((look: Partial<Look>) => Avatar & { setLook?(l: Partial<Look>): void }) | null = null;
+  /** 给造出来的人配一份闲时的小动作（理袖、望天……） */
+  private makeIdle: ((f: Avatar) => { update(dt: number, t: number, o: { moving: boolean }): void } | null) | null = null;
+  /**
+   * 选人那一幕：桃林里两位（男、女）并肩站着，镜头看着；focus 看着哪一位（0 男、1 女；null 两位都看）。
+   * 换衣时那一位慢慢转一圈给你看；定下了那一位作个揖（女子道个万福），另一位隐去。
+   */
+  private show: {
+    figs: Array<Avatar & { setLook?(l: Partial<Look>): void }>; idles: Array<{ update(dt: number, t: number, o: { moving: boolean }): void } | null>;
+    focus: 0 | 1 | null; spin: number[]; yaw: number[]; bow: number[]; gone: number[]; chosen: -1 | 0 | 1; t: number; at: THREE.Vector3;
+    /** 取景：被看着的（或两位的当中）落在画面的哪里（x、y：−1…1，右、上为正），身子占画面高的几成（fill） */
+    frame: { x: number; y: number; fill: number };
+  } | null = null;
+  /** 选人那一幕开着 */
+  get showcase(): boolean { return !!this.show; }
+  setShowcase(o: { wears: [Wear, Wear]; focus: 0 | 1 | null } | null) {
+    if (!o) {
+      const sh = this.show;
+      if (!sh) return;
+      this.show = null;
+      for (const f of sh.figs) { try { f.dispose(); } catch { /* 无妨 */ } }
+      if (this.over) this.nav.setPose({ pos: this.over.pos, look: this.over.look, fov: 46, yaw: 0, up: 0, down: 0 }, 1.2);
+      return;
+    }
+    if (!this.show) {
+      const mk = this.makeFigure;
+      if (!mk) return;
+      const at = new THREE.Vector3(SHOW_AT.x, 0, SHOW_AT.z);
+      const figs = o.wears.map((w) => mk(lookOfWear(w)));
+      const idles = figs.map((f) => this.makeIdle?.(f) ?? null);
+      figs.forEach((f, i) => { this.world.scene.add(f.root); f.root.name = `showcase:${i}`; });
+      this.show = { figs, idles, focus: o.focus, spin: [0, 0], yaw: [0, 0], bow: [0, 0], gone: [0, 0], chosen: -1, t: 0, at, frame: { x: 0, y: 0.06, fill: 0.66 } };
+      this.placeShow(0);
+    } else {
+      const sh = this.show;
+      o.wears.forEach((w, i) => this.showWear(i as 0 | 1, w));
+      sh.focus = o.focus;
+    }
+    this.aimShow(this.show.focus, this.show.t < 0.05 ? 0.01 : 1.1);
+  }
+  /** 选人那一幕里给某一位换一身（换了就慢慢转一圈） */
+  showWear(i: 0 | 1, w: Wear) {
+    const sh = this.show;
+    if (!sh) return;
+    const f = sh.figs[i], key = JSON.stringify(cleanWear(w));
+    if ((f as unknown as { __wear?: string }).__wear === key) return;
+    (f as unknown as { __wear?: string }).__wear = key;
+    f.setLook?.(lookOfWear(w));
+    if (sh.t > 0.2) sh.spin[i] = 1;
+  }
+  /** 选人那一幕里看着哪一位 */
+  showFocus(i: 0 | 1 | null) {
+    const sh = this.show;
+    if (!sh || sh.focus === i) return;
+    sh.focus = i;
+    this.aimShow(i, 1.1);
+  }
+  /** 选人那一幕的取景（界面按自己怎么排给：面板在右就让人落在左边，面板在下就让人往上） */
+  showFrame(f: { x: number; y: number; fill: number }) {
+    const sh = this.show;
+    if (!sh) return;
+    const o = sh.frame;
+    if (Math.abs(o.x - f.x) < 1e-3 && Math.abs(o.y - f.y) < 1e-3 && Math.abs(o.fill - f.fill) < 1e-3) return;
+    sh.frame = { ...f };
+    this.aimShow(sh.focus, sh.t < 0.3 ? 0.01 : 0.9);
+  }
+  /** 定下了：那一位行礼，另一位隐去 */
+  showChoose(i: 0 | 1) {
+    const sh = this.show;
+    if (!sh) return;
+    sh.chosen = i; sh.bow[i] = 2.4; sh.spin[i] = 0;
+    this.aimShow(i, 1.4);
+  }
+  /**
+   * 照镜子（衣饰那一页开着时）：人站定、转过身来，镜头在他（她）正面看着——看全身（body）、看头上（head：簪、冠、髻）、看腰间（waist：佩、囊）。
+   * 挑一个前面没有高墙挡着的方向（先正前，再左右偏一点、再偏多一点）。frame 是人落在画面的哪里（册页在右就让人往左，册页在下就往上）。
+   * 正在做事、正换处、坐着躺着时不转镜头（试穿照样换在身上）。null 收起：镜头回到身后，人能走了
+   */
+  private mirrorOn: { dir: number; focus: 'body' | 'head' | 'waist'; frame: { x: number; y: number; fill?: number } } | null = null;
+  get mirroring(): boolean { return !!this.mirrorOn; }
+  setMirror(o: { focus?: 'body' | 'head' | 'waist'; frame?: { x: number; y: number; fill?: number } } | null) {
+    const p = this.player;
+    if (!o) {
+      if (!this.mirrorOn) return;
+      this.mirrorOn = null;
+      p.locked = false; p.faceTo = null;
+      this.nav.setPose(null, 0.9);
+      return;
+    }
+    const focus = o.focus ?? this.mirrorOn?.focus ?? 'body', frame = o.frame ?? this.mirrorOn?.frame ?? { x: 0, y: 0 };
+    if (!this.mirrorOn) {
+      if (this.act || this.nav.busy || this.over || this.show || p.av.pose !== 'stand') return;
+      p.stop(); p.locked = true;
+      // 镜头放在哪一边：人正前方先试，前面有墙、有屋就往左右偏
+      let dir = p.yaw;
+      for (const d of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI]) {
+        const a = p.yaw + d;
+        if (boom(p.pos.x, p.pos.z, p.pos.x + Math.sin(a) * 2.6, p.pos.z + Math.cos(a) * 2.6, p.zone) > 0.97) { dir = a; break; }
+      }
+      p.faceTo = dir;
+      this.mirrorOn = { dir, focus, frame };
+    } else { this.mirrorOn.focus = focus; this.mirrorOn.frame = frame; }
+    this.aimMirror(0.9);
+  }
+  /** 照镜子的镜头：人在 dir 那一边看过来 */
+  private aimMirror(dur: number) {
+    const m = this.mirrorOn!, p = this.player, cam = this.world.camera, aspect = cam.aspect || 1;
+    const vfov = 34, base = (vfov * Math.PI) / 180, h0 = 2 * Math.atan(Math.tan(base / 2) * 1.6);
+    const keep = aspect >= 1.6 ? 1 : 1 - 0.36 * Math.min(1, (1.6 - aspect) / 1.1);
+    const v = Math.min(aspect >= 1.6 ? base : 2 * Math.atan(Math.tan((h0 * keep) / 2) / aspect), (84 * Math.PI) / 180);
+    const tv = Math.tan(v / 2), th = tv * aspect, H = p.av.height;
+    // 看全身：身子占画面高的六成多；看头：头、冠占四成；看腰：腰间一截
+    const span = m.focus === 'head' ? 0.42 : m.focus === 'waist' ? 0.78 : H + 0.3, fill = (m.frame.fill ?? 0.66) * (m.focus === 'body' ? 1 : 0.94);
+    const cy = m.focus === 'head' ? H - 0.08 : m.focus === 'waist' ? H * 0.58 : H * 0.52;
+    const dist = Math.max(0.55, span / (2 * fill * tv));
+    // 看腰时略偏一点（佩挂在左前），看头时略侧（簪、步摇在髻边）
+    const side = m.focus === 'waist' ? 0.32 : m.focus === 'head' ? 0.42 : 0.12, a = m.dir + side;
+    const fx = Math.sin(a), fz = Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+    const ox = -m.frame.x * dist * th, oy = -m.frame.y * dist * tv;
+    // （看的那一点挪到人的右边，人就落在画面左边：册页在右时不挡着人）
+    const look = new THREE.Vector3(p.pos.x + rx * ox, p.pos.y + cy + oy, p.pos.z + rz * ox);
+    const pos = new THREE.Vector3(look.x + fx * dist, look.y + 0.06 * dist, look.z + fz * dist);
+    this.nav.setPose({ pos, look, fov: vfov, yaw: 0, up: 0, down: 0 }, dur);
+  }
+  /** 选人那一幕里两位此刻在画面上的哪里（像素，画布左上为原点）：脚下与头顶；看不见的那一位 null。界面据此把「郎君」「娘子」摆在脚下 */
+  showcaseScreen(): Array<{ x: number; y: number; top: number } | null> {
+    const sh = this.show;
+    if (!sh) return [null, null];
+    const cam = this.world.camera, el = this.world.renderer.domElement, w = el.clientWidth || 1, h = el.clientHeight || 1;
+    return sh.figs.map((f) => {
+      if (!f.root.visible) return null;
+      const p = f.root.position, a = _sv.set(p.x, p.y, p.z).project(cam), ax = a.x, ay = a.y, az = a.z;
+      const b = _sv.set(p.x, p.y + f.height + 0.08, p.z).project(cam);
+      if (az > 1 || ax < -1.2 || ax > 1.2) return null;
+      return { x: ((ax + 1) / 2) * w, y: ((1 - ay) / 2) * h, top: ((1 - b.y) / 2) * h };
+    });
+  }
+  /** 两位站在哪：桃林里那条路上，面朝西边（镜头在西边看过来） */
+  private placeShow(dt: number) {
+    const sh = this.show!;
+    for (let i = 0; i < 2; i++) {
+      const f = sh.figs[i], x = sh.at.x, z = sh.at.z + (i === 0 ? -SHOW_GAP : SHOW_GAP);
+      const y = groundAt(x, z) ?? 0;
+      // 朝向：面朝镜头（西），被看着的那一位正对镜头、另一位略侧向他（她）；换衣时转一圈
+      const face = -Math.PI / 2 + (sh.focus === null ? (i === 0 ? 0.12 : -0.12) : sh.focus === i ? 0 : i === 0 ? 0.45 : -0.45);
+      if (sh.spin[i] > 0) sh.spin[i] = Math.max(0, sh.spin[i] - dt / 1.8);
+      const turn = sh.spin[i] > 0 ? (1 - (1 - Math.cos(Math.PI * (1 - sh.spin[i]))) / 2) * Math.PI * 2 : 0;
+      sh.yaw[i] += (face - sh.yaw[i]) * Math.min(1, dt * 3);
+      f.root.position.set(x, y, z);
+      f.root.rotation.set(0, sh.yaw[i] + turn, 0);
+      // 隐去：没被选中的那一位，定下以后慢慢淡（缩进地里看不见）
+      const vis = sh.chosen >= 0 && sh.chosen !== i ? Math.max(0, 1 - (sh.gone[i] += dt / 1.2)) : 1;
+      f.root.visible = vis > 0.02;
+      if (vis < 1) f.root.position.y -= (1 - vis) * 0.02;
+    }
+  }
+  /**
+   * 镜头：两位都看（离远些），或看着一位（近些）。按 frame 取景：身子（约 1.9 米，连头上的冠）占画面高的 fill 成，
+   * 被看着的那一位（或两位当中）落在画面的 (x, y)——镜头整个往旁边、往下挪，不是斜着看，人不变形。
+   * 镜头在西边看过来：画面的右是 +z（娘子那一边）
+   */
+  private aimShow(focus: 0 | 1 | null, dur: number) {
+    const sh = this.show!, cam = this.world.camera, aspect = cam.aspect || 1, F = sh.frame;
+    const cz = sh.at.z + (focus === null ? 0 : focus === 0 ? -SHOW_GAP : SHOW_GAP);
+    const y = groundAt(sh.at.x, cz) ?? 0;
+    // 竖直视角：镜头（nav.ts）在竖屏上会把给的视角放大，这里照它的算法先算出真用的那个
+    const vfov = 34, base = (vfov * Math.PI) / 180, h0 = 2 * Math.atan(Math.tan(base / 2) * 1.6);
+    const keep = aspect >= 1.6 ? 1 : 1 - 0.36 * Math.min(1, (1.6 - aspect) / 1.1);
+    const v = Math.min(aspect >= 1.6 ? base : 2 * Math.atan(Math.tan((h0 * keep) / 2) / aspect), (84 * Math.PI) / 180);
+    const tv = Math.tan(v / 2), th = tv * aspect;
+    // 远近：高够 fill 成；两位都看时宽也要放得下（左右各留一点）
+    let dist = 1.9 / (2 * F.fill * tv);
+    if (focus === null) dist = Math.max(dist, 2.6 / (2 * th * Math.max(0.3, 1 - Math.abs(F.x)) * 0.92));
+    const cy = y + 0.88, lookZ = cz - F.x * dist * th, lookY = cy - F.y * dist * tv;
+    const look = new THREE.Vector3(sh.at.x, lookY, lookZ);
+    const pos = new THREE.Vector3(sh.at.x - dist, lookY + 0.12 + 0.03 * dist, lookZ);
+    this.nav.setPose({ pos, look, fov: vfov, yaw: 0, up: 0, down: 0 }, dur);
+  }
+  private stepShow(dt: number, t: number) {
+    const sh = this.show!;
+    sh.t += dt;
+    this.placeShow(dt);
+    for (let i = 0; i < 2; i++) {
+      const f = sh.figs[i];
+      if (!f.root.visible) continue;
+      // 行礼：男子作揖（两手拢在身前，躬身），女子道万福（两手拢在身前，微微低身）
+      if (sh.bow[i] > 0) {
+        sh.bow[i] = Math.max(0, sh.bow[i] - dt);
+        if (f.hands !== 'sleeve') f.setHands('sleeve', 0.35);
+        f.bow = sh.bow[i] > 0.9 ? (i === 0 ? 0.8 : 0.42) : 0;
+      }
+      if (sh.bow[i] <= 0 && sh.chosen === i && f.hands === 'sleeve') f.setHands('free', 0.8);
+      if (sh.bow[i] <= 0) sh.idles[i]?.update(dt, t, { moving: false });
+      f.update(dt, t, { speed: 0 });
+    }
+  }
   private proj = { x: 0, y: 0, visible: false, dist: 0 };
   private keys = new Set<string>();
   private pending: string | null = null;
+  /** 正走过去要做的那件事（同行那一边看：自己点了事，就不跟了） */
+  get pendingAct(): string | null { return this.pending; }
   private tapRing!: THREE.Mesh; private tapT = 9;
   private pinch0 = 0;
   private seatT = 0; private riseT = 0;
@@ -176,6 +440,14 @@ export class Anlewo {
     k.bag.onChange = (it) => o.events.bag?.(it);
     k.bag.onNote = (t) => k.note(t, 'bag');
     k.day = Math.max(0, Math.floor(k.mem.get('day', 0)));
+    // 你是谁（选过人的照存档；没选过的先当作男子，选人那一页会定）
+    {
+      const p = k.mem.get<{ sex?: string; name?: string; wear?: Partial<Wear> }>('player', {});
+      k.persona = { sex: p.sex === 'f' ? 'f' : 'm', name: typeof p.name === 'string' ? p.name.slice(0, 12) : '' };
+      k.wear = p.wear ? cleanWear({ ...p.wear, sex: p.wear.sex === 'f' || p.wear.sex === 'm' ? p.wear.sex : k.persona.sex }) : DEFAULT_WEAR[k.persona.sex];
+    }
+    // 月：存过的、又在这一季里的就用它，不然取这一季当中的那个月
+    { const m = k.mem.get<{ month?: number }>('xiaoxi', {}).month; k.month = typeof m === 'number' && m >= 0 && m < 12 && seasonOfMonth(m) === o.season ? Math.floor(m) : MID_MONTH[o.season]; }
     k.flow = Math.max(0, o.flow ?? 0);
     k.world = new World(canvas, k.q);
     const scene = k.world.scene;
@@ -236,7 +508,14 @@ export class Anlewo {
     mark('life');
     await pause();
     prog(0.86, '行者');
-    const av = (await part(M_AVATAR, '行者', (m) => (m.createAvatar as (q: Quality) => Avatar)(k.q))) ?? plainFigure();
+    // 行者照存档里的穿着画（没选过的人是带着来的那一身）；顺手留下造人的法子（选人那一幕要再造两位）
+    const av = (await part(M_AVATAR, '行者', (m) => {
+      type IdleLike = { update(dt: number, st: { speed: number; busy: boolean; night: number; rain: number; indoor: boolean }): void };
+      const mk = m.createAvatar as (q: Quality, look?: Partial<Look>) => Avatar, Idle = m.Idle as (new (a: Avatar, seed?: number) => IdleLike) | undefined;
+      k.makeFigure = (look) => mk(k.q, look);
+      if (Idle) k.makeIdle = (f) => { try { const id = new Idle(f, 7 + Math.floor(Math.random() * 999)); return { update: (dt: number) => id.update(dt, { speed: 0, busy: false, night: 0, rain: 0, indoor: true }) }; } catch { return null; } };
+      return mk(k.q, lookOfWear(k.wear));
+    })) ?? plainFigure();
     k.player = new Player(scene, av);
     // 人被门柱、篱笆、树干挡住时透出一层淡影（ghost.ts）
     k.safe('ghost', () => { k.ghost = createGhost(av.root); });
@@ -291,11 +570,17 @@ export class Anlewo {
   // —— 天时 ——
   /** 时辰：'now' 跟着此刻的钟点；'dawn' 'day' 'dusk' 'night' 是这一季的晨、昼、昏、夜；也可以直接给几点 */
   setTime(mode: TimeMode | number, instant = false) {
+    // 同游时随园中：自己拨的时辰先记着，独游时还回去（画里照旧是园中的钟点）
+    if (this.shared) { this.shared.stash.mode = mode; return; }
+    // 正看着眼前的天象（打坐）：记下，收起时到这一刻
+    if (this.vision) { this.timeMode = mode; return; }
     this.timeMode = mode;
     this.atmos.setHour(this.hourFor(mode), instant);
   }
   /** 做事时把时辰拨到某一刻（并告诉界面）。往前拨过了子夜（夜里睡到天亮）就是过了一夜 */
   passTo(hour: number) {
+    // 同游时大家同一个时辰：睡一觉、打个盹都不拨（园中天时照真实的钟点走）；看着眼前的天象时也不拨
+    if (this.shared || this.vision) return;
     const h0 = this.atmos.hour;
     if (hour < h0 - 1e-6 && h0 - hour > 0.01) this.newDay();
     this.setTime(hour, true); this.events.clock?.(hour);
@@ -376,7 +661,12 @@ export class Anlewo {
     const s = { spring: [6.0, 18.2], summer: [5.1, 19.1], autumn: [6.3, 17.5], winter: [7.0, 17.0] }[this.season];
     return mode === 'dawn' ? s[0] + 0.3 : mode === 'day' ? 9.2 : mode === 'dusk' ? s[1] - 0.25 : 21.5;
   }
-  setWeather(w: Weather, instant = false) { this.atmos.setWeather(w, instant); }
+  setWeather(w: Weather, instant = false) {
+    this.atmos.setWeather(w, instant);
+    if (this.vision) this.vision.stash.weather = w;
+    // 同游时自己排第一（天气是自己的）：拨的天气就是自己的天气，独游时还回去的也是它
+    if (this.shared && !this.shared.weather) this.shared.stash.weather = w;
+  }
   /**
    * 换季。不罩雾、不停顿：天时（雨雪、积雪、晨昏、日月）、地色、草木、远树在同一段（atmos.ts 的 SEASON_FADE）里
    * 一起从此刻的样子换到新的一季；接连点几季，每一回都从画上此刻的样子接着走。屋里屋外换的器物（瓶花、火盆、晒的东西）一下子换。
@@ -384,7 +674,10 @@ export class Anlewo {
    */
   setSeason(s: Season) {
     if (s === this.season) return;
-    if (s !== 'winter' && this.atmos.weather === 'snow') this.setWeather('clear');
+    // 月总在这一季里：拨了季，月落到这一季当中的那个月（拨月时先定了月，这里就不动它）
+    if (seasonOfMonth(this.month) !== s) this.noteMonth(MID_MONTH[s], !this.shared && !this.vision);
+    // （眼前的天象换季：只停画里的雪，收起时天气还回去）
+    if (s !== 'winter' && this.atmos.weather === 'snow') { if (this.vision) this.atmos.setWeather('clear'); else this.setWeather('clear'); }
     this.season = s; this.atmos.setSeason(s);
     this.land.setSeason(s); this.flora?.setSeason(s); this.life?.setSeason(s); this.fx?.setSeason(s); this.far?.setSeason(s);
     this.safe('build', () => this.build?.setSeason?.(s));
@@ -401,6 +694,118 @@ export class Anlewo {
     const objs: THREE.Object3D[] = [...((this.flora as (FloraLike & { seasonal?: THREE.Object3D[] }) | null)?.seasonal ?? [])];
     if (this.life) objs.push(this.life.group);
     try { this.world.painter.warm(objs, this.world.camera); } catch (e) { console.warn('换季的东西没能先画一遍', e); }
+  }
+
+  /** 拨到某一月（子 0 … 亥 11）：季跟着换（十二消息卦按月拨时用） */
+  setMonth(m: number) {
+    if (this.shared || this.vision) return;
+    const i = ((Math.floor(m) % 12) + 12) % 12;
+    this.noteMonth(i, true);
+    this.setSeason(seasonOfMonth(i));
+  }
+  /** 记下此刻的月；persist：存进本机（同游时随那一位的月不存） */
+  private noteMonth(m: number, persist: boolean) {
+    if (m === this.month) return;
+    this.month = m;
+    if (persist) this.mem.patch('xiaoxi', { month: m });
+    this.events.month?.(m);
+  }
+  /**
+   * 同游的园中天时：s 给了就随它走（真实的钟点、那一地的节气定季与月，天气随那一位），给 null 就还回自己拨的那一套。
+   * 每帧都可以叫，没变就不动。随上的那一下与还回去的那一下都慢慢过渡（atmos 的晨昏、换季各有自己的一段）。
+   */
+  setShared(s: { tz: number; weather: Weather | null } | null) {
+    // 正看着眼前的天象（打坐）：只把账记对，画先不动——收起天象时（setVision(null)）再一下子对上
+    if (this.vision) {
+      const vs = this.vision.stash;
+      if (!s) {
+        if (!this.shared) return;
+        const st = this.shared.stash;
+        this.shared = null;
+        this.flow = st.flow; this.timeMode = st.mode;
+        vs.season = st.season; vs.month = st.month; vs.weather = st.weather;
+      } else if (!this.shared) {
+        this.shared = { tz: s.tz, weather: s.weather, stash: { mode: this.timeMode, flow: this.flow, season: vs.season, month: vs.month, weather: vs.weather }, t: 0 };
+      } else { this.shared.tz = s.tz; this.shared.weather = s.weather; }
+      return;
+    }
+    if (!s) {
+      if (!this.shared) return;
+      const st = this.shared.stash;
+      this.shared = null;
+      this.flow = st.flow;
+      this.noteMonth(st.month, false);
+      this.setSeason(st.season);
+      this.setWeather(st.weather);
+      this.timeMode = st.mode;
+      // （存档里的时辰随着的那些时候没动过：不报 clock，存档还是自己拨的那一刻）
+      this.atmos.setHour(this.hourFor(st.mode));
+      return;
+    }
+    if (!this.shared) {
+      this.shared = { tz: s.tz, weather: s.weather, stash: { mode: this.timeMode, flow: this.flow, season: this.season, month: this.month, weather: this.atmos.weather }, t: 0 };
+      this.stepShared(0, true);
+    } else if (this.shared.tz !== s.tz || this.shared.weather !== s.weather) {
+      // 先前随别人的天气，这会儿轮到自己排第一（那一位走了）：天气还回自己的
+      const back = this.shared.weather && !s.weather;
+      this.shared.tz = s.tz; this.shared.weather = s.weather;
+      if (back) this.atmos.setWeather(this.shared.stash.weather);
+      this.stepShared(0, true);
+    }
+  }
+  /**
+   * 眼前的天象（打坐、入定）。v 里给 hour（几点，0…24）就把画里的钟拨过去（一下子到；每帧给就是一帧一帧地推）、给 season 就换到那一季（看物候）；
+   * 没给的那一样不动。给 null 收起：季、月、天气还回看以前的样子，钟点回到此刻该是的——同游时是园中此刻，独游是自己拨的那一刻
+   * （看着的这段时间时辰流转停着，所以独游时回到的就是坐下时的那一刻）。
+   */
+  setVision(v: { hour?: number | null; season?: Season | null } | null) {
+    if (!v) {
+      const vi = this.vision;
+      if (!vi) return;
+      this.vision = null;
+      const st = vi.stash;
+      // 先还月（月总在那一季里：换季时就不再把月拨到季中、存进本机）
+      if (st.month !== this.month) { this.month = st.month; this.events.month?.(st.month); }
+      if (st.season !== this.season) this.setSeason(st.season);
+      if (st.weather !== this.atmos.weather) this.atmos.setWeather(st.weather);
+      if (this.shared) this.stepShared(0, true);
+      else this.atmos.setHour(this.hourFor(this.timeMode));
+      return;
+    }
+    if (!this.vision) this.vision = { hour: null, season: null, stash: { season: this.season, month: this.month, weather: this.atmos.weather } };
+    const vi = this.vision;
+    if (v.hour !== undefined) {
+      vi.hour = v.hour == null || !Number.isFinite(v.hour) ? null : ((v.hour % 24) + 24) % 24;
+      if (vi.hour != null) this.atmos.setHour(vi.hour, true);
+    }
+    if (v.season !== undefined) {
+      vi.season = v.season;
+      const s = v.season ?? vi.stash.season;
+      if (s !== this.season) this.setSeason(s);
+    }
+  }
+
+  /** 园中天时往前走：钟点一秒对一回（差得多就慢慢过渡过去），月与季按那一地的日子，天气随那一位 */
+  private stepShared(dt: number, now = false) {
+    const sh = this.shared!, a = this.atmos;
+    sh.t -= dt;
+    if (!now && sh.t > 0) return;
+    sh.t = 1;
+    const c = clockAt(sh.tz), m = monthOfYmd(c.y, c.m, c.d);
+    if (m !== this.month) this.noteMonth(m, false);
+    const s = seasonOfMonth(m);
+    if (s !== this.season) this.setSeason(s);
+    if (sh.weather && sh.weather !== a.weather) this.setWeather(sh.weather);
+    if (a.transitioning) return;
+    const h0 = a.hour, d = ((c.hour - h0 + 36) % 24) - 12;
+    if (Math.abs(d) > 0.2) a.setHour(c.hour);
+    else {
+      if (d > 0) this.timeCue(h0, h0 + d);
+      if (h0 + d >= 24 || (d > 0 && c.hour < h0)) this.newDay();
+      a.setHour(c.hour, true);
+    }
+    // 园中天时不是自己拨的：不报 clock（不然存档里自己的时辰就被它盖了）；界面每秒自己来取钟点
+    this.timeMode = c.hour;
   }
 
   // —— 开场 ——
@@ -422,6 +827,7 @@ export class Anlewo {
   async begin() {
     if (!this.over) return;
     await this.nav.travel(() => {
+      this.setShowcase(null);
       this.setOverview(false);
       const r = this.resumeAt;
       // 上回停的地方还站得住就放在那里（朝向照旧），不然从入口进来
@@ -523,7 +929,7 @@ export class Anlewo {
       near: {
         stream: k(st.d - st.w, 1, 26), pond: k(Math.hypot(p.x - P.x, p.z - P.z) - P.rx, 0, 16), river: k(rv.d - rv.w, 5, 120),
         bamboo: k(Math.hypot(p.x, p.z + 38), 8, 40), pines: k(Math.hypot(p.x - SITE.pines[0].x, p.z - SITE.pines[0].z), 2, 16),
-        grove: k(Math.max(0, p.x + 30), 0, 40) * k(Math.abs(p.z - 34), 6, 40), fields: p.z > 44 ? k(Math.abs(p.z - 95), 30, 70) : 0,
+        grove: k(Math.max(0, p.x + 30), 0, 40) * k(Math.abs(p.z - 34), 6, 40), fields: p.z > 66 ? k(Math.abs(p.z - 119), 30, 70) : 0,
         village: k(Math.hypot(p.x - 86, p.z - 6), 14, 70), school: schoolOn * k(Math.hypot(p.x - sc.x, p.z - sc.z), 5, 46), work: workOn * k(Math.hypot(p.x - SITE.plank.x, p.z - SITE.plank.z), 4, 50),
         waterfall: k(Math.hypot(p.x - 150, p.z + 46), 0, 220) * 0.6,
         mill: k(Math.hypot(p.x - SITE.more.mill.x, p.z - SITE.more.mill.z), 3, 50),
@@ -538,6 +944,7 @@ export class Anlewo {
     if (pl.indoor >= 1) return 'floor';
     if (pl.indoor > 0) return 'wood';
     if (Math.abs(p.x - SITE.bridge.x) < SITE.bridge.w / 2 && Math.abs(p.z - SITE.bridge.z) < SITE.bridge.len / 2) return 'stone';
+    { const D = SITE.board, dx = p.x - D.x, dz = p.z - D.z, lx = dx * Math.cos(D.yaw) - dz * Math.sin(D.yaw), lz = dx * Math.sin(D.yaw) + dz * Math.cos(D.yaw); if (Math.abs(lx) < 0.8 && Math.abs(lz) < D.len / 2) return 'wood'; }
     if (Math.hypot(p.x - SITE.stones.x, p.z - SITE.stones.z) < 3.4) return 'stone';
     if (waterDepth(p.x, p.z) > 0.02 || this.atmos.w.rain > 0.5) return 'wet';
     return pathDist(p.x, p.z) < 0.15 || pl.id === 'yard' ? 'earth' : 'grass';
@@ -645,7 +1052,10 @@ export class Anlewo {
         }
       }
     }
-    if (this.timeMode === 'now' && !a.transitioning && Math.floor(t) % 30 === 0 && Math.floor(t - dt) % 30 !== 0) a.setHour(this.hourFor('now'));
+    // 看着眼前的天象（打坐）：钟点由打坐那一路拨，这里不走（同游的园中天时收起时再对上）
+    if (this.vision) { /* 不走 */ }
+    else if (this.shared) this.stepShared(dt);
+    else if (this.timeMode === 'now' && !a.transitioning && Math.floor(t) % 30 === 0 && Math.floor(t - dt) % 30 !== 0) a.setHour(this.hourFor('now'));
     else if (this.flow > 0 && this.timeMode !== 'now' && !this.over && !this.nav.busy && !a.transitioning && this.veil < 0.5) {
       // 时辰流转：一帧一帧往前推（不走「慢慢过渡」那条路），过了子夜就是新的一天
       const h0 = a.hour;
@@ -683,7 +1093,8 @@ export class Anlewo {
       if (this.build) { this.build.hallRoof.visible = !indoor; this.build.hallFront.visible = !indoor; }
       U.uRoofCut.value = indoor ? 1 : 0;
     }
-    if (this.over) {
+    if (this.show) this.safe('showcase', () => this.stepShow(dt, t));
+    else if (this.over) {
       const o = this.over; o.t += dt;
       const a = o.t * 0.011;
       o.pos.set(-150 + 70 * Math.sin(a), 50 + 5 * Math.sin(a * 1.7), -34 - 26 * (1 - Math.cos(a)));

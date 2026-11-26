@@ -13,6 +13,8 @@ import { boot, getKs } from './ks';
 import { inkTouch } from './ink';
 import { ui, useStore } from './store';
 import Title, { Intro } from './Title';
+import Select from './Select';
+import './styles/select.css';
 import Hud from './Hud';
 import Notes from './Notes';
 import SkyCard from './SkyCard';
@@ -56,6 +58,7 @@ export default function App() {
         </filter>
       </svg>
       {!hideUi && phase !== 'roam' && <Title />}
+      {!hideUi && phase === 'select' && <Select />}
       {!hideUi && <Intro />}
       {!hideUi && phase === 'roam' && <Hud />}
       {!hideUi && phase === 'roam' && <ActLayer />}

@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { FX_LAYER, FX_PARS, INK_PARS, PIG, U, type RGB } from '../ink/ink';
+import { SKY_GLOW, SKY_GLOW_PIG } from './sky';
 
 const WATER_V = /* glsl */ `
 varying vec3 vW; varying vec2 vUv; varying float vZ;
@@ -20,6 +21,7 @@ const WATER_F = /* glsl */ `
 ${INK_PARS}
 ${FX_PARS}
 uniform vec3 uInk; uniform vec3 uPig; uniform vec4 uW; uniform vec4 uRing[12];
+uniform float uGlowK; uniform vec4 uSkyGlow; uniform vec3 uSkyGlowPig;
 varying vec3 vW; varying vec2 vUv; varying float vZ;
 void main() {
   float d = texture2D(tDepth, gl_FragCoord.xy * uView.xy).x;
@@ -57,6 +59,15 @@ void main() {
   // 白天是几笔淡墨，夜里是碎的月光
   c *= mix(vec3(1.0), uInk + 0.42, clamp(rip, 0.0, 1.0) * (1.0 - uNight));
   c = mix(c, uLight, clamp(rip, 0.0, 1.0) * uNight * 0.55);
+  // 晨昏：朝着日头那一边望过去，水面映着霞（只池水有：uGlowK）
+  if (uGlowK > 0.0 && uSkyGlow.w > 0.001) {
+    vec2 look = vW.xz - cameraPosition.xz;
+    float fk = smoothstep(1.5, 12.0, length(look));
+    float gl = uGlowK * min(uSkyGlow.w, 1.0) * pow(max(dot(normalize(look + vec2(1e-5)), normalize(uSkyGlow.xz + vec2(1e-5))), 0.0), 2.4) * shore * fk;
+    // 映的是天上的霞：往一层淡淡的暖粉里调（只往暗里乘，透出池底的泥色，是褐的不是红的）
+    c = mix(c * pow(uSkyGlowPig, vec3(gl * 0.3)), uLight * pow(uSkyGlowPig, vec3(0.8)), clamp(gl * 0.6, 0.0, 0.55));
+    a = max(a, gl * 0.75);
+  }
   a = max(a, rip * 0.5);
   c = mix(c, uMist, inkFogK(vW));
   gl_FragColor = vec4(c, a);
@@ -72,6 +83,8 @@ export interface WaterOpts {
   ripple?: number;
   /** 多深就看不见底了（米） */
   deep?: number;
+  /** 晨昏映不映霞（0 不映：溪；池子给 1） */
+  glow?: number;
 }
 export function waterMat(o: WaterOpts = {}): THREE.ShaderMaterial {
   const p = o.pig ?? PIG.qing;
@@ -81,6 +94,8 @@ export function waterMat(o: WaterOpts = {}): THREE.ShaderMaterial {
       uPig: { value: new THREE.Color(p[0], p[1], p[2]) },
       uW: { value: new THREE.Vector4(o.dens ?? 0.45, o.flow ?? 0.35, o.ripple ?? 1, o.deep ?? 0.7) },
       uRing: { value: Array.from({ length: 12 }, () => new THREE.Vector4(0, 0, -99, 0)) },
+      // 霞：与天共用那一份（env/sky.ts），atmos 每帧写
+      uGlowK: { value: o.glow ?? 0 }, uSkyGlow: SKY_GLOW, uSkyGlowPig: SKY_GLOW_PIG,
     },
     vertexShader: WATER_V, fragmentShader: WATER_F,
     transparent: true, depthTest: false, depthWrite: false,

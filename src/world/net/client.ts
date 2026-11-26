@@ -30,7 +30,7 @@ export class NetClient {
   /** 收到的、发出的消息数（看看线上有多忙） */
   stats = { in: 0, out: 0, bytesIn: 0 };
 
-  constructor(public url: string, private who: () => { n: Name; c: number }, private ev: ClientEvents) {
+  constructor(public url: string, private who: () => { n: Name; c: number; lk?: number[] | null; cd?: number[] | null }, private ev: ClientEvents) {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVis);
     if (typeof window !== 'undefined') {
       window.addEventListener('online', this.onOnline);
@@ -70,7 +70,8 @@ export class NetClient {
     ws.onopen = () => {
       this.openedAt = performance.now();
       const w = this.who();
-      try { ws.send(JSON.stringify({ t: 'hi', v: PROTO_V, n: w.n, c: w.c, ...(this.room ? { rm: this.room } : {}) })); } catch { /* 断开会另外报来 */ }
+      // 样子、名片一并报上（旧的一版中转不看这两样）
+      try { ws.send(JSON.stringify({ t: 'hi', v: PROTO_V, n: w.n, c: w.c, ...(this.room ? { rm: this.room } : {}), ...(w.lk ? { lk: w.lk } : {}), ...(w.cd ? { cd: w.cd } : {}) })); } catch { /* 断开会另外报来 */ }
     };
     ws.onmessage = (e) => {
       if (ws !== this.ws || typeof e.data !== 'string' || e.data.length > 65536) return;

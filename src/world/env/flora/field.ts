@@ -24,6 +24,18 @@ import type { ExtraKind, Extras } from './extras';
 const F = FIELD.idx, P = PETAL.idx;
 const TAU = Math.PI * 2;
 
+/**
+ * 秋天还没割的那一畦麦：田间路东、桑园西的那一块（27…69 × 95…115）。别的麦秋天是收过的茬间出了新苗，
+ * 只有它晚收，秋天还是黄熟的一片（观象「大有」：秋天的麦田，黄得整片都是）。地色（env/land.ts）、观象都照这一句认它。
+ */
+export const lateWheat = (p: { crop: string; x0: number; z0: number }) => p.crop === 'wheat' && p.x0 === 27 && p.z0 === 95;
+/** 另取一份随机数添的笔（照旧的那一份一个数不多取，别处的笔不变） */
+function extraPut(L: RDab[], R: Rand, keep: number, big: number, x: number, y: number, z: number, size: number, tile: number, c: RGB, tone: number, up = 0.46, sway = 0.5) {
+  if (R() > keep || farmOwns(x, z)) return;
+  const s = size * big;
+  L.push({ x, y: y + s * up, z, size: s, tile, nx: R.pm(0.3), ny: 1, nz: R.pm(0.3), r: c[0] * tone, g: c[1] * tone, b: c[2] * tone, rot: R.pm(0.07), sway, k: R() });
+}
+
 export interface Pond { x: number; z: number; rx: number; rz: number; y: number }
 export interface FieldPlan {
   plots: Plot[]; veg: Rect | null; mums: Rect | null; pond: Pond | null;
@@ -112,14 +124,18 @@ export function fieldSet(se: Season, f: FieldPlan): FieldSet {
   for (const p of f.plots) {
     const y = p.y;
     switch (p.crop) {
-      case 'wheat':
+      case 'wheat': {
+        // 晚收的那一畦：秋天仍是黄熟的麦（随机数照旧取，只换笔与颜色）
+        const late = au && lateWheat(p), GOLD: RGB = [0.96, 0.84, 0.54];
         eachRow(p, 1.0, 0.8, 1.3, R, (x, z) => {
           if (sp) put(wash, x, y, z, R.r(0.86, 1.06), F.maiYoung, [0.7, 0.82, 0.56], R.r(0.86, 1.06), 0.46, 0.6);
           else if (su) put(wash, x, y, z, R.r(1.05, 1.28), F.maiRipe, [0.93, 0.86, 0.64], R.r(0.9, 1.06), 0.47, 0.8);
+          else if (late) { if (R() < 0.3) put(wash, x, y, z, R.r(0.7, 0.9) * 1.45, F.maiRipe, GOLD, R.r(0.9, 1.05), 0.47, 0.8); else put(wash, x, y, z, R.r(0.6, 0.8) * 1.6, F.maiRipe, GOLD, R.r(0.88, 1.05), 0.47, 0.8); }
           else if (au) { if (R() < 0.3) put(wash, x, y, z, R.r(0.7, 0.9), F.maiStub, [0.87, 0.79, 0.62], R.r(0.9, 1.05), 0.46, 0.1); else put(wash, x, y, z, R.r(0.6, 0.8), F.maiSprout, [0.7, 0.83, 0.56], R.r(0.88, 1.05), 0.46, 0.3); }
           else if (R() < 0.62) put(wash, x, y, z, R.r(0.5, 0.7), F.maiSprout, [0.66, 0.77, 0.58], R.r(0.86, 1.02), 0.46, 0.2);
         });
         break;
+      }
       case 'rape': {
         // 春天的菜花要成片：每一棵上再添一两簇（另用一份随机数，别处的笔不变）；畦心比畦边密、高一点，远看是一大片淡黄
         const RR = rand(5151 + Math.round(p.x0 * 7 + p.z0 * 13)), cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2, hx = (p.x1 - p.x0) / 2, hz = (p.z1 - p.z0) / 2;
@@ -178,6 +194,16 @@ export function fieldSet(se: Season, f: FieldPlan): FieldSet {
           else if (au) put(wash, x, y, z, u < 0.5 ? R.r(0.9, 1.3) : R.r(0.45, 0.75), u < 0.5 ? F.haoDry : R() < 0.5 ? F.cao0 : F.cao1, [0.88, 0.8, 0.58], R.r(0.84, 1.06), 0.47, 0.6);
           else if (u < 0.45) put(wash, x, y, z, R.r(0.7, 1.1), F.haoDry, [0.84, 0.79, 0.68], R.r(0.88, 1.05), 0.47, 0.5);
           if ((sp || su) && R() < 0.035) put(body, x, y, z, R.r(0.3, 0.42), R() < 0.5 ? P.yehua0 : P.yehua1, [1, 1, 0.94], 1, 0.6, 0.4, R.r(0, TAU));
+        }
+        // 秋深了，这一畦是收割过的地：一行行短短的麦茬（冬天剩稀稀的几行）。另取一份随机数添，别处的笔不变
+        if (au || wi) {
+          const RS = rand(7171 + Math.round(p.x0 * 3 + p.z0 * 5)), gap = 0.9, step = au ? 0.42 : 0.7;
+          const along = p.rows === 0 ? [p.x0 + 1.3, p.x1 - 1.3] : [p.z0 + 1.3, p.z1 - 1.3], across = p.rows === 0 ? [p.z0 + 1.3, p.z1 - 1.3] : [p.x0 + 1.3, p.x1 - 1.3];
+          for (let c = across[0]; c <= across[1]; c += gap) for (let a = along[0] + RS() * step; a < along[1]; a += step * RS.r(0.8, 1.25)) {
+            if (wi && RS() < 0.45) continue;
+            const u = c + RS.pm(0.07), x = p.rows === 0 ? a : u, z = p.rows === 0 ? u : a;
+            extraPut(wash, RS, keep, big, x, y, z, RS.r(0.42, 0.62) * (wi ? 0.85 : 1), F.maiStub, au ? [0.89, 0.8, 0.6] : [0.84, 0.78, 0.66], RS.r(0.9, 1.06), 0.44, 0.08);
+          }
         }
         break;
       }

@@ -69,7 +69,7 @@ function Row({ c, open, onToggle, onJump }: { c: FolkCard; open: boolean; onTogg
             )}
           </dl>
           <div className="folk-foot">
-            <span>{c.met ? `说过${c.met === 2 ? '两' : cn(c.met)}回话，上回是${c.last}` : '还没说过话'}{c.you !== '先生' ? `　他叫你「${c.you}」` : ''}</span>
+            <span>{c.met ? `说过${c.met === 2 ? '两' : cn(c.met)}回话，上回是${c.last}` : '还没说过话'}{c.you ? `　他叫你「${c.you}」` : ''}</span>
             {canGo
               ? <span className="well"><button className="key is-main" onClick={go} data-testid={`folk-go-${c.id}`}>{c.here ? '去找他' : '去他家门口'}</button></span>
               : <button className="key" disabled data-testid={`folk-go-${c.id}`}>不在村里</button>}

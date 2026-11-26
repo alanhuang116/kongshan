@@ -1,9 +1,12 @@
-import { setLevel, setMaster, setMuted } from '../ks';
+import { getKs, setLevel, setMaster, setMuted } from '../ks';
+import { detectQuality } from '../../world/core/World';
+import { useState } from 'react';
 import { channels, defaultLevel, PRESETS, presetOf, setLevel as fadeLevel, type Preset } from '../sound';
 import { patch, saved, ui, useStore } from '../store';
 import Sheet from './Sheet';
 
 /**
+ * 声与画：最上面一行画质（省电 · 自动 · 清晰）——清晰度当场换，草木与笔触图集要重新铺开（重开一回）才跟着换；
  * 声音：上头是几套现成的（山居、纯自然、冥想、人间、静），点一下各样的大小一齐换过去；
  * 下面是总的大小与静音，再下面是几样环境声各自的大小（声音那一层有哪几样，这里就列哪几样）。
  * 各样声音平时自己跟着人走到哪、什么时辰、什么天气起落——这里的「四成」是「照原样」，往下是调小，到头是关。
@@ -15,6 +18,12 @@ const LABEL: Record<string, [string, string]> = {
 };
 /** 换一套时各样慢慢过去（秒） */
 const PRESET_FADE = 2.5;
+/** 画质的三档：省电（最低一档）、自动（按这台设备，卡了自己往下让）、清晰（最高一档；手机上到 2.5 倍） */
+const QUALITY: Array<['low' | 'auto' | 'high', string, string]> = [
+  ['low', '省电', '最省电、最不烫：清晰度、草木、笔触都低一档'],
+  ['auto', '自动', '手机与电脑都用高的一档进来；哪台撑不住，清晰度自己往下让一点，宽裕了再升回来'],
+  ['high', '清晰', '最清楚的一档（手机上更烫、更费电，卡了照样自己往下让）'],
+];
 export default function SoundSheet() {
   const master = useStore(saved, (s) => s.master), muted = useStore(saved, (s) => s.muted), levels = useStore(saved, (s) => s.sound), haptics = useStore(saved, (s) => s.haptics);
   const ready = useStore(ui, (s) => s.sound);
@@ -27,8 +36,29 @@ export default function SoundSheet() {
     for (const id of list) fadeLevel(id, next[id], PRESET_FADE);
   };
   const canBuzz = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+  const quality = useStore(saved, (s) => s.quality);
+  const qNow = quality === 'low' || quality === 'high' ? quality : 'auto';
+  const [reshow, setReshow] = useState(false);
+  const pickQuality = (q: 'low' | 'auto' | 'high') => {
+    if (q === qNow) return;
+    patch({ quality: q });
+    // 清晰度当场换（草木与笔触图集要重新铺开才跟着换）
+    getKs()?.world.setDprCap(detectQuality(q === 'auto' ? null : q).dpr);
+    setReshow(true);
+  };
   return (
-    <Sheet title="声音">
+    <Sheet title="声与画">
+      <div className="pick quality-row">
+        <i className="pick-mark">画</i>
+        <div className="pick-col">
+          <div className="seg" role="radiogroup" aria-label="画质">
+            {QUALITY.map(([id, name]) => (
+              <button key={id} role="radio" aria-checked={qNow === id} className={qNow === id ? 'is-on' : ''} onClick={() => pickQuality(id)} data-testid={`quality-${id}`}>{name}</button>
+            ))}
+          </div>
+          <p className="pick-note">{QUALITY.find(([id]) => id === qNow)?.[2]}{reshow ? '。清晰度已经换了；草木与笔触要重新铺开才跟着换——' : ''}{reshow && <button className="link quality-reload" onClick={() => location.reload()} data-testid="quality-reload">重新铺开</button>}</p>
+        </div>
+      </div>
       {list.length > 0 && (
         <div className="presets-wrap">
           <div className="seg presets" role="radiogroup" aria-label="几套现成的声音">

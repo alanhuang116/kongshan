@@ -4,9 +4,11 @@
  *   话里说到的人都在名册里，说到「家里人」的真是他家里人；
  *   托事引用的人、物、事都对得上，没有重复的 id；他会托你的那个钟点，他真的在做那件事；
  *   文字里没有不该有的字样（不算命、不谈功名、不冒充古书、没有 ASCII）；
- *   人情账：说话、送礼、托事的情分怎么涨，托事从接下到办成怎么走，回礼进不进行囊，旧签点两下不重给。
+ *   人情账：说话、送礼、托事的情分怎么涨，托事从接下到办成怎么走，回礼进不进行囊，旧签点两下不重给；
+ *   你是外乡来的客人：村里人对男客、女客各有叫法，话里不再把你叫「先生」（「先生」只剩邵先生、塾师那几种说法）。
  * （名册本身的形状——每个钟头有着落、家里人互认——在 tests/folk.test.ts，村人那一路管。）
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FOLK } from '../src/data/folk';
 import { BOOKS, META, type L } from '../src/data/talk2';
@@ -15,12 +17,15 @@ import { LINES } from '../src/data/talk';
 import { ITEMS, Bag, useOf } from '../src/world/bag';
 import { Mem } from '../src/world/mem';
 import { GIFTS, ITEM_USES } from '../src/data/itemUses';
-import { BONDS, folkOf, people, person, fill } from '../src/world/acts/favor';
+import { BONDS, callOf, folkOf, folkView, people, person, fill } from '../src/world/acts/favor';
 import { FAUNA } from '../src/world/life/fauna/api';
 
 const text = (l: L) => (typeof l === 'string' ? l : l[0]);
 const opt = (l: L) => (typeof l === 'string' ? {} : l[1]);
-const len = (s: string) => Array.from(s.replace(/\{[a-zA-Z0-9_]+\}/g, '某某').replace(/\{先生\}/g, '先生').replace(/\{物\}/g, '某物')).length;
+/** 一句话说出口有多长：{某人} 算两个字，{你} 按他最长的那样叫法算（不给就按四个字：叫法至多四个字），{男|女} 取长的那一半 */
+const len = (s: string, you = '这位郎君') => Array.from(s.replace(/\{([^{}|]*)\|([^{}|]*)\}/g, (_, a: string, b: string) => (a.length >= b.length ? a : b)).replace(/\{[a-zA-Z0-9_]+\}/g, '某某').replace(/\{你\}|\{先生\}/g, () => you).replace(/\{物\}/g, '某物')).length;
+/** 他叫你的几样里最长的那一样（量话的长短用） */
+const longest = (id: string) => [1, 2, 3, 4].flatMap((lv) => [callOf(id, lv, 'm'), callOf(id, lv, 'f')]).reduce((a, b) => (b.length > a.length ? b : a), '');
 const refs = (s: string) => [...s.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((m) => m[1]);
 const IDS = new Set(FOLK.map((f) => f.id));
 /** 名册里某人的名字（名字会改，测试里不写死） */
@@ -43,10 +48,10 @@ function allTexts(): Array<[string, string]> {
     const B = BOOKS[id];
     for (const { where, l } of linesOf(id)) {
       out.push([`${id}.${where}`, text(l)]);
-      const b = opt(l).back; if (b) { out.push([`${id}.${where}.先生答`, b[0]]); out.push([`${id}.${where}.回`, b[1]]); }
+      const b = opt(l).back; if (b) { out.push([`${id}.${where}.你答`, b[0]]); out.push([`${id}.${where}.回`, b[1]]); }
     }
     for (const q of B.ask ?? []) { out.push([`${id}.ask.q`, q.q]); if (q.more) out.push([`${id}.ask.more`, q.more]); }
-    for (const v of [B.homeQ, B.favorHint, B.giftAsk, B.after, ...Object.values(B.busyQ ?? {}), ...(B.calls ?? [])]) if (v) out.push([`${id}.签`, v]);
+    for (const v of [B.homeQ, B.favorHint, B.giftAsk, B.after, ...Object.values(B.busyQ ?? {}), ...(B.calls ?? []).flatMap((c) => c.split('|'))]) if (v) out.push([`${id}.签`, v]);
   }
   for (const d of FAVORS) {
     for (const [k, v] of Object.entries({ name: d.name, ask: d.ask, yes: d.yes, no: d.no, ok: d.ok, nope: d.nope, hand: d.hand, thanks: d.thanks, ...d.note })) if (v) out.push([`favor.${d.id}.${k}`, v]);
@@ -56,7 +61,7 @@ function allTexts(): Array<[string, string]> {
   for (const it of FAVOR_ITEMS) out.push([`item.${it.id}`, `${it.name}${it.unit}${it.note}`]);
   return out;
 }
-/** 先生那一句「春种秋收，便是大吉」是唯一许说「吉」的地方 */
+/** 你那一句「春种秋收，便是大吉」是唯一许说「吉」的地方 */
 const SAYING = '春种秋收，便是大吉。';
 const BANNED = /吉|凶|卦|占卜|算命|命里|算一|升官|发财|做官|功名|风水|八字/;
 /** 已有的事（acts/ 里的 id 或前缀）：观星那一路会有 stars 开头的 */
@@ -124,28 +129,29 @@ describe('说到的人对得上', () => {
 });
 
 describe('文字守规矩', () => {
-  it('没有 ASCII（除了 {某人}）；不配书名号、不加引号引古书；句末有标点', () => {
+  it('没有 ASCII（除了 {某人}、{你}、{男|女}）；不配书名号、不加引号引古书；句末有标点', () => {
     for (const [where, t] of allTexts()) {
-      const bare = t.replace(/\{[a-zA-Z0-9_]+\}|\{先生\}|\{物\}/g, '');
+      const bare = t.replace(/\{[a-zA-Z0-9_]+\}|\{先生\}|\{你\}|\{物\}|\{[^{}|]*\|[^{}|]*\}/g, '');
       expect(bare, where).not.toMatch(/[\x00-\x7f]/);
       expect(t, where).not.toMatch(/[《》「」『』]/);
     }
     for (const id of Object.keys(BOOKS)) for (const { where, l } of linesOf(id)) expect(text(l), `${id}.${where}`).toMatch(/[。？！…—]$/);
   });
-  it('不算命、不断吉凶、不谈功名；只有先生那一句「春种秋收，便是大吉」', () => {
+  it('不算命、不断吉凶、不谈功名；只有你那一句「春种秋收，便是大吉」', () => {
     let saying = 0;
     for (const [where, t] of allTexts()) {
       if (t === SAYING) { saying++; continue; }
       expect(t, where).not.toMatch(BANNED);
     }
-    expect(saying, '先生答年景的那一句').toBeGreaterThanOrEqual(1);
+    expect(saying, '你答年景的那一句').toBeGreaterThanOrEqual(1);
   });
-  it('话短：一句至多四十字，签上的字（先生说的）至多二十二字', () => {
+  it('话短：一句至多四十字（{你} 按他最长的叫法算），签上的字（你说的）至多二十二字', () => {
     for (const id of Object.keys(BOOKS)) {
+      const you = longest(id);
       for (const { where, l } of linesOf(id)) {
-        expect(len(text(l)), `${id}.${where}：${text(l)}`).toBeLessThanOrEqual(40);
+        expect(len(text(l), you), `${id}.${where}：${text(l)}`).toBeLessThanOrEqual(40);
         const b = opt(l).back;
-        if (b) { expect(len(b[0]), `${id}.${where} 先生答`).toBeLessThanOrEqual(22); expect(len(b[1]), `${id}.${where} 回`).toBeLessThanOrEqual(40); }
+        if (b) { expect(len(b[0], you), `${id}.${where} 你答`).toBeLessThanOrEqual(22); expect(len(b[1], you), `${id}.${where} 回`).toBeLessThanOrEqual(40); }
       }
       for (const q of BOOKS[id].ask ?? []) expect(len(q.q), `${id} 问`).toBeLessThanOrEqual(14);
       for (const v of Object.values(BOOKS[id].busyQ ?? {})) expect(len(v)).toBeLessThanOrEqual(12);
@@ -198,12 +204,12 @@ describe('托事', () => {
 });
 
 // —— 人情账：拿一个假的世界来试 ——
-function fakeWorld(o: { hour?: number; season?: string; npcs?: string[]; acts?: string[] } = {}) {
+function fakeWorld(o: { hour?: number; season?: string; npcs?: string[]; acts?: string[]; sex?: 'm' | 'f' } = {}) {
   const mem = new Mem(null), notes: string[] = [], logs: string[] = [];
   const npcs: Record<string, unknown> = {};
   for (const id of o.npcs ?? FOLK.map((f) => f.id)) npcs[id] = { id, name: id, pos: { x: 1e4, y: 0, z: 1e4 }, present: true, attend() { /* 无 */ }, root: { userData: {} } };
   const k = {
-    mem, bag: new Bag(mem), day: 0, season: o.season ?? 'spring', term: null, act: null,
+    mem, bag: new Bag(mem), day: 0, season: o.season ?? 'spring', term: null, act: null, persona: { sex: o.sex ?? 'm', name: '' },
     atmos: { hour: o.hour ?? 10, night: 0, w: { rain: 0, snow: 0, mist: 0 } },
     life: { npcs }, acts: Object.fromEntries((o.acts ?? ['tea', 'book', 'dipper', 'favor:net']).map((a) => [a, { id: a, state: {} }])),
     player: { pos: { x: 0, y: 0, z: 0 } },
@@ -412,5 +418,104 @@ describe('送东西与用处', () => {
     F.run('fv:fish:yes', 'keeper');
     k.bag.add('fish', 3, { quiet: true });
     expect(F.plan('keeper', 'fish', 1)).toEqual({ kind: 'favor', n: 2 });
+  });
+});
+
+// —— 你是外乡来的客人（男客或女客）：草堂的主人邵先生出门访友，托你照看草堂、园子和借你种的两畦地 ——
+describe('你是外乡来的客人', () => {
+  /** 话里还许说「先生」的几种：邵先生（草堂的主人）、赵先生（塾师）、郑先生（客）、孩子们说塾师的「我们先生」、说书先生、念书念成了先生 */
+  const SIR = /邵先生|赵先生|郑先生|我们先生|说书先生|教书先生|成了先生/g;
+  const stray = (t: string) => t.replace(SIR, '').includes('先生');
+  /** 村里人说的、你说的（签上的字）、名册上给人看的 */
+  function everything(): Array<[string, string]> {
+    const out = allTexts();
+    for (const l of LINES) { out.push([`LINES.${l.id}`, l.text]); if (l.reply) out.push([`LINES.${l.id}.你接`, l.reply]); }
+    for (const f of FOLK) {
+      out.push([`folk.${f.id}.call`, f.call], [`folk.${f.id}.role`, f.role], [`folk.${f.id}.temper`, f.temper]);
+      for (const x of f.likes) out.push([`folk.${f.id}.likes`, x]);
+      for (const s of f.plan) out.push([`folk.${f.id}.plan`, s.doing]);
+    }
+    return out;
+  }
+  it('话里不再把你叫「先生」：只剩邵先生、塾师、客的名字、孩子们说的「我们先生」；也没有旧写法 {先生}', () => {
+    expect(everything().filter(([, t]) => stray(t)).map(([w, t]) => `${w}：${t}`)).toEqual([]);
+  });
+  it('说话、托事两处代码里垫着的话也一样', () => {
+    for (const f of ['../src/world/acts/talk.ts', '../src/world/acts/favor.ts']) {
+      const src = readFileSync(new URL(f, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      const strs = [...src.matchAll(/'([^'\n]*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2]);
+      expect(strs.filter(stray), f).toEqual([]);
+    }
+  });
+  it('叫法写得规矩：一样，或「男客|女客」一对；熟到各档至多四样', () => {
+    const ok = /^[一-龥]{1,4}(\|[一-龥]{1,4})?$/;
+    for (const f of FOLK) {
+      expect(f.call, `${f.id} 的 call`).toMatch(ok);
+      for (const c of BOOKS[f.id].calls ?? []) expect(c, `${f.id} 的 calls`).toMatch(ok);
+      expect((BOOKS[f.id].calls ?? []).length, f.id).toBeLessThanOrEqual(4);
+    }
+  });
+  it('每个人对男客、女客各有叫法，四档情分都叫得出；几乎人人男女叫法不同，全村叫法各样', () => {
+    const differ: string[] = [], all = new Set<string>();
+    for (const f of FOLK) {
+      for (const lv of [0, 1, 2, 3, 4]) for (const sex of ['m', 'f'] as const) {
+        const c = callOf(f.id, lv, sex);
+        expect(c, `${f.id} ${lv} ${sex}`).toMatch(/^[一-龥]{1,4}$/);
+        expect(stray(c), `${f.id} 叫你「${c}」`).toBe(false);
+        all.add(c);
+      }
+      if ([1, 2, 3, 4].some((lv) => callOf(f.id, lv, 'm') !== callOf(f.id, lv, 'f'))) differ.push(f.id);
+    }
+    expect(differ.length, '男女叫法不同的人').toBeGreaterThanOrEqual(FOLK.length - 2);
+    expect(all.size, '全村有几样叫法').toBeGreaterThanOrEqual(15);
+    expect([callOf('monk', 1, 'm'), callOf('monk', 1, 'f')]).toEqual(['施主', '女施主']);
+    // 熟了改口：李公知交时叫男客「老弟」
+    expect(callOf('elder', 4, 'm')).not.toBe(callOf('elder', 1, 'm'));
+    // 不知道是男是女（没选过人）就当男客
+    expect(callOf('farmer', 1)).toBe(callOf('farmer', 1, 'm'));
+  });
+  it('话里的 {你}、{他|她} 按男女换干净：每个人的每句话，男客女客、初识知交，都不剩括号与竖线', () => {
+    expect(fill('{你}好，{他|她}来了。', '娘子', 'f')).toBe('娘子好，她来了。');
+    expect(fill('{你}好，{他|她}来了。', '郎君', 'm')).toBe('郎君好，他来了。');
+    expect(fill('{你}慢走，{farmer}在地里。', '后生|闺女', 'f')).toBe(`闺女慢走，${nameOf('farmer')}在地里。`);
+    expect(fill('{先生}慢走。', '后生', 'm')).toBe('后生慢走。');                  // 旧写法也认
+    for (const sex of ['m', 'f'] as const) for (const id of Object.keys(BOOKS)) for (const lv of [1, 4]) {
+      const you = callOf(id, lv, sex), P = person(id)!;
+      const kind = P.kind ? LINES.filter((l) => l.who === P.kind).flatMap((l) => [l.text, l.reply ?? '']) : [];
+      for (const t of [...linesOf(id).flatMap(({ l }) => [text(l), ...(opt(l).back ?? [])]), ...kind]) {
+        expect(fill(t, you, sex).replace(/\{物\}/g, ''), `${id} ${sex}：${t}`).not.toMatch(/[{}|]/);
+      }
+    }
+    for (const d of FAVORS) for (const t of [d.ask, d.ok, d.nope, d.thanks]) for (const sex of ['m', 'f'] as const) expect(fill(t, callOf(d.from, 2, sex), sex), d.id).not.toMatch(/[{}|]/);
+  });
+  it('托事、打听人在哪：他按你是男是女叫你', () => {
+    for (const sex of ['m', 'f'] as const) {
+      const { k, F } = fakeWorld({ hour: 9, sex });
+      (k.life.npcs.elder as { act?: string }).act = 'sit';
+      F.meet('elder');
+      const ask = F.run('fv:tea:ask', 'elder')!;
+      expect(ask.text, sex).toContain(callOf('elder', 1, sex));
+      expect(stray(ask.text) || /[{}|]/.test(ask.text), ask.text).toBe(false);
+      expect(F.you('elder')).toBe(callOf('elder', 1, sex));
+    }
+    // 打听人在哪：问到他家里人，他说「X 去那边找」
+    for (const sex of ['m', 'f'] as const) {
+      const { F } = fakeWorld({ hour: 15, sex });
+      F.meet('farmwife');
+      F.run('fv:home:yes', 'farmwife');
+      F.meet('farmer');
+      const t = F.run('fv:home:where', 'farmer')!;
+      expect(t.text, sex).toContain(callOf('farmer', 1, sex));
+      expect(stray(t.text), t.text).toBe(false);
+    }
+  });
+  it('村人簿上「他叫你什么」是此刻的叫法（按男女取好）', () => {
+    for (const sex of ['m', 'f'] as const) {
+      const { k, F } = fakeWorld({ sex });
+      F.meet('elder');
+      const card = folkView(k as never).find((c) => c.id === 'elder')!;
+      expect(card.you).toBe(callOf('elder', 1, sex));
+      expect(card.you).not.toMatch(/\|/);
+    }
   });
 });

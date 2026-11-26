@@ -78,7 +78,8 @@ const stopNow = () => ev(() => { const k = window.__ks; k.player.stop(); k.setRu
 /** 摇杆推到头（快走）：镜头朝 yaw 看，往前推 */
 const stickFwd = (yaw) => ev((yaw) => { const k = window.__ks; k.nav.yaw = k.nav.yawS = yaw; k.stick.set(0, 1); }, yaw);
 // 井田当中那条东西向的田埂路：九十米长、平
-const FIELD = { z: 77, x0: -68, x1: 20 };
+// 井田横一那条路（田随溪南移以后在 z = 101）
+const FIELD = { z: 101, x0: -68, x1: 20 };
 
 // 走：侧面（一步约 0.47 秒；每三帧一张）
 if (want('walk')) {
@@ -181,7 +182,7 @@ if (want('bridge')) {
 // 站着：闲时的小动作（每半秒一张，看一分钟里出了些什么）
 if (want('idle')) {
   // 田埂上（院里柱子多，挡镜头）；把头一个小动作的计时拨近些
-  await tp(-30, 77, Math.PI); await wait(300);
+  await tp(-30, 101, Math.PI); await wait(300);
   await ev(() => { const i = window.__ks.player.idle; i.nextG = 3; i.nextH = 6; });
   await strip('idle', { warm: 1, n: 40, every: 45, cols: 10, off: [2.6, 1.15, 4.6], opt: { lookY: 0.9, fov: 30, cy: 0.82, rel: true }, w: 230, h: 380, clean: true });
 }

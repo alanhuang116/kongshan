@@ -101,12 +101,19 @@
 @media (hover: hover) { .dial-gua:hover span { color: var(--ink-max); } }
 @media (hover: hover) { .dial-gua:hover { color: var(--ink-max); transform: translateY(-2px); background: var(--wash-ink); } .dial-gua.is-now:hover { background: radial-gradient(closest-side, var(--wash) 60%, transparent); } }
 .dial-gua:active { transform: translateY(1px); }
+/* 同游时锁着：淡一些、不起不落 */
+.dial-gua:disabled { cursor: default; opacity: 0.55; }
+.dial-gua:disabled.is-now { opacity: 1; }
+.sheet .seg button:disabled, .season:disabled { cursor: default; opacity: 0.5; }
+.sheet .seg button:disabled.is-cur, .season:disabled.is-on { opacity: 1; }
+.seg-xx { width: min(220px, 100%); margin: 2px auto 14px; }
+.sky-lock { margin: 0 0 10px; color: var(--ink); }
 .dial-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 5px; text-align: center; pointer-events: none; }
 .dial-mid b { font-family: var(--brush); font-weight: 400; font-size: 46px; line-height: 1; color: var(--title); }
 .dial-mid b small { font-family: var(--kai); font-size: 14px; margin-left: 3px; color: var(--ink-2); }
 .dial-mid span { font-family: var(--kai); font-size: 17px; letter-spacing: 0.24em; text-indent: 0.24em; }
-.dial-mid em { font-size: 12px; letter-spacing: 0.1em; color: var(--ink-2); white-space: nowrap; }
-.dial-mid .dial-day { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.16em; color: var(--ink-3); }
+.dial-mid em { font-size: 12px; letter-spacing: 0.1em; color: color-mix(in srgb, var(--ink-2) 68%, var(--ink)); white-space: nowrap; }
+.dial-mid .dial-day { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.16em; color: var(--ink-2); }
 
 /* 选项：左边一个字（季、天、流），右边一道凹槽或几枚键 */
 .seg-modes { margin: 0 auto 16px; max-width: 360px; }
@@ -270,3 +277,13 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
 
 /* 册页里放不下、要滚的时候：上下两沿淡出去（看得出那边还有），不是齐刷刷地切断 */
 .sheet-body { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 22px), transparent); }
+
+/* 天时：题头里日子后面一枚「回到此刻」（拨到了别的时辰、别的月份，或同游时自己拨过）；题头不跟着滚，拨到哪儿都看得见 */
+.sheet-sub .sky-date { display: inline-block; }
+.sheet-sub .sky-back { min-height: 32px; margin: 4px 0 2px 10px; padding: 0 14px; font-size: 13.5px; letter-spacing: 0.14em; text-indent: 0.14em; vertical-align: middle; }
+@media (pointer: coarse) { .sheet-sub .sky-back { min-height: 44px; } }
+
+/* 声与画：最上面一行画质 */
+.quality-row { border-top: 0; padding-top: 2px; margin-bottom: 6px; }
+.quality-reload { margin-left: 4px; font-size: 12.5px; }
+@media (pointer: coarse) { .quality-reload { min-height: 44px; } }

@@ -30,6 +30,11 @@ const PLAN = [
   ['together', 'together.mjs', [], { KS_URL: APP }],
   ['steer', 'steer.mjs', [], { KS_URL: APP }],
   ['ui', 'ui.mjs', ['all'], { KS_URL: APP }],
+  ['dress', 'dress.mjs', [], { KS_URL: APP }],
+  ['study', 'study.mjs', [], { KS_URL: APP }],
+  ['sports', 'sports.mjs', [], { KS_URL: W }],
+  ['sports-pvp', 'sports-pvp.mjs', [], { KS_URL: W }],
+  ['sports-ui', 'sports-ui.mjs', [], { KS_URL: APP }],
   ['audio', 'audio.mjs', [], { KS_AUDIO_URL: LAB }],
 ];
 

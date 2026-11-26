@@ -5,6 +5,7 @@
 //     面板不出画、不横着溢出、签不出面板；没有报错。
 // 用法：KS_URL=http://localhost:3817/world.html node tests/play/talk.mjs [时辰…]（默认 10、15、20）
 //       截图放在 KS_SHOTS 指的目录（不给就是 shots/talk）
+//       KS_SEX=f：当作女客跑一遍（你是外乡来的客人，村里人改口叫「娘子」「姐姐」……）；不给就是男客
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { launch, open, Report, OUT } from './lib.mjs';
@@ -14,11 +15,16 @@ const SHOTS = process.env.KS_SHOTS ?? join(OUT, 'talk');
 mkdirSync(SHOTS, { recursive: true });
 const R = new Report(), browser = await launch();
 const errsOf = (logs) => logs.filter((l) => !/404|Failed to load resource|toNonIndexed|GPU stall|ReadPixels/.test(l));
+/** 你是男客还是女客：页面好了以后直接定在世界上（不经选人那一页） */
+const SEX = process.env.KS_SEX === 'f' ? 'f' : 'm';
+const asGuest = (page) => page.evaluate((sex) => { const k = window.__ks; if (k) k.persona = { ...k.persona, sex }; }, SEX);
+console.log(`— 当作${SEX === 'f' ? '女' : '男'}客`);
 
 // —— 一、和每个在场的人说话 ——
 for (const t of hours.length ? hours : ['10', '15', '20']) {
   const { page, ctx, logs } = await open(browser, { s: 'village', t, ui: '0', flow: '0' }, { wait: 1500 });
   await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
+  await asGuest(page);
   const ids = await page.evaluate(() => Object.keys(window.__ks.acts).filter((id) => id.startsWith('talk:') && window.__ks.things.find((th) => th.id === id)?.on?.() !== false));
   console.log(`— ${t} 点钟，在外头的：${ids.map((i) => i.slice(5)).join(' ') || '（没有）'}`);
   for (const id of ids) {
@@ -65,6 +71,7 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
 {
   const { page, ctx, logs } = await open(browser, { s: 'village', t: '9.5', ui: '0', flow: '0' }, { wait: 1500 });
   await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
+  await asGuest(page);
   const r = await page.evaluate(async () => {
     const k = window.__ks, wait = (ms) => new Promise((res) => setTimeout(res, ms)), out = {};
     const talk = async (who) => { const a = k.acts[`talk:${who}`]; if (!a || a.on?.() === false) return false; k.exitAct(); await wait(200); k.enterAct(`talk:${who}`, true); await wait(400); return k.act?.id === `talk:${who}`; };
@@ -141,6 +148,7 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
 {
   const { page, ctx, logs } = await open(browser, { s: 'village', t: '15', ui: '0', flow: '0' }, { wait: 1500 });
   await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
+  await asGuest(page);
   const r = await page.evaluate(async () => {
     const k = window.__ks, wait = (ms) => new Promise((res) => setTimeout(res, ms)), out = {};
     const talk = async (who) => { const a = k.acts[`talk:${who}`]; if (!a || a.on?.() === false) return false; k.exitAct(); await wait(200); k.enterAct(`talk:${who}`, true); await wait(400); return k.act?.id === `talk:${who}`; };
@@ -176,6 +184,7 @@ for (const t of hours.length ? hours : ['10', '15', '20']) {
 {
   const { page, ctx, logs } = await open(browser, { s: 'village', t: '10', ui: '0', flow: '0' }, { wait: 1500 });
   await page.evaluate(() => document.querySelector('vite-error-overlay')?.remove());
+  await asGuest(page);
   const cases = [['neighbor', 'egg', '站着的（扫地的李二嫂，一手拿帚）'], ['basketman', 'egg', '坐着的（凳上破篾的陈篾匠）'], ['lunch', 'wine', '不肯收的（孩子不收酒）']];
   for (const [who, item, label] of cases) {
     const r = await page.evaluate(async ([who, item]) => {
@@ -266,6 +275,7 @@ for (const [name, o] of [['desk', { w: 1280, h: 760 }], ['phone', { w: 393, h: 7
   page.on('console', (m) => { if (m.type() === 'error') logs.push(`[error] ${m.text().slice(0, 300)}`); });
   await page.goto(`${PAGE}?auto=1&s=village&t=10&flow=0&q=mid`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 120000 });
+  await asGuest(page);
   await page.waitForTimeout(1200);
   // 李公：头一句、问早年（话长、签多），再看送东西那一屏（行囊里放几样），送出去以后那一屏（先生说的那句与他接的话）
   // 递东西的半途、他接住的那一刻也各截一张（handover-<尺寸>-*.png）

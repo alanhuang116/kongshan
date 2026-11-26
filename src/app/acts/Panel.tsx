@@ -6,7 +6,7 @@ import { actCmd } from '../ks';
 import { TRIGRAMS, guaOf } from '../texts';
 import { pieceFor, savePiece } from './Copy';
 import { EXITS, choicesOf, itemsOf, num, str, strList, type Choice } from './state';
-import { ItemList } from './Widgets';
+import { ItemList, TriPick, triOf } from './Widgets';
 
 export { choicesOf, exitOf, num, str, strList } from './state';
 export type { Choice } from './state';
@@ -27,7 +27,7 @@ export type { Choice } from './state';
  */
 type State = Record<string, unknown>;
 /** 有没有要用面板来放的东西。只有一枚「罢」的不算——那一枚落到右下角去，免得为它单出一块板 */
-export const hasPanel = (st: State) => !!(str(st.text) || strList(st.lines).length || guaOf(st.gua) || itemsOf(st.items).length || choicesOf(st.choices).some((c) => !EXITS.has(c.id)));
+export const hasPanel = (st: State) => !!(str(st.text) || strList(st.lines).length || guaOf(st.gua) || itemsOf(st.items).length || triOf(st.tri) || choicesOf(st.choices).some((c) => !EXITS.has(c.id)));
 const hanOf = (lines: string[]) => lines.map((l) => [...l].filter((c) => /\p{Script=Han}/u.test(c)).join('')).join('/');
 
 /** 一枚签：主操作（底座里的墨键）、寻常的凸键、或一行里的一项 */
@@ -137,7 +137,9 @@ export default function Panel({ st, compact, lead }: { st: State; /** 收紧的�
   const tri = st.kind === 'bagua' ? TRIGRAMS.find((t) => t.name === str(st.title)) : undefined;
   const paras = text ? text.split('\n').filter((t) => t.trim()) : [];
   const body = !!(who || said || verse.length || gua || paras.length || source || gloss || (p != null && p < 1));
-  const foot = items.length > 0 || cs.length > 0;
+  // 八卦挑一卦（取一象）：它是这一步的主操作，放在下截
+  const triSel = triOf(st.tri);
+  const foot = items.length > 0 || cs.length > 0 || !!triSel;
   return (
     <section className={`panel${gua ? ' panel-xiang' : ''}`} data-testid="act-panel">
       {body && <div className="panel-body">
@@ -151,7 +153,7 @@ export default function Panel({ st, compact, lead }: { st: State; /** 收紧的�
         ) : verse.length > 0 && (
           <div className={`verse verse-${size}${tall ? ' is-tall' : ''}${brush ? '' : ' is-kai'}`}>{verse.map((l, i) => <span key={i}>{l}</span>)}</div>
         )}
-        {gua && <GuaCard gua={gua} draw key={gua.key} />}
+        {gua && <GuaCard gua={gua} draw plain={st.kind === 'mark'} key={gua.key} />}
         {gua && typeof st.found === 'boolean' && <p className="panel-found">{st.found ? '这一象已在观象册里' : '头一回见，收进观象册'}</p>}
         {paras.length > 0 && (
           <div className={`panel-text${tri ? ' has-tri' : ''}`} key={text}>
@@ -167,7 +169,8 @@ export default function Panel({ st, compact, lead }: { st: State; /** 收紧的�
       {foot && (
         <div className="panel-foot">
           {items.length > 0 && <ItemList items={items} />}
-          {cs.length > 0 && <Choices cs={cs} hint={!!str(st.hint)} picking={items.length > 0} />}
+          {triSel && <TriPick t={triSel} />}
+          {cs.length > 0 && <Choices cs={cs} hint={!!str(st.hint)} picking={items.length > 0 || !!triSel} />}
         </div>
       )}
     </section>

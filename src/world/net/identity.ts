@@ -12,6 +12,16 @@ const pick = (n: number, avoid = -1) => { if (n <= 1) return 0; let i = Math.flo
 export function roll(prev?: Identity | null): Identity {
   return { n: [pick(NAME_A.length, prev?.n[0]), pick(NAME_B.length, prev?.n[1])], c: pick(ROBES.length, prev?.c), on: prev?.on ?? true };
 }
+/** 雅号的后半截哪些只合男子（野老、樵子、钓叟、书生、老圃、渔父、处士、游子）：女子从别的里挑（散人、闲人、客、居士、山人、过客、道人、布衣） */
+const MALE_ONLY = new Set(['野老', '樵子', '钓叟', '书生', '老圃', '渔父', '处士', '游子']);
+export const nameFits = (b: number, sex: 'm' | 'f') => sex === 'm' || !MALE_ONLY.has(NAME_B[b] ?? '');
+/** 按男女起一个（女子不叫钓叟、樵子）；换一个时尽量不与原来的重样 */
+export function rollFor(sex: 'm' | 'f', prev?: Identity | null): Identity {
+  const okB = NAME_B.map((_, i) => i).filter((i) => nameFits(i, sex));
+  let b = okB[Math.floor(Math.random() * okB.length)];
+  if (okB.length > 1 && prev && b === prev.n[1]) b = okB[(okB.indexOf(b) + 1 + Math.floor(Math.random() * (okB.length - 1))) % okB.length];
+  return { n: [pick(NAME_A.length, prev?.n[0]), b], c: prev?.c ?? pick(ROBES.length), on: prev?.on ?? true };
+}
 const ok = (v: unknown, n: number) => Number.isInteger(v) && (v as number) >= 0 && (v as number) < n;
 export function loadIdentity(): Identity {
   try {

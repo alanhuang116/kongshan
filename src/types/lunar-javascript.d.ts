@@ -5,6 +5,8 @@ declare module 'lunar-javascript' {
     getYear(): number; getMonth(): number; getDay(): number;
     getYearInGanZhi(): string; getYearInChinese(): string; getMonthInChinese(): string; getDayInChinese(): string;
     getJieQi(): string;
+    /** 月建的地支（以节交月：立春起寅……），如「亥」 */
+    getMonthZhi(): string;
     getPrevJieQi(wholeDay?: boolean): JieQiT;
     getNextJieQi(wholeDay?: boolean): JieQiT;
   }

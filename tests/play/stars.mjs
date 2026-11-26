@@ -35,13 +35,14 @@ const waitFor = async (page, fn, ms = 8000, arg) => { const t0 = Date.now(); whi
 
 // —— 观星 ——
 {
-  const { page, ctx, logs } = await open({ s: 'bridge', t: '22.5', season: 'summer' });
+  // （石桥随溪挪到了村南，离席四十多米；从院中走过去）
+  const { page, ctx, logs } = await open({ s: 'yard', t: '22.5', season: 'summer' });
   // 白天没有这件事；夜里有
   const onNight = await ev(page, () => window.__ks.things.find((t) => t.id === 'stars')?.on?.() ?? false);
   R.ok('晴夜：观星这件事在', onNight);
   // 平时星官连线不显
   R.ok('平时：星官连线不显，星点在画', await ev(page, () => { const s = window.__ks.atmos.sky; return !s.lines.mesh.visible && s.stars.mesh.visible; }));
-  // 从桥头走过去（不是直接放过去）
+  // 从院中走过去（不是直接放过去）
   await ev(page, () => window.__ks.enterAct('stars'));
   const started = await waitFor(page, () => window.__ks.act?.id === 'stars', 30000);
   R.ok('走到席边，开始观星', started);

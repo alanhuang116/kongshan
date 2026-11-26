@@ -11,7 +11,7 @@ const touch = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: c
 interface Page { title: string; lines: string[]; more?: string }
 /** net：园里能遇见别的游人（右上有「同游」那一枚）时，「做」那一页多一句 */
 const pages = (t: boolean, net = false): Page[] => [
-  { title: '初到', lines: ['这里是邵雍的安乐窝：洛阳城南，伊水北岸。', '你是这里的先生——慢慢走，慢慢看。这里不争输赢，也没有输赢。'] },
+  { title: '初到', lines: ['这里是邵雍的安乐窝：洛阳城南，伊水北岸。主人出门访友去了。', '你是外乡来的客人，借住在这里，替他照看草堂、园子和借你种的两畦地。慢慢走，慢慢看，这里不争输赢，也没有输赢。'] },
   {
     title: '行',
     lines: t

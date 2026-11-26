@@ -6,12 +6,17 @@
 import * as THREE from 'three';
 import { M, box, boxUp, cyl, cylUp, lathe, prism, shade, tint, type Builder, type Geo } from '../core/geo';
 import { smooth } from '../core/rng';
-import { SITE, ground, houseY } from '../site';
+import { RILLS, SITE, ground, houseY } from '../site';
+import { terrainY } from '../walk';
 import { INK, blankUV, dye, flatRock, panel, pole, renormal, rnd, sbox, tube, v3, wobble, type Ctx, type Rand, type V3 } from './kit';
 import { doorLeaf, earthWall, lattice, post } from './hall';
 import { bookStack } from './inside';
 import { bucketGeo, fence, wicker } from './yard';
 import { thatchRoof } from './thatch';
+import { rill } from './waterside';
+
+/** 画出来的地面多高（贴着地放的小东西用） */
+const groundOf = (x: number, z: number) => Math.max(ground(x, z), terrainY(x, z));
 
 const at = (g: Geo, x: number, y: number, z: number, ry = 0) => g.applyMatrix4(M.mul(M.t(x, y, z), M.ry(ry)));
 /** 收小物件的篮子（往里 push 就是加进当前的摊） */
@@ -213,6 +218,18 @@ export function buildVillage(c: Ctx, sub?: string[]): void {
     for (let i = 0; i < 6; i++) b.add('wood', cyl(0.008, 0.006, 0.1, 4).translate(2.38 + i * 0.088, 0.0, h.d / 2 + 0.52));
     b.pop();
     for (const [lx, lz, r, id] of [[-3.2, h.d / 2 + 2.0, 1.0, '独轮车'], [1.5, h.d / 2 + 1.5, 1.1, '扁担箩筐']] as Array<[number, number, number, string]>) { const [x, z] = WP(h, lx, lz); c.solid({ id: `乙·${id}`, kind: 'disc', x, z, r }); }
+    // 门前一道浇菜的小水沟（观象「比」：水流过地面）：东头一只石臼接着竹笕引来的水，满了漫进沟里，顺着门前往西淌
+    {
+      const G0 = RILLS.gutter, [ex, ez] = G0[0], gy = groundOf(ex, ez);
+      rill(b, G0, 0.34, 77, { lift: 0.03 });
+      b.add('stone', renormal(wobble(lathe([[0.001, 0], [0.24, 0], [0.27, 0.12], [0.26, 0.3], [0.2, 0.32], [0.18, 0.16], [0.001, 0.14]], 10).translate(ex + 0.3, gy - 0.04, ez - 0.2), 0.012, 3, 771, 0), 50));
+      obj.push(dye(cyl(0.18, 0.18, 0.01, 10).translate(ex + 0.3, gy + 0.25, ez - 0.2), [0.86, 0.91, 0.95], 1));
+      // 竹笕：两根叉棍架着一根剖开的竹，从屋东山墙外的坡上引过来
+      const s0 = v3(ex + 2.1, gy + 0.85, ez - 2.4), s1 = v3(ex + 0.42, gy + 0.42, ez - 0.32);
+      b.add('bamboo', pole(s0, s1, 0.028, 0.026, 6, 3));
+      for (const t of [0.25, 0.7]) { const p = s0.clone().lerp(s1, t); for (const sd of [-1, 1]) b.add('wood', pole(v3(p.x + sd * 0.12, groundOf(p.x, p.z) - 0.1, p.z + 0.05), v3(p.x, p.y - 0.02, p.z), 0.016, 0.014, 4)); }
+      c.solid({ id: '乙·石臼', kind: 'disc', x: ex + 0.3, z: ez - 0.2, r: 0.28 });
+    }
   }
 
   // ———————————— 丁：四面坡；西边一圈荆条编的牲口栏、一个草棚，一条食槽；屋后一垛草 ————————————
@@ -292,6 +309,14 @@ export function buildVillage(c: Ctx, sub?: string[]): void {
       obj.push(dye(at(box(0.17, 0.014, 0.25), x + 0.02, T + 0.008, z - 0.1 + R.pm(0.05), Math.PI / 2 + R.pm(0.2)), INK.page, 0.9));
       obj.push(dye(at(box(0.07, 0.018, 0.1), x + 0.05, T + 0.01, z + 0.3), INK.slate, 1.8));
     }
+    // 前排当中那张矮桌上一盏灯：木灯檠上一只陶盏（夜里点着——观象「同人」看的就是这一盏，屋舍那边与草堂案上的灯一起亮）
+    {
+      const lx = -0.75 + 0.12, lz = 0.75 - 0.28, T = fl + 0.3;
+      obj.push(dye(lathe([[0.001, 0], [0.045, 0], [0.047, 0.011], [0.013, 0.022], [0.01, 0.17], [0.028, 0.183], [0.001, 0.183]], 10).translate(lx, T, lz), INK.darkwood, 1.8));
+      obj.push(dye(lathe([[0.001, 0.183], [0.028, 0.183], [0.046, 0.203], [0.043, 0.206], [0.026, 0.191], [0.001, 0.19]], 10).translate(lx, T, lz), INK.clay, 1.4));
+      const p = v3(lx + 0.035, T + 0.215, lz).applyMatrix4(m);
+      c.anchor('schoolLamp', p.x, p.y, p.z, h.yaw);
+    }
     // 先生的桌：高一些、大一些，东头靠墙；一把戒尺、几册书、笔筒；后面一只坐墩
     {
       const tx = x0 - 1.5, T = fl + 0.72;
@@ -313,6 +338,16 @@ export function buildVillage(c: Ctx, sub?: string[]): void {
     b.pop();
     c.solid({ id: '村塾', kind: 'rect', x: h.x, z: h.z, w: w + 0.6, d: d + 0.6, yaw: h.yaw });
     { const [x, z] = WP(h, 0, z0 + 1.8); c.anchor('schoolFront', x, y, z, h.yaw); }
+    // 东山墙外的坡脚下一眼小泉（观象「蒙」：山下出泉）：泉眼一圈石，石里一汪清水，一线细流顺着墙根往南淌
+    {
+      const Sp = RILLS.spring, gy = groundOf(Sp.x, Sp.z), R2 = rnd(6600);
+      obj.push(dye(cyl(0.42, 0.46, 0.012, 14).translate(Sp.x, gy + 0.04, Sp.z), [0.88, 0.93, 0.97], 1));
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2 + R2.pm(0.2), r = 0.5 + R2.r(0, 0.08), big = i === 2 || i === 3; b.add('stone', at(flatRock(6610 + i, big ? R2.r(0.2, 0.26) : R2.r(0.12, 0.18), big ? R2.r(0.2, 0.3) : R2.r(0.08, 0.14), R2.r(0.1, 0.16), 1), Sp.x + Math.cos(a) * r, groundOf(Sp.x + Math.cos(a) * r, Sp.z + Math.sin(a) * r) - 0.03, Sp.z + Math.sin(a) * r, -a)); }
+      // 泉眼后头坡上一块青石（水从石缝里出来）
+      b.add('stone', at(flatRock(6620, 0.42, 0.42, 0.3, 2, 0.6), Sp.x + 0.15, gy - 0.12, Sp.z - 0.62, 0.4));
+      rill(b, Sp.run, 0.22, 66, { lift: 0.03 });
+      c.solid({ id: '村塾·泉', kind: 'disc', x: Sp.x, z: Sp.z, r: 0.55 });
+    }
     { const p = v3(0, fl + 1.42, -z0 + wt + 0.05).applyMatrix4(m); c.anchor('schoolBoard', p.x, p.y, p.z, h.yaw); }
   }
 

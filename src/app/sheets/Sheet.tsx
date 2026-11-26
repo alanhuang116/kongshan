@@ -6,7 +6,7 @@ import { openSheet } from '../ks';
  * 一页册子：压在画上的一片磨砂。电脑上靠右，手机上从底下升起来。
  * 题名用毛笔字，下面一道细线；内容放不下就在里面滚（不裁）。点画面别处、按 Esc、点「收」都收起。
  */
-export default function Sheet({ title, sub, wide, children }: { title: string; sub?: ReactNode; wide?: boolean; children: ReactNode }) {
+export default function Sheet({ title, sub, wide, cls, children }: { title: string; sub?: ReactNode; wide?: boolean; /** 另加的样式名（衣饰那一页在手机上矮一些，好看见人） */ cls?: string; children: ReactNode }) {
   const brush = useBrush(title);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -18,7 +18,7 @@ export default function Sheet({ title, sub, wide, children }: { title: string; s
   return (
     <>
       <div className="sheet-back" onClick={() => openSheet(null)} />
-      <aside ref={ref} className={`sheet${wide ? ' sheet-wide' : ''}`} role="dialog" aria-label={title} tabIndex={-1}>
+      <aside ref={ref} className={`sheet${wide ? ' sheet-wide' : ''}${cls ? ` ${cls}` : ''}`} role="dialog" aria-label={title} tabIndex={-1}>
         <header className="sheet-head">
           <h3 className={brush ? '' : 'is-kai'}>{title}</h3>
           {sub ? <p className="sheet-sub">{sub}</p> : <span />}

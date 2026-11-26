@@ -59,6 +59,7 @@ export function what(item: Load, n: number): string {
 /** 路上会过的几处 */
 const MARKS: Mark[] = [
   { x: SITE.bridge.x, z: SITE.bridge.z, r: 2.6, say: '过石桥' },
+  { x: SITE.board.x, z: SITE.board.z, r: 2.6, say: '过板桥' },
   { x: SITE.stones.x, z: SITE.stones.z, r: 3.2, say: '踩汀步过溪' },
   { x: SITE.gate.x, z: SITE.gate.z, r: 1.9, say: '过柴门' },
   { x: SITE.sideGate.x, z: SITE.sideGate.z, r: 1.7, say: '过西边小门' },

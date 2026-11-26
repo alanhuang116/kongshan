@@ -34,6 +34,13 @@ export function today(d = new Date()): Today {
   } catch { /* 历算不出来就不显示 */ }
   return { lunar, term, termName, moon, key: keyOf(d) };
 }
+/** 那里（时区 tz，分钟）比你这里快（慢）几个钟头：「那里比你这里快三个钟头」「……慢五个半钟头」；一样就是空的 */
+export function tzDiff(tz: number, here = -new Date().getTimezoneOffset()): string {
+  const d = (tz - here) / 60;
+  if (!d) return '';
+  const a = Math.abs(d), h = Math.floor(a), half = a - h >= 0.25;
+  return `那里比你这里${d > 0 ? '快' : '慢'}${h ? (h === 2 ? '两' : cn(h)) : ''}${half ? (h ? '个半' : '半个') : '个'}钟头`;
+}
 /** 第几个时辰（子 0 … 亥 11）：子时是夜里十一点到一点 */
 export const branchOf = (hour: number) => Math.floor(((((hour % 24) + 24) % 24 + 1) % 24) / 2);
 /** 那个时辰的正中是几点（子 0 点、丑 2 点……） */

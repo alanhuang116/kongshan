@@ -19,7 +19,7 @@ import { Figure } from '../avatar/figure';
 import type { HandsName, Look, PoseName, Side } from '../avatar/types';
 import type { Quality } from '../core/World';
 import type { Season } from '../env/atmos';
-import { route } from './route';
+import { clear, route } from './route';
 import { blocked } from '../walk';
 import { clearOfTrees, footY, type Seat } from './spots';
 
@@ -53,12 +53,66 @@ function dropObj(o: THREE.Object3D) {
 export const ease = (k: number) => k * k * (3 - 2 * k);
 const _s = new THREE.Sphere(), _v = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3();
 let SEQ = 0;
+/** (x, z) 落没落在哪个要让开的圆里（me：自己的身宽，算在圆外头） */
+function inShun(x: number, z: number, me: number): boolean {
+  for (const d of Person.shun) if (d.r > 0) { const dx = x - d.x, dz = z - d.z, R = d.r + me; if (dx * dx + dz * dz < R * R) return true; }
+  return false;
+}
+/** 离 (x, z) 最近、出了各个要让开的圆、站得住的一处（同样远的先取朝着 (fx, fz) 的那一边）；两米半内找不到就 null */
+function rimOf(x: number, z: number, fx: number, fz: number, me: number): [number, number] | null {
+  const a0 = Math.atan2(fx - x, fz - z);
+  for (let rr = 0.25; rr < 2.6; rr += 0.15) for (let i = 0; i < 16; i++) {
+    const a = a0 + (i & 1 ? -1 : 1) * Math.ceil(i / 2) * (Math.PI / 8), px = x + Math.sin(a) * rr, pz = z + Math.cos(a) * rr;
+    if (!inShun(px, pz, me + 0.06) && !blocked(px, pz, 'ground', 0.2)) return [px, pz];
+  }
+  return null;
+}
+/** 从 a 直着走到 b，头一个碰上的要让开的圆（碰上的地方离 a 超过 far 的不算——还远，先照直走）；不碰就 null */
+function firstHit(ax: number, az: number, bx: number, bz: number, me: number, far = 1e9): { x: number; z: number; r: number } | null {
+  const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz, L = Math.sqrt(L2);
+  let hit: { x: number; z: number; r: number } | null = null, ht = 2;
+  for (const d of Person.shun) {
+    if (!(d.r > 0)) continue;
+    // 起步处正贴着圈边（刚被挡在边上）不算碰：比挡人的那一圈（walk 里）略松一点
+    const R = d.r + me - 0.01, t = L2 > 1e-8 ? Math.max(0, Math.min(1, ((d.x - ax) * vx + (d.z - az) * vz) / L2)) : 0;
+    const hx = ax + vx * t - d.x, hz = az + vz * t - d.z;
+    if (hx * hx + hz * hz < R * R && t * L - R < far && t < ht) { hit = d; ht = t; }
+  }
+  return hit;
+}
+/**
+ * 绕着圆 d 走（几个圆挨成一团时，就是绕着这一团）：从 p 在它的哪个方位，朝 sense 那一边（1、−1）挪六七十公分，取圆外再半步的那一圈上的一点；
+ * 那一点落在挨着的别的圆里就往外推出来。那一点（或走过去的半路）站不住（墙、篱笆）就 null
+ */
+function around(px: number, pz: number, d: { x: number; z: number; r: number }, sense: number, me: number): [number, number] | null {
+  const R = d.r + me + 0.3, a = Math.atan2(px - d.x, pz - d.z) + (sense * 0.65) / R;
+  let qx = d.x + Math.sin(a) * R, qz = d.z + Math.cos(a) * R;
+  for (let it = 0; it < 3; it++) {
+    let moved = false;
+    for (const e of Person.shun) {
+      if (!(e.r > 0) || e === d) continue;
+      const Re = e.r + me + 0.15, dx = qx - e.x, dz = qz - e.z, l = Math.hypot(dx, dz);
+      if (l < Re && l > 1e-3) { qx = e.x + (dx / l) * Re; qz = e.z + (dz / l) * Re; moved = true; }
+    }
+    if (!moved) break;
+  }
+  if (inShun(qx, qz, me + 0.05) || blocked(qx, qz, 'ground', 0.2) || blocked((px + qx) / 2, (pz + qz) / 2, 'ground', 0.18)) return null;
+  return [qx, qz];
+}
 
 export class Person {
   /** 试的时候用：当作人人都有人看着（换事一律走过去，每帧都动），好把一整天的路都走一遍 */
   static watchAll = false;
   /** 全村的人（路上碰见谁，从这里找） */
   static all: Person[] = [];
+  /**
+   * 要让开的地方：一个个圆（x、z、r）。行者蹲下摸狗、在牛棚口添草、蹲下抱鸡放鸡的时候，做事那一路（acts/beasts.ts）把行者、那只生灵占的地方放进来
+   * （每帧挪到它们此刻在的地方），做完拿走。
+   * 村里人走路绕着它（认定一边绕过去；两边都过不去就站在圈边上等）；要去的那一点落在圈里，就走到圈外最近的一处站着等它空出来
+   * （半路上的折点只等两三秒，过得去就不踩它了）；站着的人被它挨上了（行者蹲到了跟前、狗过来卧在脚边），往外让开一步。
+   * 坐着、蹲着干活的不挪——挑地方的那一头（狗、行者）避开他们。
+   */
+  static shun: Array<{ x: number; z: number; r: number }> = [];
   root: THREE.Group; avatar: Figure; fig: Figure;
   /** 此刻在哪（世界坐标，脚下） */
   pos = new THREE.Vector3();
@@ -81,6 +135,12 @@ export class Person {
   leave: (() => Script) | null = null;
   /** 挡路的圆（不在场时挪到天边） */
   blocker = { x: 1e6, z: 1e6, r: 0 };
+  /** 这件事里去站过、正要去站的几处（go 的终点，最多记六处；换事时清掉）：摸狗时行者挑地方蹲、狗挑地方卧，避开这些 */
+  spots: Array<{ x: number; z: number }> = [];
+  /** 要去的那一点落在要让开的圈里时，圈外的那一处（隔一会儿重找一回：圈会挪） */
+  private rim = { x: 0, z: 0, gx: NaN, gz: NaN, t: -1, ok: false };
+  /** 照直走会碰上要让开的圆时，绕着它往哪一边走（1、−1；0 是没在绕）、掉过几回头、两边都绕不过去是几时（过一会儿再试） */
+  private bend = { sense: 0, flips: 0, t: -1 };
   /** 身量 */
   readonly scale: number;
   /** 此刻做的事的名字（null：在家，或正往家走） */
@@ -244,6 +304,12 @@ export class Person {
   }
   /** 要让脚下落在世界高度 y 上（台子、屋里的地面、船板），lift 该给多少 */
   liftTo(y: number) { return (y - footY(this.pos.x, this.pos.z)) / this.scale; }
+  /** 记下这件事里要去站的一处（go 自己记；几处轮着去的活，开头就把几处都记上） */
+  mark(s: { x: number; z: number }) {
+    if (this.spots.some((q) => Math.abs(q.x - s.x) < 0.3 && Math.abs(q.z - s.z) < 0.3)) return;
+    this.spots.push({ x: s.x, z: s.z });
+    if (this.spots.length > 6) this.spots.shift();
+  }
   /** 直接站到某处 */
   place(s: { x: number; z: number; yaw?: number }) { this.pos.x = s.x; this.pos.z = s.z; if (s.yaw != null) this.yaw = s.yaw; this.lastX = s.x; this.lastZ = s.z; this.lastYaw = this.yaw; }
   /**
@@ -253,6 +319,7 @@ export class Person {
    */
   *go(s: { x: number; z: number; yaw?: number }, speed = 1.05, via?: Array<[number, number]>, raw = false): Script {
     this.tilt = 0; this.seated = false;
+    this.mark(s);
     if (this.snap) { this.snap = false; this.place(s); this.snapNow = true; this.lift = 0; this.fig.setSeat(null); return; }
     this.snapNow = false;
     this.fig.setPose('stand');
@@ -260,10 +327,13 @@ export class Person {
     this.fig.setSeat(null);
     const first = via?.[0] ?? [s.x, s.z];
     this.trip = !raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 6;
-    // 路上的各个折点各人略偏一点（同一家几个人一块儿走，不叠成一个人）
-    if (!raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 3) for (const v of yield* this.way(first[0], first[1])) yield* this.walk(v[0] + this.ox, v[1] + this.oz, speed, 0.5);
+    // 路上的各个折点各人略偏一点（同一家几个人一块儿走，不叠成一个人）。每一点都告诉 walk 下一点在哪（那一点正被让开的圈占着时，等一等就绕过它）
+    if (!raw && Math.hypot(first[0] - this.pos.x, first[1] - this.pos.z) > 3) {
+      const r = yield* this.way(first[0], first[1]);
+      for (let i = 0; i < r.length; i++) yield* this.walk(r[i][0] + this.ox, r[i][1] + this.oz, speed, 0.5, i + 1 < r.length ? [r[i + 1][0] + this.ox, r[i + 1][1] + this.oz] : first);
+    }
     // 远路走到头一点就算到了；余下那几步（进屋、绕到凳前坐下）不算赶路
-    if (via) { for (let i = 0; i < via.length; i++) { if (i === 1) this.trip = false; yield* this.walk(via[i][0], via[i][1], speed, 0.4); } this.trip = false; }
+    if (via) { for (let i = 0; i < via.length; i++) { if (i === 1) this.trip = false; yield* this.walk(via[i][0], via[i][1], speed, 0.4, via[i + 1] ?? [s.x, s.z]); } this.trip = false; }
     yield* this.walk(s.x, s.z, speed);
     this.trip = false;
     if (s.yaw != null) yield* this.face(s.yaw);
@@ -272,30 +342,102 @@ export class Person {
   private *way(x: number, z: number): Generator<void, Array<[number, number]>, void> {
     for (;;) { const r = route(this.pos.x, this.pos.z, x, z, this.c.frame); if (r) return r; yield; }
   }
-  /** 朝一点走过去（转着身走，转得急就先慢下来）；路上碰见人打个招呼，有时站下来说几句 */
-  *walk(x: number, z: number, speed = 1.05, r = 0.1): Script {
+  /**
+   * 朝一点走过去（转着身走，转得急就先慢下来）；路上碰见人打个招呼，有时站下来说几句。
+   * next：这是半路上的一个折点，走过它还要去 next（那一点正被让开的圈占着时，在圈外等一会儿，过得去就不再非踩那一点，直接往 next 去）
+   */
+  *walk(x: number, z: number, speed = 1.05, r = 0.1, next?: [number, number]): Script {
+    const to = { x, z };
+    let waited = 0;
     for (let n = 0; n < 9000; n++) {
-      const dx = x - this.pos.x, dz = z - this.pos.z, d = Math.hypot(dx, dz);
-      if (d < r) { this.walking = false; return; }
+      // 碰上要让开的地方（行者蹲着摸狗……）：路正穿过就先从旁边绕；要去的那一点落在圈里，就到圈外站着等它空出来
+      const how = Person.shun.length ? this.steer(x, z, to) : 0, gx = how ? to.x : x, gz = how ? to.z : z;
+      const dx = gx - this.pos.x, dz = gz - this.pos.z, d = Math.hypot(dx, dz);
+      if (d < r && !how) { this.walking = false; return; }
       this.walking = true;
       if (this.talkTo) { yield* this.roadTalk(); continue; }
-      // 快走到了就不再招呼人（几个人往同一处去，到了跟前不站在路上寒暄）
-      if (d > 4 && this.trip && this.c.t > this.meetNext) this.meet();
-      const off = wrap(Math.atan2(dx, dz) - this.yaw), turn = Math.max(-3.4 * this.dt, Math.min(3.4 * this.dt, off));
-      this.yaw = wrap(this.yaw + turn);
-      const k = Math.max(0, Math.cos(Math.min(Math.abs(off), Math.PI / 2))) ** 0.7, step = Math.min(d, speed * (0.15 + 0.85 * k) * Math.min(1, 0.3 + d / 0.8) * this.dt);
-      // 离得很近了又没对准：直接挪过去，免得绕着它打转
-      if (d < 0.35) { this.pos.x += (dx / d) * step; this.pos.z += (dz / d) * step; } else { this.pos.x += Math.sin(this.yaw) * step; this.pos.z += Math.cos(this.yaw) * step; }
+      const x0 = this.pos.x, z0 = this.pos.z;
+      if (how === 1 && d < 0.15) {
+        // 到了圈外：站着等，脸朝着要去的那一处。半路上的折点：等上两三秒，从这里直着走得到下一点，就不踩它了
+        waited += this.dt;
+        if (next && waited > 2.5 && clear(this.pos.x, this.pos.z, next[0], next[1])) { this.walking = false; return; }
+        const off = wrap(Math.atan2(x - this.pos.x, z - this.pos.z) - this.yaw);
+        this.yaw = wrap(this.yaw + Math.max(-2 * this.dt, Math.min(2 * this.dt, off)));
+      } else {
+        // 快走到了就不再招呼人（几个人往同一处去，到了跟前不站在路上寒暄）
+        if (d > 4 && this.trip && this.c.t > this.meetNext) this.meet();
+        const off = wrap(Math.atan2(dx, dz) - this.yaw), turn = Math.max(-3.4 * this.dt, Math.min(3.4 * this.dt, off));
+        this.yaw = wrap(this.yaw + turn);
+        const k = Math.max(0, Math.cos(Math.min(Math.abs(off), Math.PI / 2))) ** 0.7, step = Math.min(d, speed * (0.15 + 0.85 * k) * Math.min(1, 0.3 + d / 0.8) * this.dt);
+        // 离得很近了又没对准：直接挪过去，免得绕着它打转
+        if (d < 0.35) { this.pos.x += (dx / d) * step; this.pos.z += (dz / d) * step; } else { this.pos.x += Math.sin(this.yaw) * step; this.pos.z += Math.cos(this.yaw) * step; }
+      }
       // 村里别的人挨得太近（一块儿走路的、迎面来的）：各往旁边让一点，不叠在一起
       if ((n & 3) === 0) for (const q of Person.all) {
         if (q === this || !q.here) continue;
         const qx = this.pos.x - q.pos.x, qz = this.pos.z - q.pos.z, q2 = qx * qx + qz * qz;
         if (q2 < 0.3 && q2 > 1e-6) { const ql = Math.sqrt(q2), push = (0.55 - ql) * 2.4 * this.dt, nx = this.pos.x + (qx / ql) * push, nz = this.pos.z + (qz / ql) * push; if (!blocked(nx, nz, 'ground', 0.18)) { this.pos.x = nx; this.pos.z = nz; } }
       }
-      // 行者正挡在跟前：往旁边让半步，绕过去
+      // 行者正挡在跟前：往旁边让半步，绕过去（他蹲在要让开的圈里时不用：上面已经绕着圈走了）
       const pl = this.c.player, px = pl.x - this.pos.x, pz = pl.z - this.pos.z, pd = px * px + pz * pz;
-      if (pd < 0.72 && px * Math.sin(this.yaw) + pz * Math.cos(this.yaw) > 0) { const side = px * Math.cos(this.yaw) - pz * Math.sin(this.yaw) > 0 ? -1 : 1; this.pos.x += Math.cos(this.yaw) * side * 0.8 * this.dt; this.pos.z -= Math.sin(this.yaw) * side * 0.8 * this.dt; }
+      if (pd < 0.72 && px * Math.sin(this.yaw) + pz * Math.cos(this.yaw) > 0 && !(Person.shun.length && inShun(pl.x, pl.z, 0))) { const side = px * Math.cos(this.yaw) - pz * Math.sin(this.yaw) > 0 ? -1 : 1; this.pos.x += Math.cos(this.yaw) * side * 0.8 * this.dt; this.pos.z -= Math.sin(this.yaw) * side * 0.8 * this.dt; }
+      // 不迈进要让开的圈里：这一步迈进去了就退回原处（贴着圈边擦过去的两三公分不算，由 giveWay 推出来）
+      if (Person.shun.length) { const me = 0.3 * this.scale - 0.03; if (inShun(this.pos.x, this.pos.z, me) && !inShun(x0, z0, me)) { this.pos.x = x0; this.pos.z = z0; } }
       yield;
+    }
+  }
+  /**
+   * 朝 (x, z) 走的这一步，碰上要让开的圆时该往哪儿去（放进 to）：
+   *   0 —— 不碍事，照直走；1 —— (x, z) 落在圈里：改去圈外最近、站得住的那一处，到了站着等（圈外找不到站处就走到圈边上等）；
+   *       也是绕不过去的时候：就地站着等；
+   *   2 —— 照直走（三米内）会碰上圆：绕着它（几个圆挨在一起时绕着这一团）走，认定一边绕到底，直着走得过去了就照直走；
+   *       那一边碰上墙、篱笆就掉头从另一边绕，两边都不通就站着等（隔两秒再试）。
+   */
+  private steer(x: number, z: number, to: { x: number; z: number }): number {
+    const me = 0.3 * this.scale, px = this.pos.x, pz = this.pos.z, t = this.c.t;
+    let how = 0, tx = x, tz = z;
+    if (inShun(x, z, me)) {
+      const m = this.rim;
+      if (m.gx !== x || m.gz !== z || t - m.t > 0.4 || t < m.t) {
+        const q = rimOf(x, z, px, pz, me);
+        m.gx = x; m.gz = z; m.t = t; m.ok = !!q;
+        if (q) { m.x = q[0]; m.z = q[1]; }
+      }
+      // 圈外近处找不到站处（窄巷里）：照直朝它走，走到圈边上迈不进去，就站在那里等
+      if (!m.ok) { to.x = x; to.z = z; return 1; }
+      tx = m.x; tz = m.z; how = 1;
+    }
+    const b = this.bend, hit = firstHit(px, pz, tx, tz, me, 3);
+    if (!hit) { b.sense = 0; b.flips = 0; to.x = tx; to.z = tz; return how; }
+    // 两边都绕不过去：站着等一会儿再试
+    if (b.flips > 1 && t - b.t < 2 && t >= b.t) { to.x = px; to.z = pz; return 1; }
+    let w: [number, number] | null;
+    if (b.flips > 1 || b.sense === 0) {
+      // 先认往哪一边绕：挪一小段以后离要去处近的那一边
+      const L = around(px, pz, hit, 1, me), Rt = around(px, pz, hit, -1, me);
+      b.flips = 0; b.sense = !L ? -1 : !Rt ? 1 : Math.hypot(L[0] - tx, L[1] - tz) <= Math.hypot(Rt[0] - tx, Rt[1] - tz) ? 1 : -1;
+      w = b.sense > 0 ? L : Rt;
+    } else {
+      w = around(px, pz, hit, b.sense, me);
+      if (!w) { b.sense = -b.sense; b.flips++; w = around(px, pz, hit, b.sense, me); }
+    }
+    if (w) { to.x = w[0]; to.z = w[1]; return 2; }
+    b.flips = 2; b.t = t;
+    to.x = px; to.z = pz;
+    return 1;
+  }
+  /** 站着的人被要让开的圈挨上了（圈挪到了他身上）：往外让开（每秒不到一米；身后是墙就斜着让） */
+  private giveWay(dt: number) {
+    const me = 0.3 * this.scale;
+    for (const d of Person.shun) {
+      if (!(d.r > 0)) continue;
+      const R = d.r + me, qx = this.pos.x - d.x, qz = this.pos.z - d.z, l = Math.hypot(qx, qz);
+      if (l >= R) continue;
+      const ux = l > 1e-3 ? qx / l : -Math.sin(this.yaw), uz = l > 1e-3 ? qz / l : -Math.cos(this.yaw), k = Math.min(R - l, 0.9 * dt);
+      for (const a of [0, 0.7, -0.7, 1.4, -1.4]) {
+        const c = Math.cos(a), s = Math.sin(a), nx = this.pos.x + (ux * c + uz * s) * k, nz = this.pos.z + (uz * c - ux * s) * k;
+        if (!blocked(nx, nz, 'ground', 0.18)) { this.pos.x = nx; this.pos.z = nz; break; }
+      }
     }
   }
   /**
@@ -403,6 +545,7 @@ export class Person {
     this.dropKeeps();
     f.reach('L', null); f.reach('R', null); f.lookAt(null); f.bow = 0;
     this.rest = null; this.curious = true; this.tilt = 0; this.glance = 0; this.nod = 0; this.glanceAt = null; this.walking = false; this.trip = false; this.waveT = 0;
+    this.spots.length = 0;
     if (this.talkTo) { if (this.talkTo.talkTo === this) this.talkTo.talkEnd = 0; this.talkTo = null; }
   }
   /** 回家：认着路走到门口，不见了 */
@@ -414,8 +557,9 @@ export class Person {
     yield* this.wait(0.5 + (this.idx % 4) * 1.3);
     const h = this.home;
     this.trip = true;
-    for (const v of yield* this.way(h[0][0], h[0][1])) yield* this.walk(v[0] + this.ox, v[1] + this.oz, 1.15, 0.5);
-    for (const [x, z] of h) yield* this.walk(x, z, 1.15, 0.35);
+    const r = yield* this.way(h[0][0], h[0][1]);
+    for (let i = 0; i < r.length; i++) yield* this.walk(r[i][0] + this.ox, r[i][1] + this.oz, 1.15, 0.5, i + 1 < r.length ? [r[i + 1][0] + this.ox, r[i + 1][1] + this.oz] : h[0]);
+    for (let i = 0; i < h.length; i++) yield* this.walk(h[i][0], h[i][1], 1.15, 0.35, h[i + 1]);
     this.vanish();
   }
 
@@ -513,6 +657,8 @@ export class Person {
       }
     }
     if (this.gone) { this.blocker.x = this.blocker.z = 1e6; this.blocker.r = 0; return; }
+    // 站着的被要让开的圈挨上了（行者蹲到了跟前、狗过来卧在脚边）：往外让开（坐着、蹲着干活的不挪）
+    if (Person.shun.length && !this.seated) this.giveWay(dt);
 
     // —— 落到地上 ——
     if (this.pos.x !== this.lastX || this.pos.z !== this.lastZ) clearOfTrees(this.pos);

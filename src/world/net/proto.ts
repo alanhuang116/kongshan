@@ -16,6 +16,16 @@ export const ACTS: ReadonlyArray<readonly [string, string]> = P.acts as Array<[s
 export const BOUNDS = P.bounds as { x: [number, number]; y: [number, number]; z: [number, number]; speed: number };
 /** 作揖、说话给多近的人（米；中转也按这个量） */
 export const NEAR: number = P.near;
+/** 天气的单子（园中天时里报的是序号） */
+export const WEATHERS: readonly string[] = (P as { weathers?: string[] }).weathers ?? ['clear', 'mist', 'rain', 'snow'];
+/**
+ * 玩法的几条线（斗鸡、蹴鞠、射箭、抢座、答题、骑、投壶、打水漂、打坐、杂）：一条消息是其中一个序号加至多十六个整数，
+ * 里头怎么排由各样玩法自己定（中转只认形状）。只往后添
+ */
+export const GAMES: readonly string[] = (P as { games?: string[] }).games ?? [];
+export type GameKind = 'cock' | 'cuju' | 'archery' | 'seat' | 'quiz' | 'ride' | 'pitchpot' | 'skip' | 'sit' | 'misc';
+/** 样子、名片、玩法一条至多几个数（与中转一样） */
+export const LOOK_N = 16, CARD_N = 16, GAME_N = 16;
 
 export type Name = [number, number];
 export const nameOf = (n: Name | null | undefined): string => (n ? (NAME_A[n[0]] ?? '') + (NAME_B[n[1]] ?? '') : '');

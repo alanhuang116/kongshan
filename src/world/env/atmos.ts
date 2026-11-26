@@ -71,8 +71,21 @@ export class Atmos {
   private srNow = SUN.spring[0]; private ssNow = SUN.spring[1]; private tintNow: RGB = TINT.spring;
   /** 星斗按哪一季的天排、亮几成：换季时星斗（连月）先淡下去，淡尽了才换成新一季的天再亮起来——满天星不会一下子跳到别处 */
   private skySeason: Season = 'spring'; private starK = 1;
+  /**
+   * 闪电（夏天下大雨时）：隔十几二十秒在天边某处打一个——那一下纸面一白（一闪、一暗、再一闪、又一闪），一道折折的电自云底下到远山，
+   * 亮一会儿、淡下去。也可以叫它在某个方位打一个（观象「噬嗑」站定时，strike）。雷声由声音那一路自己排（soundscape 的 storm）。
+   */
+  private bolt: { t: number; az: number; seed: number } | null = null;
+  private boltNext = 9;
+  /** 此刻纸面白几成（打闪的那一下） */
+  flash = 0;
 
   constructor(scene: THREE.Scene, private painter: Painter) { scene.add(this.sky.group); }
+  /** 在方位 az（度：0 正南，90 正东，同观象的 far）打一个闪；不给就随便一处 */
+  strike(az?: number) {
+    this.bolt = { t: 0, az: ((az ?? Math.random() * 360) * Math.PI) / 180, seed: Math.random() * 97 };
+    this.boltNext = Math.max(this.boltNext, 7);
+  }
 
   /** 正在换季（那一小段过渡里） */
   get seasonFading() { return !!this.sf; }
@@ -134,9 +147,21 @@ export class Atmos {
     let P: Pal = PAL.day;
     const blend = (a: Pal, b: Pal, x: number): Pal => ({ paper: mix3(a.paper, b.paper, x), mist: mix3(a.mist, b.mist, x), light: mix3(a.light, b.light, x), ink: mix3(a.ink, b.ink, x), skyPig: mix3(a.skyPig, b.skyPig, x), skyD: a.skyD + (b.skyD - a.skyD) * x, mtPig: mix3(a.mtPig, b.mtPig, x) });
     P = blend(P, PAL.dawn, sm(0, 1, dawn)); P = blend(P, PAL.dusk, sm(0, 1, dusk)); P = blend(P, PAL.night, night);
+    // 闪电：夏天下大雨时隔一阵在天边打一个；打着的那一道照它的时刻算纸面白几成、电亮几成
+    if (this.season === 'summer' && W.rain > 0.6 && !sf) { this.boltNext -= dt; if (this.boltNext <= 0) { this.strike(); this.boltNext = 11 + Math.random() * 22; } }
+    let boltK = 0;
+    this.flash = 0;
+    if (this.bolt) {
+      const b = this.bolt, bt = (b.t += dt), pk = (c: number, w: number) => Math.max(0, 1 - Math.abs(bt - c) / w);
+      // 一闪、一暗、再一闪、又一闪：纸面白；电在前半秒里一直亮着、跟着闪一跳一跳，过后一点点淡下去
+      this.flash = Math.max(pk(0.03, 0.06), 0.75 * pk(0.18, 0.05), 0.5 * pk(0.36, 0.05));
+      boltK = bt < 0.48 ? 0.72 + 0.28 * Math.max(pk(0.03, 0.08), pk(0.18, 0.07), pk(0.36, 0.07)) : 0.72 * Math.exp(-(bt - 0.48) / 0.32);
+      if (bt > 1.8) this.bolt = null;
+    }
     // 季节给纸一点点冷暖（tint，上面按季取的）；雨天发灰，雾天发白，雪天清冷
     const grey = 1 - 0.13 * W.rain * (1 - 0.6 * night) - 0.03 * W.mist, cool: RGB = [1 - 0.02 * W.rain - 0.012 * W.snow, 1 - 0.008 * W.rain, 1 + 0.012 * W.snow];
-    const fin = (c: RGB): RGB => [c[0] * tint[0] * grey * cool[0], c[1] * tint[1] * grey * cool[1], Math.min(1, c[2] * tint[2] * grey * cool[2])];
+    const fl = this.flash * (1 - 0.5 * night);
+    const fin = (c: RGB): RGB => { const v: RGB = [c[0] * tint[0] * grey * cool[0], c[1] * tint[1] * grey * cool[1], Math.min(1, c[2] * tint[2] * grey * cool[2])]; return fl > 0 ? [v[0] + (0.985 - v[0]) * 0.6 * fl, v[1] + (0.985 - v[1]) * 0.6 * fl, v[2] + (0.995 - v[2]) * 0.6 * fl] : v; };
     set3(U.uPaper.value, fin(P.paper)); set3(U.uMist.value, fin(mix3(P.mist, P.paper, 0.35 * W.mist))); set3(U.uLight.value, fin(P.light)); set3(U.uInk.value, P.ink);
     this.painter.fadeColor.copy(U.uMist.value);
     U.uNight.value = night;
@@ -183,6 +208,11 @@ export class Atmos {
     s.uMoon.value.set(md.y > -0.04 ? 0.034 : 0, cosE, (night + dayMoon) * clear * moonUp * this.starK, night);
     set3(s.uMtPig.value, P.mtPig);
     s.uMt.value.x = 1 - 0.75 * W.mist - 0.85 * W.rain - 0.7 * W.snow;
+    // 电（落在远山后头一点）与那一下天发白
+    s.uBolt.value.set(this.bolt ? this.bolt.az : 0, 0.31, boltK, this.bolt ? this.bolt.seed : 0);
+    s.uBolt2.value.set(0.022, this.flash * 0.9, 0, 0);
+    // 西山上的墨云：雾大了、要下雨了就聚起来（雨下透了散成一片灰，留一半）；夜里看不见
+    this.sky.setRack(Math.max(sm(0.3, 0.85, W.mist), sm(0.05, 0.28, W.rain) * (1 - 0.5 * sm(0.6, 1, W.rain))) * (1 - W.snow) * (1 - 0.7 * night));
     this.sky.update(dt, { night, clear: clear * this.starK, moonUp: night > 0.3 ? moonUp : 0, illum });
     if (sf && sf.k >= 1) this.sf = null;
 

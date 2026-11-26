@@ -5,7 +5,13 @@
  *   各人画成一位穿不同衣色的读书人，头上一枚小小的名签（雅号）；走近了可以作揖（对方若闲着会还礼）、说一句现成的话、同行。
  *   各人一秒报八回自己在哪、朝哪、多快、在哪一处、做什么事、什么姿态（没变就不报）；别人那边按报来的钟插值着画（interp.ts）。
  *   连不上、断了：照样一个人玩，过一会儿自己再连（client.ts）。没有一个字是自己写的：名字、话都是单子上的（proto.ts）。
- *   天时（晨昏、四季、晴雨）各人各是各的：你这里是黄昏，他那里也许是早上——别人照样画在你的天时里。
+ *   天时：同游时同屋的人看同一个时辰、节气、天气——随屋里最早进来的那一位：按他那里的真实钟点与节气走，天气随他（他报时区与天气，
+ *   中转记着、转给大家；钟点各人按「此刻 + 那个时区」自己算）。他走了换下一位。独游时天时各自拨（world 的 setShared）。
+ *   有人手机收起、切到别处，连线断了：先记作「暂离」，几分钟内回来还认得是那一位（人数不跟着少一位）。
+ *   样子（setLook：男女、穿戴）、名片（setCard：修为、各样玩法最好的成绩）：进门报上，变了再报；同屋的人那边照着画、排榜。
+ *   玩法（sendGame / onGame）：斗鸡、蹴鞠、抢座……一条是 GAMES 的一种加至多十六个整数，发给同屋某一位或同屋的人。
+ *   路标（placeMark / marks）：在某处留下自己取的一卦，人人看得见（中转在内存里留三天）。
+ *   这几样要中转认得（进门时 wel 的 x ≥ 1）；旧的一版中转不认得，就只在自己这边（样子照旧画成读书人，路标只自己看得见）。
  *
  * 网址：默认连线上的中转（GitHub Pages 上那一份与服务器上那一份都是）；?ws=ws://localhost:3820/ws 连本机的（试的时候），?ws=0 不连，?ws=1 用默认的。
  * 开发服务器（vite dev）与自动测试（navigator.webdriver）默认不连，要连就给 ?ws=。
@@ -16,16 +22,22 @@
 import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
 import { NetClient, type Status } from './client';
-import { loadIdentity, roll, saveIdentity, type Identity } from './identity';
-import { PHRASES, NEAR, BOUNDS, actIndex, actLabel, nameOf, phraseText, placeIndex, poseIndex, robeName, type Name } from './proto';
+import { localTz } from '../env/months';
+import type { Weather } from '../env/atmos';
+import { loadIdentity, nameFits, roll, rollFor, saveIdentity, type Identity } from './identity';
+import { PHRASES, NEAR, BOUNDS, WEATHERS, actIndex, actLabel, nameOf, phraseText, placeIndex, poseIndex, robeName, type Name } from './proto';
 import { Remote, type Line } from './remote';
-import type { State, WireIn } from './wire';
+import type { State, WireIn, WireMark } from './wire';
+import { GAMES, LOOK_N, CARD_N, GAME_N, type GameKind } from './proto';
 import { cnNum, farText, labels, relayUrl } from './words';
 
 export { DEFAULT_RELAY, cnNum, farText, labels, relayUrl } from './words';
 
 /** 作揖、说话、同行要走到多近（米；中转那边宽一些，按 NEAR） */
 export const CLOSE = 12;
+/** 暂离的人认多久（毫秒）：这么久里回来还是那一位 */
+export const AWAY_MS = 5 * 60 * 1000;
+const awayKey = (n: Name, c: number) => `${n[0]}.${n[1]}.${c}`;
 
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -40,13 +52,21 @@ export interface PeerView {
   following: boolean;
   /** 向你作揖了、等你还礼 */ invite: boolean;
 }
+/** 名片上的一位（排榜用）：自己是 id 0 */
+export interface CardRow { id: number; label: string; c: number; cd: number[]; me: boolean }
 export interface NetView {
   /** 有没有可连的中转（没有时界面什么也不出） */ enabled: boolean;
   on: boolean; status: Status;
   me: { label: string; robe: string; c: number; n: Name };
   peers: PeerView[];
   /** 同屋另有几位；画面近处几位 */ others: number; near: number;
+  /** 园中连你一共几位（暂离的几分钟里也算） */ total: number;
+  /** 暂离的（手机收起、切到别处，连线断了）：几分钟内回来还认他 */ away: Array<{ key: string; label: string; robe: string; c: number }>;
+  /** 园中天时随谁：self 是你自己最早来（或只有你）；host 是那一位的名字；tz 是那里的时区（分钟）；own 是你此刻拨的是自己的天时。独游是 null */
+  sky: { self: boolean; host: string; tz: number; own: boolean } | null;
   following: number | null;
+  /** 中转认得样子、名片、玩法、路标 */ ext: boolean;
+  /** 路标的枚数（变了界面重画） */ marks: number;
 }
 
 export class Together {
@@ -76,19 +96,48 @@ export class Together {
   budget: number;
   private met = new Set<number>();
   private welcomed = false; private quietUntil = 0;
-  private fo: { id: number; t: number; goal: [number, number] | null; told: boolean; ran: boolean; lost: number } | null = null;
+  private fo: { id: number; t: number; goal: [number, number] | null; seq: number; told: boolean; ran: boolean; lost: number } | null = null;
+  /** 同屋的人按进门的先后（自己也在里头）：排第一的那一位定园中天时 */
+  private order: number[] = [];
+  /** 那一位报来的天时 */
+  private skyIn: { by: number; tz: number; w: number } | null = null;
+  private skySent = ''; private skySentAt = -1e9;
+  /** 暂离的人：名字＋衣色 → 走的时候 */
+  private away = new Map<string, { n: Name; c: number; label: string; at: number }>();
   private bowTimer = 0; private socialAt = 0;
   /** 没有界面（?ui=0、world.html 那个台子）又明说了要连：画一淡开就算走动着 */
   private autoPlay: boolean;
+  /** 同游时天时随园中（默认）；?share=0 不随（自动测试里要定在某个时辰、某一季时用） */
+  private shareSky: boolean;
+  /** 同游时自己拨了天时（拨了季、时辰、月、流转，或拨了别人定的天气）：这时画里是自己的天时，同屋的人看到的仍是园中此刻；「回到此刻」放开 */
+  private ownSky = false;
+  /** 自己拨天时 / 回到园中此刻 */
+  setOwnSky(on: boolean) { if (on === this.ownSky) return; this.ownSky = on; this.dirty = true; }
+  get skyOwn(): boolean { return this.ownSky; }
+  /** 中转认得新添的几样（wel 的 x） */
+  ext = false;
+  /** 自己的样子、名片（还没给是 null：中转那边就不报） */
+  private lookD: number[] | null = null; private cardD: number[] | null = null;
+  private lookSent = ''; private cardSent = ''; private lookAt = -1e9; private cardAt = -1e9;
+  /** 同屋各人的名片 */
+  private cardsIn = new Map<number, number[]>();
+  /** 路标：编号 → 那一枚（中转来的；没连上时是空的——自己这边的另由玩法自己存） */
+  marks = new Map<number, WireMark>();
+  /** 路标留几分钟（中转说的） */
+  markTtl = 4320;
+  private gameSubs = new Map<number, Set<(fr: number, d: number[], to: number) => void>>();
+  private peerSubs = new Set<(ev: 'in' | 'out', id: number) => void>();
+  private markAt = new Map<number, number>();
 
   constructor(private k: Anlewo, loc: { search: string; dev: boolean; webdriver: boolean; path?: string }) {
     const r = relayUrl(loc.search, loc.dev, loc.webdriver);
     this.url = r.url; this.explicit = r.explicit;
     this.autoPlay = r.explicit && (new URLSearchParams(loc.search).get('ui') === '0' || /world\.html$/.test(loc.path ?? ''));
     this.budget = k.q.tier === 'low' || k.q.mobile ? 3 : 5;
+    this.shareSky = new URLSearchParams(loc.search).get('share') !== '0';
     this.me = loadIdentity();
     this.snapshot = this.build();
-    if (this.url) this.client = new NetClient(this.url, () => ({ n: this.me.n, c: this.me.c }), { status: (s) => this.onStatus(s), message: (m) => this.onMessage(m) });
+    if (this.url) this.client = new NetClient(this.url, () => ({ n: this.me.n, c: this.me.c, lk: this.lookD, cd: this.cardD }), { status: (s) => this.onStatus(s), message: (m) => this.onMessage(m) });
   }
 
   // —— 给界面的 ——
@@ -102,15 +151,112 @@ export class Together {
   setOnline(on: boolean) {
     if (on === this.me.on) return;
     this.me = { ...this.me, on }; saveIdentity(this.me);
+    // 换了独游、同游：自己拨的那一回作罢（再同游时先随园中此刻）
+    this.ownSky = false;
     if (!on) this.follow(null);
     this.sync(); this.emit();
   }
-  /** 换一个雅号（衣色跟着换） */
-  reroll() {
-    this.me = roll(this.me); saveIdentity(this.me);
+  /** 换一个雅号（衣色跟着换）；给了男女就按男女挑（女子不叫钓叟、樵子） */
+  reroll(sex?: 'm' | 'f') {
+    this.me = sex ? rollFor(sex, this.me) : roll(this.me); saveIdentity(this.me);
     this.client?.send({ t: 'nm', n: this.me.n, c: this.me.c });
+    this.nameToWorld();
     this.emit();
   }
+  /** 雅号换了：世界里你叫什么（榜上写的）跟着换——选过人的才跟（还没选人时选人那一页自己定） */
+  private nameToWorld() { if (this.k.chosen) this.k.setPersona({ name: nameOf(this.me.n) }); }
+  /** 定下一个雅号（选人那一页挑好的） */
+  setName(n: Name) {
+    if (n[0] === this.me.n[0] && n[1] === this.me.n[1]) return;
+    this.me = { ...this.me, n: [n[0], n[1]] }; saveIdentity(this.me);
+    this.client?.send({ t: 'nm', n: this.me.n, c: this.me.c });
+    this.nameToWorld();
+    this.emit();
+  }
+  /** 此刻的雅号合不合这个男女（换了女子、雅号还是「钓叟」：选人那一页另起一个） */
+  nameFits(sex: 'm' | 'f'): boolean { return nameFits(this.me.n[1], sex); }
+  /**
+   * 自己的样子（至多十六个 0…255：男女、衣、冠、饰的序号，由换装那边编）。变了就报给同屋的人（一分钟至多三四回；
+   * 试衣时别调它，穿上了再调）。没连上时记着，进门时一并报上
+   */
+  setLook(d: number[] | null) {
+    const v = d ? d.slice(0, LOOK_N).map((x) => clamp(Math.round(x) || 0, 0, 255)) : null;
+    this.lookD = v;
+    this.flushLook(performance.now());
+  }
+  private flushLook(now: number) {
+    const v = this.lookD, key = v ? v.join(',') : '';
+    if (!v || key === this.lookSent || !this.ext || !this.client?.online || now - this.lookAt < 2000) return;
+    if (this.client.send({ t: 'lk', d: v })) { this.lookSent = key; this.lookAt = now; }
+  }
+  /** 自己的名片（至多十六个 0…999999：修为、各样玩法最好的成绩，由排榜那边编）。变了就报 */
+  setCard(d: number[] | null) {
+    const v = d ? d.slice(0, CARD_N).map((x) => clamp(Math.round(x) || 0, 0, 999999)) : null;
+    this.cardD = v;
+    this.flushCard(performance.now());
+  }
+  private flushCard(now: number) {
+    const v = this.cardD, key = v ? v.join(',') : '';
+    if (!v || key === this.cardSent || !this.ext || !this.client?.online || now - this.cardAt < 2000) return;
+    if (this.client.send({ t: 'cd', d: v })) { this.cardSent = key; this.cardAt = now; }
+  }
+  /** 他的样子（没报过是 null：画成读书人） */
+  lookOf(id: number): number[] | null { return this.remotes.get(id)?.lk ?? null; }
+  /** 同屋各人的名片（连自己；没报过名片的不在里头） */
+  cards(): CardRow[] {
+    const ls = labels(this.list()), out: CardRow[] = [];
+    if (this.cardD) out.push({ id: 0, label: ls.get(0) ?? nameOf(this.me.n), c: this.me.c, cd: this.cardD, me: true });
+    for (const [id, cd] of this.cardsIn) { const r = this.remotes.get(id); if (r) out.push({ id, label: ls.get(id) ?? nameOf(r.n), c: r.c, cd, me: false }); }
+    return out;
+  }
+  /** 同游开着、连上了、中转认得玩法：玩法这时才能找别人一起（不然只和村里人玩） */
+  get canPlay(): boolean { return this.ext && !!this.client?.online && this.me.on; }
+  /** 自己在中转上的编号（没连上是 0） */
+  get myId(): number { return this.client?.online ? this.client.id : 0; }
+  /**
+   * 玩法里的一条：kind 是哪一样（GAMES），to 是同屋的某一位（0：同屋的人），d 至多十六个整数（±9999999，坐标这类乘一百再发）。
+   * 发出去了返回 true（没连上、中转不认得、太勤了：false——玩法自己看着办，比如对面就当是村里人）
+   */
+  sendGame(kind: GameKind, to: number, d: number[]): boolean {
+    const k = GAMES.indexOf(kind);
+    if (k < 0 || !this.canPlay || d.length > GAME_N || !d.every((v) => Number.isInteger(v) && Math.abs(v) <= 9999999)) return false;
+    if (to && !this.remotes.has(to)) return false;
+    return this.client!.send({ t: 'g', to, k, d });
+  }
+  /** 收这一样玩法的消息：f(谁发的, 那几个数, 发给谁——0 是发给同屋的人)。返回取消的函数 */
+  onGame(kind: GameKind, f: (fr: number, d: number[], to: number) => void): () => void {
+    const k = GAMES.indexOf(kind);
+    if (k < 0) return () => {};
+    let set = this.gameSubs.get(k);
+    if (!set) this.gameSubs.set(k, (set = new Set()));
+    set.add(f);
+    return () => { set!.delete(f); };
+  }
+  /** 有人进门、走了（暂离也算走了）：玩法据此收场。返回取消的函数 */
+  onPeer(f: (ev: 'in' | 'out', id: number) => void): () => void { this.peerSubs.add(f); return () => { this.peerSubs.delete(f); }; }
+  private firePeer(ev: 'in' | 'out', id: number) { for (const f of this.peerSubs) { try { f(ev, id); } catch (e) { console.warn('同游：玩法收场出错', e); } } }
+  /**
+   * 留一枚路标：在哪（x, z）、哪一卦（GUA 的序号 0…63）、此刻几月、几时、什么天气。中转收下了会发回来（marks 里就有了、mine 为真）。
+   * 一个人同时至多三枚，再留就收回最早的；一分钟至多一枚。没连上、中转不认得：false（玩法自己存在本机）
+   */
+  placeMark(m: { x: number; z: number; g: number; mo: number; h: number; w: number }): boolean {
+    if (!this.canPlay) return false;
+    const d = [r2(clamp(m.x, BOUNDS.x[0], BOUNDS.x[1])), r2(clamp(m.z, BOUNDS.z[0], BOUNDS.z[1])), clamp(Math.round(m.g), 0, 63), clamp(Math.round(m.mo), 1, 12), clamp(Math.round(m.h), 0, 23), clamp(Math.round(m.w), 0, WEATHERS.length - 1)];
+    return this.client!.send({ t: 'mk', d });
+  }
+  /** 收回自己留的一枚 */
+  unmark(id: number): boolean {
+    const k = this.marks.get(id);
+    if (!k?.mine || !this.canPlay) return false;
+    return this.client!.send({ t: 'mkx', id });
+  }
+  /** 一枚路标还剩几分钟（按收到时的「留了几分钟」与这边过了多久算） */
+  markLeft(id: number): number {
+    const k = this.marks.get(id), at = this.markAt.get(id);
+    if (!k || at == null) return 0;
+    return Math.max(0, this.markTtl - k.age - (performance.now() - at) / 60000);
+  }
+
   private sync() {
     const want = !!this.client && this.playing && this.me.on;
     this.client?.setWant(want);
@@ -164,7 +310,10 @@ export class Together {
       const p = this.k.player, path = p.path, e = path?.[path.length - 1];
       if (halt && p.walking && prev.goal && e && Math.hypot(e[0] - prev.goal[0], e[1] - prev.goal[1]) < 0.35) p.stop();
     }
-    this.fo = id == null || !this.remotes.has(id) ? null : prev?.id === id ? prev : { id, t: 1, goal: null, told: false, ran: false, lost: 0 };
+    // 开始跟一位时，自己正走着的那一程先停下（不然下面一看「在走，又不是同行派的」，就当是自己动了手）
+    const fresh = id != null && this.remotes.has(id) && prev?.id !== id;
+    if (fresh && this.k.player.walking) this.k.player.stop();
+    this.fo = id == null || !this.remotes.has(id) ? null : prev?.id === id ? prev : { id, t: 1, goal: null, seq: -1, told: false, ran: false, lost: 0 };
     this.following = this.fo?.id ?? null;
     this.dirty = true;
   }
@@ -183,11 +332,31 @@ export class Together {
     this.met.clear();
     if (this.fo) this.follow(null);
     this.invite = null;
+    this.order = []; this.skyIn = null; this.away.clear(); this.skySent = '';
+    this.cardsIn.clear(); this.lookSent = ''; this.cardSent = '';
+    if (this.marks.size) { this.marks.clear(); this.markAt.clear(); }
   }
-  private add(id: number, n: Name, c: number): Remote {
+  /** 园中天时随谁：同屋排第一的那一位（没连上时是自己） */
+  private hostId(): number {
+    const c = this.client, me = c?.id ?? 0;
+    return c?.online && this.order.length ? this.order[0] : me;
+  }
+  /**
+   * 此刻园中天时的那一份：同游开着就有（题名页上也是：先随自己这里的此刻，进园时不必再换一回天色）；独游、没有可连的中转时是 null（各自拨）。
+   * 排第一的不是自己、他也报来了：随他（时区、天气）；不然按自己这里的此刻，天气是自己的。
+   */
+  private skyNow(): { tz: number; weather: Weather | null; host: number; self: boolean } | null {
+    const c = this.client;
+    if (!c || !this.me.on || !this.shareSky) return null;
+    const me = c.id ?? 0, host = this.hostId();
+    if (c.online && host !== me && this.skyIn && this.skyIn.by === host) return { tz: this.skyIn.tz, weather: (WEATHERS[this.skyIn.w] ?? 'clear') as Weather, host, self: false };
+    return { tz: localTz(), weather: null, host: me, self: true };
+  }
+  private add(id: number, n: Name, c: number, lk: number[] | null = null): Remote {
     let r = this.remotes.get(id);
-    if (r) { r.rename(n, c); return r; }
+    if (r) { r.rename(n, c); if (lk) r.setLook(lk); return r; }
     r = new Remote(this.k.world.scene, this.k.q, id, n, c, this.seq++);
+    if (lk) r.setLook(lk);
     this.remotes.set(id, r);
     return r;
   }
@@ -198,21 +367,61 @@ export class Together {
         this.clear();
         this.lastSent = null; this.ct0 = now;
         for (const p of m.ps) { const r = this.add(p.id, p.n, p.c); if (p.st) r.push(p.st, now, false); }
+        // 进门的先后：名单是按先后排的，自己排在最后
+        this.order = [...m.ps.map((p) => p.id), m.id];
+        this.skyIn = m.sky ? { by: m.sky[0], tz: m.sky[1], w: m.sky[2] } : null;
+        this.skySent = '';
+        // 新添的几样：中转认得才有
+        this.ext = m.x >= 1;
+        for (const p of m.px) { const r = this.remotes.get(p.id); if (!r) continue; if (p.lk.length) r.setLook(p.lk); if (p.cd.length) this.cardsIn.set(p.id, p.cd); }
+        this.markTtl = m.mt;
+        this.marks.clear(); this.markAt.clear();
+        for (const k of m.mk) { this.marks.set(k.id, k); this.markAt.set(k.id, now); }
+        // 进门时报的样子、名片就是此刻的（之后变了再报）
+        this.lookSent = this.lookD ? this.lookD.join(',') : ''; this.cardSent = this.cardD ? this.cardD.join(',') : '';
+        for (const p of m.ps) this.firePeer('in', p.id);
         if (!this.welcomed && m.ps.length) this.k.note(`园中另有${cnNum(m.ps.length)}位游人`, 'net');
         this.welcomed = true;
         // 进门时本来就在近处的，不再说「走近了」
         this.quietUntil = now + 2500;
         break;
       }
-      case 'in': this.add(m.id, m.n, m.c); break;
+      case 'in': {
+        this.order.push(m.id);
+        this.add(m.id, m.n, m.c, m.lk);
+        if (m.cd) this.cardsIn.set(m.id, m.cd);
+        this.firePeer('in', m.id);
+        // 暂离的那一位回来了（名字、衣色都对得上）
+        const key = awayKey(m.n, m.c), was = this.away.get(key);
+        if (was) { this.away.delete(key); this.met.add(m.id); this.k.note(`${was.label}回来了`, 'net'); }
+        break;
+      }
+      case 'sky': if (m.fr === this.hostId()) this.skyIn = { by: m.fr, tz: m.d[0], w: m.d[1] }; break;
       case 'nm': this.remotes.get(m.id)?.rename(m.n, m.c); break;
+      case 'lk': this.remotes.get(m.id)?.setLook(m.d); break;
+      case 'cd': if (this.remotes.has(m.id)) this.cardsIn.set(m.id, m.d); break;
+      case 'g': {
+        if (m.fr === me || !this.remotes.has(m.fr) || (m.to !== 0 && m.to !== me)) return;
+        const set = this.gameSubs.get(m.k);
+        if (set) for (const f of set) { try { f(m.fr, m.d, m.to); } catch (e) { console.warn('同游：玩法出错', e); } }
+        return;
+      }
+      case 'mk': this.marks.set(m.m.id, m.m); this.markAt.set(m.m.id, now); break;
+      case 'mkx': this.marks.delete(m.id); this.markAt.delete(m.id); break;
       case 'out': {
         const r = this.remotes.get(m.id);
+        this.order = this.order.filter((x) => x !== m.id);
+        if (this.skyIn?.by === m.id) this.skyIn = null;
         if (!r) break;
-        if (r.shown && r.dist < 15) this.k.note(`${this.label(m.id)}别过`, 'net');
+        // 先记作暂离：手机收起、切到别处也会断开，几分钟内回来还是他
+        const lb = this.label(m.id);
+        if (r.seen) this.away.set(awayKey(r.n, r.c), { n: r.n, c: r.c, label: lb, at: now });
+        if (r.shown && r.dist < 15) this.k.note(`${lb}暂离`, 'net');
         if (this.following === m.id) this.follow(null);
         if (this.invite?.id === m.id) this.invite = null;
         r.dispose(); this.remotes.delete(m.id);
+        this.cardsIn.delete(m.id);
+        this.firePeer('out', m.id);
         break;
       }
       case 'st': for (const [id, st] of m.ps) if (id !== me) this.remotes.get(id)?.push(st, now); return;
@@ -320,6 +529,16 @@ export class Together {
     }
     if (this.selfLine && this.selfLine.until < now) this.selfLine = null;
     if (this.invite && this.invite.until < now) { this.invite = null; this.dirty = true; }
+    for (const [key, a] of this.away) if (now - a.at > AWAY_MS) { this.away.delete(key); this.dirty = true; }
+    // 样子、名片：变了、没来得及报的（刚连上、隔得太近），这时补报
+    if (c?.online && this.ext) { this.flushLook(now); this.flushCard(now); }
+    // 园中天时：自己排第一，就报自己这里的时区与天气（变了就报，一分钟再报一回，好让后来的人一进门就拿到）；人人照那一份走
+    const sky = this.skyNow();
+    if (c?.online && sky?.self && this.order.length) {
+      const d: [number, number] = [localTz(), Math.max(0, WEATHERS.indexOf(k.atmos.weather))], key = d.join(',');
+      if ((key !== this.skySent || now - this.skySentAt > 60000) && c.send({ t: 'sky', d })) { this.skySent = key; this.skySentAt = now; }
+    }
+    k.setShared(sky && !this.ownSky ? { tz: sky.tz, weather: sky.weather } : null);
     this.stepFollow(dt);
     // 给界面的：一秒四回（距离在变），有事立刻
     this.viewT -= dt;
@@ -335,8 +554,10 @@ export class Together {
     if (!f) return;
     const k = this.k, p = k.player, r = this.remotes.get(f.id);
     if (!r || !this.client?.online) { this.follow(null); return; }
-    // 自己动了手（键盘、摇杆、点了别处、去做一件事）：不跟了
-    const tookOver = p.input.lengthSq() > 0.0009 || !!k.act || k.nav.busy || (f.goal && p.walking && (() => { const path = p.path; const e = path?.[path.length - 1]; return !e || Math.hypot(e[0] - f.goal![0], e[1] - f.goal![1]) > 0.35; })());
+    // 自己动了手（键盘、摇杆、点了别处、去做一件事）：不跟了。
+    // 「点了别处」按人这一程是谁派的来分：不是同行派的（goals 对不上）就是自己点的——
+    // 先前只比路的终点，离他两三步以内、同行没派路时，自己点的路刚起步就被下面「站住」叫停，点什么都像没反应（试玩：学堂「灯火」点了没反应）
+    const tookOver = p.input.lengthSq() > 0.0009 || !!k.act || !!k.pendingAct || k.nav.busy || (p.walking && p.goals !== f.seq);
     if (tookOver) { this.follow(null, false); return; }
     f.t -= dt;
     if (f.t > 0) return;
@@ -351,6 +572,7 @@ export class Together {
       const gx = r.pos.x - (dx / d) * 1.6, gz = r.pos.z - (dz / d) * 1.6;
       if (!p.walking || !f.goal || Math.hypot(gx - f.goal[0], gz - f.goal[1]) > 0.8) {
         p.goTo(gx, gz, { r: 0.4 });
+        f.seq = p.goals;
         const path = p.path, e = path?.[path.length - 1];
         f.goal = e ? [e[0], e[1]] : [gx, gz];
       }
@@ -364,7 +586,7 @@ export class Together {
   }
 
   private build(): NetView {
-    const me = this.me, ls = labels(this.list());
+    const me = this.me, ls = labels(this.list()), sky = this.skyNow();
     const peers: PeerView[] = [];
     for (const r of this.remotes.values()) {
       if (!r.seen) continue;
@@ -379,6 +601,10 @@ export class Together {
       enabled: !!this.client, on: me.on, status: this.status,
       me: { label: ls.get(0) ?? nameOf(me.n), robe: robeName(me.c), c: me.c, n: me.n },
       peers, others: this.remotes.size, near: peers.filter((p) => !p.hidden && p.dist < 40).length, following: this.following,
+      total: 1 + this.remotes.size + this.away.size,
+      away: [...this.away.entries()].map(([key, a]) => ({ key, label: a.label, robe: robeName(a.c), c: a.c })),
+      sky: sky ? { self: sky.self, host: sky.self ? (ls.get(0) ?? nameOf(me.n)) : (ls.get(sky.host) ?? nameOf(this.remotes.get(sky.host)?.n)), tz: sky.tz, own: this.ownSky } : null,
+      ext: this.ext && !!this.client?.online, marks: this.marks.size,
     };
   }
 

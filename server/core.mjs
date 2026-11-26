@@ -7,6 +7,17 @@
  *     数要是有限的、在范围里的，坐标落到厘米。哪一样不对，这一条整个不要；不对的太多，断开。
  *   - 一间屋子至多 roomSize 人（默认 24）。来了人先进人最多、还没满的那间（好遇见人）；断线重连时可以要回原来那间。
  *   - 各人的位置随来随收，每一拍（relay 里 100 毫秒一拍）把这一拍里动过的人一并发给同屋的人。
+ *   - 园中天时：同屋的人看同一个时辰、节气、天气。屋里最早进来的那一位（屋子名单里排第一的）报他那里的时区（分钟）与天气，
+ *     中转记下这一份、转给同屋的人；新进门的在「wel」里就拿到。别人报的不收（谁排第一，两边可能差一拍，不算不对）。
+ *     钟点与节气各人按「此刻 + 那个时区」自己算——不传钟点，免得网慢了差几秒、几分。那一位走了，这一份就作废，等下一位报。
+ *   - 样子（lk）、名片（cd）：各是至多十六个小整数——样子是男女、穿哪一件衣、戴哪一样饰（单子在客户端），名片是修为、各样玩法最好的成绩。
+ *     中转不懂它们是什么，只认是不是整数、在不在范围里；记在这个连接上（进门的人在「wel」里拿到），变了转给同屋的人。
+ *   - 玩法（g）：射箭、斗鸡、蹴鞠、抢座这一类，一条是 proto 里 games 的一个序号加至多十六个整数，发给同屋的某一位、或同屋的人。
+ *     里头是什么由客户端两边约定（中转只认形状、限速）。
+ *   - 路标（mk）：游人在某处留下自己取的一卦（位置、卦、月、时、天气，中转添上他的雅号与衣色），后来路过的人点开看得见。
+ *     这是唯一留得比连接久的东西：记在内存里（不落盘，进程一停就没了），至多 markMax 枚（默认 300），各留 markTtl（默认三天），
+ *     不分屋子、人人看得见；一个连接同时至多留三枚（再留就收回他最早的那一枚）。
+ *   - 新添的这几样，进门时「wel」里的 x 说中转认得（旧的一版没有 x，客户端就不发这几样）。
  */
 import { readFileSync } from 'node:fs';
 
@@ -16,6 +27,14 @@ export const PROTO = JSON.parse(readFileSync(new URL('./proto.json', import.meta
 const NA = PROTO.names.a.length, NB = PROTO.names.b.length, NR = PROTO.robes.length, NK = PROTO.phrases.length;
 const NPL = PROTO.places.length, NPO = PROTO.poses.length, NAC = PROTO.acts.length;
 const BX = PROTO.bounds.x, BY = PROTO.bounds.y, BZ = PROTO.bounds.z, VMAX = PROTO.bounds.speed;
+const NW = (PROTO.weathers ?? ["clear", "mist", "rain", "snow"]).length;
+const NG = (PROTO.games ?? []).length;
+/** 中转认得哪几样新添的（客户端看 wel 里的 x：≥ 1 就有样子、名片、玩法、路标） */
+export const EXT = 1;
+/** 样子、名片、玩法一条至多几个数 */
+export const LOOK_N = 16, CARD_N = 16, GAME_N = 16;
+/** 一个连接同时至多留几枚路标 */
+export const MARK_PER = 3;
 
 /** 一条消息最长多少字节（relay 里 ws 的 maxPayload 也是它） */
 export const MAX_BYTES = 512;
@@ -50,6 +69,29 @@ export function readState(d, prevCt = -1) {
   return [ct, r2(x), r2(y), r2(z), r3(yaw), r2(v), pl, a, po, h];
 }
 
+/**
+ * 园中天时：[时区（分钟，东八区是 480；−720 … 840）, 天气（proto 里 weathers 的序号）]。不对返回 null。
+ */
+export function readSky(d) {
+  return Array.isArray(d) && d.length === 2 && isInt(d[0], -720, 840) && isInt(d[1], 0, NW - 1) ? [d[0], d[1]] : null;
+}
+
+/** 样子：至多十六个 0…255 的整数（男女、衣、冠、饰各是客户端单子上的序号）。不对返回 null */
+export const readLook = (d) => (Array.isArray(d) && d.length <= LOOK_N && d.every((v) => isInt(v, 0, 255)) ? d.slice() : null);
+/** 名片：至多十六个 0…999999 的整数（修为、各样玩法最好的成绩）。不对返回 null */
+export const readCard = (d) => (Array.isArray(d) && d.length <= CARD_N && d.every((v) => isInt(v, 0, 999999)) ? d.slice() : null);
+/** 玩法里的一条：至多十六个整数（±9999999；坐标这类由客户端乘一百发）。不对返回 null */
+export const readGame = (d) => (Array.isArray(d) && d.length <= GAME_N && d.every((v) => isInt(v, -9999999, 9999999)) ? d.slice() : null);
+/**
+ * 路标：[x, z, 卦（0…63，按 gua64 的次序）, 月（1…12）, 时（0…23）, 天气（weathers 的序号）]。坐标落到厘米。不对返回 null
+ */
+export function readMark(d) {
+  if (!Array.isArray(d) || d.length !== 6) return null;
+  const [x, z, g, mo, h, w] = d;
+  if (!isNum(x, BX[0], BX[1]) || !isNum(z, BZ[0], BZ[1]) || !isInt(g, 0, 63) || !isInt(mo, 1, 12) || !isInt(h, 0, 23) || !isInt(w, 0, NW - 1)) return null;
+  return [r2(x), r2(z), g, mo, h, w];
+}
+
 /** 令牌桶：cap 枚，每秒回 rate 枚 */
 export class Bucket {
   constructor(cap, rate, now) { this.cap = cap; this.rate = rate; this.n = cap; this.t = now; }
@@ -70,7 +112,7 @@ const SLOW = 64 * 1024, STUCK = 1024 * 1024;
 
 export class Hub {
   /**
-   * @param {{ roomSize?: number; maxConn?: number; perIp?: number; near?: number; now?: () => number; log?: (...a: unknown[]) => void }} [o]
+   * @param {{ roomSize?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void }} [o]
    */
   constructor(o = {}) {
     this.roomSize = o.roomSize ?? 24;
@@ -87,6 +129,12 @@ export class Hub {
     this.byId = new Map();
     this.ips = new Map();
     this.seq = 0; this.roomSeq = 0;
+    /** 路标：至多几枚、各留多久（毫秒） */
+    this.markMax = o.markMax ?? 300;
+    this.markTtl = o.markTtl ?? 3 * 24 * 3600 * 1000;
+    /** @type {Array<{ id: number; by: number; d: number[]; n: [number, number]; c: number; t: number }>} 先留的在前 */
+    this.marks = [];
+    this.markSeq = 0;
   }
 
   /** 这个地址还能不能再连一个：'ok'、'full'（满了）、'ip'（同一个地址连得太多） */
@@ -104,8 +152,12 @@ export class Hub {
     this.seq = id;
     const c = {
       id, conn, ip, room: null, name: null, robe: 0, st: null, dirty: false, need: false, t0: now, gone: false,
-      strikes: 0, strikeT: now,
-      b: { all: new Bucket(40, 25, now), st: new Bucket(8, 12, now), soc: new Bucket(3, 0.8, now), nm: new Bucket(2, 0.25, now) },
+      strikes: 0, strikeT: now, lk: null, cd: null,
+      b: {
+        all: new Bucket(40, 25, now), st: new Bucket(8, 12, now), soc: new Bucket(3, 0.8, now), nm: new Bucket(2, 0.25, now), sky: new Bucket(4, 0.25, now),
+        // 样子：试衣时不报，穿上了才报（一分钟三四回足够）；名片：成绩变了报；玩法：一秒八条（发给同屋的人算两条）；路标：一分钟一枚
+        lk: new Bucket(4, 0.1, now), cd: new Bucket(6, 0.5, now), g: new Bucket(24, 8, now), mk: new Bucket(2, 1 / 60, now),
+      },
     };
     this.clients.add(c); this.byId.set(id, c);
     this.ips.set(ip, (this.ips.get(ip) ?? 0) + 1);
@@ -123,6 +175,8 @@ export class Hub {
     c.room = null;
     if (room) {
       room.members.delete(c);
+      // 报天时的那一位走了：那一份作废（下一位排第一的会报他自己的）
+      if (room.skyBy === c.id) { room.sky = null; room.skyBy = 0; }
       if (!room.members.size) this.rooms.delete(room.id);
       else this.toRoom(room, { t: 'out', id: c.id });
     }
@@ -160,6 +214,12 @@ export class Hub {
       case 'say': return this.say(c, m, now);
       case 'fo': return this.follow(c, m, now);
       case 'nm': return this.rename(c, m, now);
+      case 'sky': return this.sky(c, m, now);
+      case 'lk': return this.look(c, m, now);
+      case 'cd': return this.card(c, m, now);
+      case 'g': return this.game(c, m, now);
+      case 'mk': return this.mark(c, m, now);
+      case 'mkx': return this.unmark(c, m);
       default: return this.strike(c, 'type');
     }
   }
@@ -170,11 +230,21 @@ export class Hub {
     const n = readName(m.n), r = readRobe(m.c);
     if (!n || r == null) { this.kick(c, CLOSE.bad, 'hello'); return false; }
     c.name = n; c.robe = r;
+    // 样子、名片可以不给（旧的一版没有）；给了不对的只当没给
+    c.lk = m.lk === undefined ? null : readLook(m.lk);
+    c.cd = m.cd === undefined ? null : readCard(m.cd);
     const room = this.pick(readRoom(m.rm));
     const others = [...room.members];
     room.members.add(c); c.room = room;
-    this.send(c, { t: 'wel', v: PROTO.v, id: c.id, rm: room.id, cap: this.roomSize, ps: others.map((o) => [o.id, o.name[0], o.name[1], o.robe, o.st]) });
-    this.toRoom(room, { t: 'in', id: c.id, n, c: r }, c);
+    const now = this.now();
+    this.send(c, {
+      t: 'wel', v: PROTO.v, id: c.id, rm: room.id, cap: this.roomSize, ps: others.map((o) => [o.id, o.name[0], o.name[1], o.robe, o.st]),
+      ...(room.sky ? { sky: [room.skyBy, ...room.sky] } : {}),
+      // 新添的：x 说认得；px 是同屋各人的样子与名片（ps 每项仍是五个，旧的一版照旧认得）；mk 是此刻的路标，mt 是路标留几分钟
+      x: EXT, px: others.filter((o) => o.lk || o.cd).map((o) => [o.id, o.lk ?? [], o.cd ?? []]),
+      mk: this.markList(now), mt: Math.round(this.markTtl / 60000),
+    });
+    this.toRoom(room, { t: 'in', id: c.id, n, c: r, ...(c.lk ? { lk: c.lk } : {}), ...(c.cd ? { cd: c.cd } : {}) }, c);
     return true;
   }
 
@@ -186,7 +256,7 @@ export class Hub {
     for (const r of this.rooms.values()) if (r.members.size < this.roomSize && (!best || r.members.size > best.members.size)) best = r;
     if (best) return best;
     const id = `r${(++this.roomSeq).toString(36)}`;
-    const room = { id, members: new Set() };
+    const room = { id, members: new Set(), sky: null, skyBy: 0 };
     this.rooms.set(id, room);
     return room;
   }
@@ -233,6 +303,101 @@ export class Hub {
     if (!o || (m.on !== 0 && m.on !== 1)) return this.strike(c, 'fo');
     if (!c.b.soc.take(now)) return false;
     this.send(o, { t: 'fo', fr: c.id, on: m.on });
+    return true;
+  }
+
+  /** 园中天时：只收屋里排第一的那一位报的（别人报的不收、不算不对）；收下了记着，转给同屋的人 */
+  sky(c, m, now) {
+    const d = readSky(m.d);
+    if (!d) return this.strike(c, 'sky');
+    const room = c.room;
+    if (room.members.values().next().value !== c) return false;
+    if (!c.b.sky.take(now)) return false;
+    room.sky = d; room.skyBy = c.id;
+    this.toRoom(room, { t: 'sky', fr: c.id, d }, c);
+    return true;
+  }
+
+  /** 换了样子（穿上了别的衣、饰；换了男女） */
+  look(c, m, now) {
+    const d = readLook(m.d);
+    if (!d) return this.strike(c, 'lk');
+    if (!c.b.lk.take(now)) return false;
+    c.lk = d;
+    this.toRoom(c.room, { t: 'lk', id: c.id, d }, c);
+    return true;
+  }
+
+  /** 名片变了（修为、成绩） */
+  card(c, m, now) {
+    const d = readCard(m.d);
+    if (!d) return this.strike(c, 'cd');
+    if (!c.b.cd.take(now)) return false;
+    c.cd = d;
+    this.toRoom(c.room, { t: 'cd', id: c.id, d }, c);
+    return true;
+  }
+
+  /** 玩法里的一条：to 是同屋的某一位（远近不论），0 是同屋的人（自己除外） */
+  game(c, m, now) {
+    const d = readGame(m.d);
+    if (!d || !isInt(m.k, 0, NG - 1)) return this.strike(c, 'g');
+    let o = null;
+    if (m.to !== 0) {
+      if (!isInt(m.to, 1, 999999) || m.to === c.id) return this.strike(c, 'g');
+      o = this.byId.get(m.to);
+      // 对方刚走（同屋里没有了）：不送，也不算不对
+      if (!o || o.room !== c.room) return false;
+    }
+    if (!c.b.g.take(now, o ? 1 : 2)) return false;
+    const out = { t: 'g', fr: c.id, to: o ? o.id : 0, k: m.k, d };
+    if (o) this.send(o, out); else this.toRoom(c.room, out, c);
+    return true;
+  }
+
+  /** 此刻还在的路标：[编号, x, z, 卦, 月, 时, 天气, 名一, 名二, 衣色, 留了几分钟] */
+  markList(now) {
+    this.pruneMarks(now);
+    return this.marks.map((k) => [k.id, ...k.d, k.n[0], k.n[1], k.c, Math.floor((now - k.t) / 60000)]);
+  }
+  pruneMarks(now) {
+    const t0 = now - this.markTtl;
+    let i = 0;
+    while (i < this.marks.length && this.marks[i].t < t0) i++;
+    if (i) this.marks.splice(0, i);
+  }
+  /** 发给所有连着的人（路标不分屋子）；me 是留标的那一位：给他的那一份添 me: 1 */
+  toAll(msg, me = null) {
+    const s = JSON.stringify(msg), sm = me ? JSON.stringify({ ...msg, me: 1 }) : null;
+    for (const r of this.rooms.values()) for (const m of r.members) this.send(m, m === me ? sm : s);
+  }
+  dropMark(i) {
+    const [k] = this.marks.splice(i, 1);
+    this.toAll({ t: 'mkx', id: k.id });
+  }
+
+  /** 留一枚路标 */
+  mark(c, m, now) {
+    const d = readMark(m.d);
+    if (!d) return this.strike(c, 'mk');
+    if (!c.b.mk.take(now)) return false;
+    this.pruneMarks(now);
+    // 他自己留的已经有三枚：收回最早的那一枚；总数满了：收回最早的
+    const mine = this.marks.filter((k) => k.by === c.id);
+    if (mine.length >= MARK_PER) this.dropMark(this.marks.indexOf(mine[0]));
+    if (this.marks.length >= this.markMax) this.dropMark(0);
+    const k = { id: (this.markSeq = (this.markSeq % 9999999) + 1), by: c.id, d, n: c.name, c: c.robe, t: now };
+    this.marks.push(k);
+    this.toAll({ t: 'mk', m: [k.id, ...d, k.n[0], k.n[1], k.c, 0] }, c);
+    return true;
+  }
+
+  /** 收回自己留的一枚（别人的、已经没了的：不理，也不算不对） */
+  unmark(c, m) {
+    if (!isInt(m.id, 1, 9999999)) return this.strike(c, 'mkx');
+    const i = this.marks.findIndex((k) => k.id === m.id && k.by === c.id);
+    if (i < 0) return false;
+    this.dropMark(i);
     return true;
   }
 
@@ -287,11 +452,12 @@ export class Hub {
   sweep() {
     const now = this.now();
     for (const c of [...this.clients]) if (!c.room && now - c.t0 > 8000) this.kick(c, CLOSE.hello, 'hello');
+    this.pruneMarks(now);
   }
 
   stats() {
     let players = 0;
     for (const r of this.rooms.values()) players += r.members.size;
-    return { rooms: this.rooms.size, players, conns: this.clients.size };
+    return { rooms: this.rooms.size, players, conns: this.clients.size, marks: this.marks.length };
   }
 }
