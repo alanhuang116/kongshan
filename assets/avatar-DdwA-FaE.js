@@ -1,0 +1,1 @@
+import{e3 as t}from"./index-BK2RdJ5R.js";import{e4 as f,e5 as s}from"./index-BK2RdJ5R.js";import"./react-BpaniaUk.js";import"./three-CxPAFleR.js";function m(r,e){return new t(r,e)}export{t as Figure,f as Idle,s as SCHOLAR,m as createAvatar};
