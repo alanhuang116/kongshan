@@ -7,7 +7,8 @@
 .today-what { display: grid; gap: 2px; min-width: 0; }
 .today-what b { font-family: var(--kai); font-weight: 400; font-size: 17px; letter-spacing: 0.14em; color: var(--ink); }
 .today-line { font-size: 13.5px; line-height: 1.7; letter-spacing: 0.04em; color: var(--ink); overflow-wrap: anywhere; }
-.today-what small { font-size: 12px; line-height: 1.6; letter-spacing: 0.04em; color: var(--ink-2); }
+/* 小字略深一点：册页是磨砂的，后面的画亮的时候（门前一片空地）淡墨就浮不起来 */
+.today-what small { font-size: 12px; line-height: 1.6; letter-spacing: 0.04em; color: color-mix(in srgb, var(--ink-2) 68%, var(--ink)); }
 .today-row .key { min-height: 44px; min-width: 56px; padding: 0 14px; }
 .today-none { font-size: 13px; line-height: 1.85; letter-spacing: 0.04em; color: var(--ink-2); padding: 6px 0 2px; }
 .today-more { margin-top: 2px; }

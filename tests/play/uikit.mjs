@@ -38,7 +38,8 @@ export async function launch() {
 /** 开一页。path 是 BASE 之后的部分（如 '?auto=1&s=yard' 或 'world.html?s=yard'）；size 是 SIZES 里的名字或 {w,h,mobile,dpr} */
 export async function open(browser, path, size = 'desk', o = {}) {
   const s = typeof size === 'string' ? SIZES[size] : size;
-  const ctx = await browser.newContext({ viewport: { width: s.w, height: s.h }, deviceScaleFactor: s.dpr ?? 1, isMobile: !!s.mobile, hasTouch: !!s.mobile, reducedMotion: o.reducedMotion ? 'reduce' : 'no-preference' });
+  // o.tz：这一页当自己在哪个时区（如 'Europe/Paris'；同游时天时随园中，测它要两页在不同的时区）
+  const ctx = await browser.newContext({ viewport: { width: s.w, height: s.h }, deviceScaleFactor: s.dpr ?? 1, isMobile: !!s.mobile, hasTouch: !!s.mobile, reducedMotion: o.reducedMotion ? 'reduce' : 'no-preference', ...(o.tz ? { timezoneId: o.tz } : {}) });
   if (o.storage) await ctx.addInitScript((st) => { for (const [k, v] of Object.entries(st)) localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); }, o.storage);
   // 安全区：模拟装到主屏幕后的刘海与横杠（界面上的位置都从 --sat 那几个量算）
   if (s.safe) await ctx.addInitScript((sf) => {

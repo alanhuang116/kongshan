@@ -5,7 +5,7 @@
  * 都是小东西：手做的、放在人真会放的地方。
  */
 import * as THREE from 'three';
-import { M, box, boxUp, cyl, grid, lathe, shade, tint, type Builder, type Geo } from '../core/geo';
+import { M, box, boxUp, cyl, grid, lathe, rockGeo, shade, tint, type Builder, type Geo } from '../core/geo';
 import { wash } from '../ink/ink';
 import { RIVER_Y, SITE, ground, houseY, pathDist, streamAt } from '../site';
 import { INK, decal, dye, facing, flatRock, pole, renormal, rnd, sbox, tube, v3, wobble, type Ctx, type V3 } from './kit';
@@ -248,6 +248,35 @@ export function buildMore(c: Ctx, sub?: string[]): void {
     lantern(b, obj, M.mul(M.t(0.15, 2.0, h.d / 2 - 0.02)));
     b.pop();
     { const [x, z] = WP(h, -2.2, h.d / 2 + 0.4); c.solid({ id: '酒家·酒坛', kind: 'disc', x, z, r: 0.5 }); }
+    // 门边窗下一处露天的火：一圈石头围着，几根柴交在当中烧着；一口三足两耳的鼎立在火上，鼎里煮着东西（观象「鼎」：木上有火）。
+    // 火苗、夜里的火光在 make.ts（跟灯一起跳）；热气是观象那边站定时起的
+    {
+      const [fx, fz] = WP(h, 1.5, h.d / 2 + 1.1), gy = ground(fx, fz), b2 = c.village, o2 = bin(b2), RR = rnd(3355);
+      b2.push(M.trs(fx, gy, fz, h.yaw + 0.3));
+      // 灰：火塘里一片淡灰
+      o2.push(dye(cyl(0.4, 0.42, 0.02, 12).translate(0, 0.005, 0), [0.78, 0.77, 0.75], 1.2));
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + RR.pm(0.15); b2.add('stone', at(flatRock(3360 + i, RR.r(0.11, 0.15), RR.r(0.1, 0.15), RR.r(0.09, 0.12), 1), Math.cos(a) * 0.5, -0.03, Math.sin(a) * 0.5, -a)); }
+      // 柴：四五根从四面伸进火里，烧着的那一头是黑的
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + RR.pm(0.3), r0 = 0.62 + RR.r(0, 0.2), lo = v3(Math.cos(a) * r0, 0.04, Math.sin(a) * r0), hi = v3(Math.cos(a) * 0.08, 0.13 + RR.r(0, 0.05), Math.sin(a) * 0.08);
+        b2.add('wood', pole(lo, lo.clone().lerp(hi, 0.62), 0.035, 0.032, 6));
+        o2.push(dye(pole(lo.clone().lerp(hi, 0.6), hi, 0.032, 0.026, 6), [0.36, 0.33, 0.32], 1.4));
+      }
+      // 炭：当中几块红的、几块黑的
+      for (let i = 0; i < 9; i++) { const hot = i % 3 !== 2, a = RR.r(0, 6.3), q = RR.r(0, 0.16); b2.add('ember', dye(rockGeo(3370 + i, RR.r(0.035, 0.06), RR.r(0.03, 0.05), RR.r(0.035, 0.06), 0), hot ? [0.98, 0.56, 0.36] : [0.4, 0.37, 0.35], hot ? 1.0 : 1.6).translate(Math.cos(a) * q, 0.05 + RR.r(0, 0.04), Math.sin(a) * q)); }
+      // 鼎：三条腿立在火塘外沿，圆腹、敛口、两只立耳；腹里煮着的是深褐的一汪
+      const L = 0.36, ding: [number, number][] = [[0.001, 0], [0.17, 0.0], [0.28, 0.06], [0.335, 0.16], [0.325, 0.26], [0.29, 0.32], [0.3, 0.345], [0.275, 0.35], [0.265, 0.33], [0.001, 0.32]];
+      o2.push(dye(shade(lathe(ding, seg(18)), (_x, yy) => (yy < 0.08 ? 0.75 : yy > 0.3 ? 1.15 : 1)), [0.52, 0.5, 0.46], 1.9).translate(0, L, 0));
+      o2.push(dye(cyl(0.262, 0.262, 0.01, seg(14)).translate(0, L + 0.325, 0), [0.46, 0.38, 0.3], 2.2));
+      for (const s of [-1, 1]) o2.push(dye(tube([v3(s * 0.25, L + 0.34, -0.07), v3(s * 0.26, L + 0.45, -0.065), v3(s * 0.262, L + 0.47, 0), v3(s * 0.26, L + 0.45, 0.065), v3(s * 0.25, L + 0.34, 0.07)], 0.016, 5), [0.5, 0.48, 0.44], 2.0));
+      for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2 + 0.5; o2.push(dye(pole(v3(Math.cos(a) * 0.17, L + 0.03, Math.sin(a) * 0.17), v3(Math.cos(a) * 0.27, 0, Math.sin(a) * 0.27), 0.04, 0.03, 6), [0.5, 0.48, 0.44], 2.0)); }
+      // 旁边一小垛劈好的柴、一只木勺搁在石上
+      for (let i = 0; i < 6; i++) b2.add('wood', at(cyl(0.045, 0.045, 0.62, 6).rotateZ(Math.PI / 2), 0.9 + (i % 3) * 0.1, 0.05 + Math.floor(i / 3) * 0.085, -0.25 + (i % 3) * 0.02, 0.15));
+      o2.push(dye(pole(v3(-0.42, 0.13, 0.42), v3(-0.75, 0.2, 0.6), 0.012, 0.01, 5), INK.wood, 1.5), dye(lathe([[0.001, 0], [0.05, 0.005], [0.06, 0.03], [0.001, 0.025]], 8).translate(-0.4, 0.12, 0.41), INK.wood, 1.5));
+      b2.pop();
+      c.anchor('wineStove', fx, gy, fz, h.yaw);
+      c.solid({ id: '酒家·火塘', kind: 'disc', x: fx, z: fz, r: 0.62 });
+    }
     // 酒旗：路边一根高竹竿，挑一面素布，上写一个「酒」字，随风轻摆
     const [px, pz] = WP(h, 3.3, h.d / 2 + 4.6), py = ground(px, pz), ph = 4.0;
     b.add('bamboo', pole(v3(px, py - 0.5, pz), v3(px + 0.05, py + ph, pz), 0.035, 0.022, 6, 4));

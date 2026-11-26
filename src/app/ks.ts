@@ -12,6 +12,9 @@ import { hasSheet } from './sheets/extra';
 import { addEntry, addFound, addNote, patch, saveWorld, saved, setUi, ui, type Sheet, type Spot } from './store';
 import { PLACES } from '../world/site';
 import { WORDS, guaOf } from './texts';
+import type { Wear } from '../world/avatar/dress';
+import { getTogether } from '../world/net';
+import { nameOf } from '../world/net/proto';
 
 let ks: Anlewo | null = null;
 export const getKs = () => ks;
@@ -149,6 +152,8 @@ export async function boot(canvas: HTMLCanvasElement) {
         clock: (hour) => { patch({ time: Math.round(hour * 100) / 100 }); sense(); },
         // 过了一夜
         day: (n) => { patch({ day: n }); setUi({ day: n }); },
+        // 月建变了（拨了月、拨了季、同游时随园中到了新的一月）
+        month: (m) => setUi({ month: m }),
         // 世界的存档里有一份变了：存到本机
         mem: (ns, v) => saveWorld(ns, v),
         bag: (items) => setUi({ bag: { ...items } }),
@@ -169,7 +174,7 @@ export async function boot(canvas: HTMLCanvasElement) {
   // 今天的节气：农夫说话时用
   k.term = t.termName || null;
   k.setTime(START.time, true);
-  setUi({ bag: { ...k.bag.items }, day: k.day, run: k.player.run });
+  setUi({ bag: { ...k.bag.items }, day: k.day, run: k.player.run, month: k.month, xx: k.mem.get<{ mode?: string }>('xiaoxi', {}).mode === 'hour' ? 'hour' : 'month' });
   if (k.day !== s.day) patch({ day: k.day });
   const w = window as unknown as Record<string, unknown>;
   w.__ks = k; w.__walk = walk; w.__ui = { ui, saved, setUi, patch, addNote, sound: snd };   // 给调试与自动测试用
@@ -216,6 +221,22 @@ export function resumeSpot(): Spot | null {
 export const placeName = (id: string) => PLACES.find((p) => p.id === id)?.name ?? '';
 
 /**
+ * 头一回来（还没选过男女、穿着）：「入」先到选人那一页。自动测试里不出（navigator.webdriver），要看它就给 ?pick=1；?pick=0 总不出
+ */
+const PICK = START.q.get('pick') === '1' || (START.q.get('pick') !== '0' && !(typeof navigator !== 'undefined' && navigator.webdriver));
+let pickFrom: 'resume' | 'grove' = 'resume';
+/** 选人那一页定下了：记下男女、雅号、穿着，再「入」（那一位先行个礼） */
+export async function chooseAndEnter(wear: Wear) {
+  const k = ks;
+  if (!k || entering) return;
+  const tg = getTogether();
+  k.choose({ wear, name: tg ? nameOf(tg.me.n) : '' });
+  await enter(false, pickFrom);
+}
+/** 选人那一页：回到题名页 */
+export function leaveSelect() { ks?.setShowcase(null); setUi({ phase: 'title' }); }
+
+/**
  * 「入」：画淡成一片雾，人已站在那里，再从雾里显出来。
  * from 'resume'：回到上回停下的地方（有、而且还站得住的话）；'grove'：从桃林的入口走进来（头一回、或题名页上点了「从桃林走进来」）
  */
@@ -223,6 +244,7 @@ let entering = false;
 export async function enter(skip = false, from: 'resume' | 'grove' = 'resume') {
   const k = ks;
   if (!k || entering) return;
+  if (!skip && PICK && !k.chosen && ui.get().phase === 'title') { pickFrom = from; setUi({ phase: 'select' }); return; }
   entering = true;
   const s = saved.get();
   k.resumeAt = !skip && from === 'resume' ? resumeSpot() : null;
@@ -283,12 +305,19 @@ export function setStick(x: number, y: number) { ks?.stick.set(x, y); }
 export function leaveAct() { if (ks?.act) ks.exitAct(); else setUi({ act: null, actState: {} }); }
 export function actCmd(name: string, arg?: unknown) { ks?.cmd(name, arg); }
 
-export function setTime(mode: TimeMode | number) { patch({ time: mode }); ks?.setTime(mode); sense(); }
+/**
+ * 同游时园中天时随最早来的那一位（按真实的钟点、节气；天气也随那一位）：自己拨的时辰、流转、季、月都不管用，说一声。
+ * 自己就是最早来的那一位时，天气还能拨（同屋的人跟着你）。
+ */
+const shared = () => !!ks?.shared;
+const lockNote = () => addNote('同游时，园中天时随最早来的那一位；要自己拨，先在「同游」里改成独游', 'time');
+export function setTime(mode: TimeMode | number) { if (shared()) { lockNote(); return; } patch({ time: mode }); ks?.setTime(mode); sense(); }
 /**
  * 时辰流转得多快（每秒几个钟头；0 停）。「随此刻」时时辰跟着钟点走、不流转：这时选了一档会走的，
  * 就从此刻的钟点起，让它照这一档走下去。
  */
 export function setFlow(rate: number) {
+  if (shared()) { lockNote(); return; }
   const r = Math.max(0, Math.min(1, rate));
   patch({ flow: r, flowChosen: true });
   ks?.setFlow(r);
@@ -296,16 +325,30 @@ export function setFlow(rate: number) {
 }
 /** 「疾」：一直跑 / 不跑（手机上摇杆旁那一枚） */
 export function setRun(on: boolean) { ks?.setRun(on); buzz(6); }
-export function setWeather(w: Weather) { patch({ weather: w }); ks?.setWeather(w); }
+export function setWeather(w: Weather) {
+  if (ks?.shared?.weather) { lockNote(); return; }
+  patch({ weather: w }); ks?.setWeather(w);
+}
 /**
  * 换季：世界里不罩雾，一段工夫里整幅画一起换过去（Anlewo.setSeason）。雪是冬天的——离了冬天雪就停了、天放晴，
  * 所以天气照世界换过之后的记下来（「天」那一排跟着从「雪」回到「晴」）。
  */
 export function setSeason(s: Season) {
+  if (shared()) { lockNote(); return; }
   ks?.setSeason(s);
   patch(ks ? { season: s, weather: ks.atmos.weather } : { season: s });
   sense();
 }
+/** 拨到某一月（十二消息卦按月拨）：季跟着换，存档记下季与天气（离了冬天雪就停了） */
+export function setMonth(m: number) {
+  if (shared()) { lockNote(); return; }
+  if (!ks) return;
+  ks.setMonth(m);
+  patch({ season: ks.season, weather: ks.atmos.weather });
+  sense();
+}
+/** 十二消息卦按月排还是按时辰排（右上那一格与天时那一圈） */
+export function setXiaoxiMode(mode: 'month' | 'hour') { ks?.mem.patch('xiaoxi', { mode }); setUi({ xx: mode }); }
 export function setMaster(v: number) { patch({ master: v, masterChosen: true }); snd.setMaster(v); }
 export function setMuted(m: boolean) { patch({ muted: m }); snd.setMuted(m); }
 /** 一样环境声的音量（风、水、禽、虫、雨雪、村、远琴） */

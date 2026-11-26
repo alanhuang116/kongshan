@@ -136,6 +136,8 @@ export class Idle {
       let x = g === this.last ? 0 : v;
       if (g === 'sky') x *= 1 + 1.2 * st.night;
       if (g === 'stretch' && this.stretchAgo < 60) x = 0;
+      // 没有须的人不捻须（外乡客年轻，女子更没有）
+      if (g === 'beard' && !((this.av as { look?: { beard?: number } }).look?.beard)) x = 0;
       sum += x; return x;
     });
     let r = this.rnd() * sum;

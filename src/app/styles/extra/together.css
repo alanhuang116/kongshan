@@ -42,6 +42,10 @@ body[data-tg-open] .dock { opacity: 0; visibility: hidden; }
 .tg-list { display: grid; }
 .tg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 7px 0 8px; border-top: 1px solid var(--rule-2); }
 .tg-row.is-hidden .tg-name { color: var(--ink-2); }
+/* 暂离的：淡着，没有键 */
+.tg-row.is-away { grid-template-columns: minmax(0, 1fr); }
+.tg-row.is-away .tg-name, .tg-row.is-away .tg-where { color: var(--ink-3); }
+.tg-row.is-away .tg-who { cursor: default; }
 .tg-who { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 1px; min-height: 44px; text-align: left; border-radius: 2px; }
 .tg-who .tg-swatch { grid-row: span 2; }
 .tg-name { font-family: var(--kai); font-size: 15.5px; line-height: 1.35; letter-spacing: 0.1em; color: var(--ink); overflow-wrap: anywhere; }

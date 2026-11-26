@@ -23,6 +23,7 @@ import { BED_GEO, FLOOR, PLOT, rowAt, rowLen, rowPoint, type BedGeo } from '../f
 import { h3 } from '../farm/paint';
 import { ladle, seedBasket, sickle, bucketGeo, mats } from '../farm/props';
 import { Guide, what } from '../farm/guide';
+import { callOf, folkOf } from './favor';
 import { hoe as hoeMesh } from '../life/props';
 import { ground as groundOf } from '../site';
 import { BYE, Cam, Press, UPV, base, chain, clamp01, dirL, ease, grip, lerp, loc, movable, view, walk, walkVia, type FAct } from '../farm/actkit';
@@ -803,7 +804,7 @@ function helpAct(k: Anlewo, F: Farm): Act {
           phase = 'done'; press.reset(); av.bow = 0; av.reach('L', null); av.reach('R', null);
           const gift = k.bag.add('wheat', 1, { quiet: true });
           F.worked('帮王伯割了一截麦');
-          set({ title: '帮割', who: '王伯', text: `「劳驾先生了。」\n王伯直起腰，擦一把汗，从地头的口袋里抓了一把新麦塞给你。${gift ? '' : ''}`, lines: [QUOTES.rush.text], source: QUOTES.rush.source, done: true, choices: [{ id: 'more', label: '再割一截' }, BYE] });
+          set({ title: '帮割', who: '王伯', text: `「劳驾${callOf('farmer', folkOf(k).level('farmer'), k.persona?.sex)}了。」\n王伯直起腰，擦一把汗，从地头的口袋里抓了一把新麦塞给你。${gift ? '' : ''}`, lines: [QUOTES.rush.text], source: QUOTES.rush.source, done: true, choices: [{ id: 'more', label: '再割一截' }, BYE] });
           return;
         }
         const s = F.reapSpot(); if (s) mv = walk(k, s.x - 0.6, s.z, PI / 2);

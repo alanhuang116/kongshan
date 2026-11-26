@@ -99,7 +99,10 @@ export class Player {
    * 自己走过去（会找路：绕开挡着的东西，该过桥过桥、该上踏跺上踏跺）。
    * 到了（离终点 r 以内）调用 then；没有路、或半路卡住，调用 fail。
    */
+  /** 第几回叫 goTo（同行那一边据此分得清：此刻走的这一程是它派的，还是人自己点的） */
+  goals = 0;
   goTo(x: number, z: number, o: { r?: number; then?: () => void; fail?: () => void } = {}) {
+    this.goals++;
     // 隔着溪的走桥、走汀步（travel.ts）；没有路就直着走，被挡住了再说
     const found = travel(this.pos.x, this.pos.z, this.ground, x, z, this.zone), pts: Array<[number, number]> = found?.length ? found : [[x, z]];
     const p0 = pts[0];
@@ -246,7 +249,8 @@ export class Player {
       const vDir = Math.atan2(this.vel.x, this.vel.y);
       let want = mag > 0 ? Math.atan2(wx, wz) : vDir;
       const fk = smooth(1.2, 2.4, sp);
-      if (mag > 0 && fk > 0) want = vDir + wrap(want - vDir) * (1 - fk) + Math.max(-0.35, Math.min(0.35, wrap(want - vDir))) * fk;
+      // （领的那一点至多九度：领得多了，斜着跑时身子与去向差着一截，看着像侧着身子跑）
+      if (mag > 0 && fk > 0) want = vDir + wrap(want - vDir) * (1 - fk) + Math.max(-0.15, Math.min(0.15, wrap(want - vDir))) * fk;
       const d = wrap(want - this.yaw);
       const step = Math.max(-Player.TURN * dt, Math.min(Player.TURN * dt, d * Math.min(1, dt * 10)));
       this.yaw = wrap(this.yaw + step); turn = step / Math.max(dt, 1e-3);

@@ -65,6 +65,8 @@ export function sweepAct(k: Kit, spots: Spot[], broom: THREE.Object3D): Act {
   return function* (p, c) {
     const f = p.fig;
     const carry = () => f.reach('R', p.loc(-0.22, 0.98, 0.16, v1), { dir: p.dir(0, 1, 0.12, v2), rate: 10 });
+    // 扫的几处先都记上（摸狗时狗挑地方卧，不卧在她待会儿要扫的那一块上）
+    for (const s of spots) p.mark(s);
     for (let n = 0; ; n++) {
       const s = spots[n % spots.length];
       p.hold(broom, 'R');

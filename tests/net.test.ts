@@ -1,10 +1,10 @@
 // 同游：中转里分屋子、认字段、限速、攒一拍再发（server/core.mjs）；客户端这边认消息、插值、连哪里、同名怎么分。
 import { describe, expect, it } from 'vitest';
-import { CLOSE, Hub, MAX_BYTES, PROTO, readName, readRoom, readState, type Conn, type HubClient } from '../server/core.mjs';
+import { CLOSE, EXT, Hub, MARK_PER, MAX_BYTES, PROTO, readCard, readGame, readLook, readMark, readName, readRoom, readSky, readState, type Conn, type HubClient } from '../server/core.mjs';
 import { Track, type View } from '../src/world/net/interp';
 import { readIn } from '../src/world/net/wire';
 import { DEFAULT_RELAY, cnNum, farText, labels, relayUrl } from '../src/world/net/words';
-import { ACTS, NAME_A, NAME_B, PHRASES, PLACE_IDS, POSES, ROBES, actIndex, nameOf } from '../src/world/net/proto';
+import { ACTS, GAMES, NAME_A, NAME_B, PHRASES, PLACE_IDS, POSES, ROBES, actIndex, nameOf } from '../src/world/net/proto';
 import { ROBE_LOOKS, lookFor } from '../src/world/net/looks';
 import { PLACES } from '../src/world/site';
 
@@ -208,9 +208,195 @@ describe('中转：作揖、说话', () => {
   });
 });
 
+describe('中转：园中天时', () => {
+  const sky = (d: unknown) => JSON.stringify({ t: 'sky', d });
+  it('屋里排第一的那一位报时区与天气：转给同屋的人、记着；后进门的在 wel 里拿到', () => {
+    const { h } = hub();
+    const a = join(h, [0, 0]), b = join(h, [1, 1]);
+    expect(h.message(a.cl, sky([480, 2]))).toBe(true);
+    expect(b.c.got.at(-1)).toEqual({ t: 'sky', fr: a.cl.id, d: [480, 2] });
+    expect(a.c.got.some((m) => m.t === 'sky')).toBe(false);
+    const c = join(h, [2, 2]);
+    expect(c.c.got.find((m) => m.t === 'wel')?.sky).toEqual([a.cl.id, 480, 2]);
+  });
+  it('别人报的不收，也不算不对；不对的（时区越界、天气不在单子上）记一笔', () => {
+    const { h } = hub();
+    const a = join(h), b = join(h, [1, 1]);
+    const n = a.c.got.length;
+    expect(h.message(b.cl, sky([60, 0]))).toBe(false);
+    expect(a.c.got.length).toBe(n);
+    expect(b.cl.strikes).toBe(0);
+    for (const bad of [[900, 0], [-721, 0], [480, 4], [480.5, 0], [480], 'x', null]) expect(h.message(a.cl, sky(bad))).toBe(false);
+    expect(a.cl.strikes).toBe(7);
+    expect(readSky([480, 0])).toEqual([480, 0]);
+    expect(readSky([-720, 3])).toEqual([-720, 3]);
+  });
+  it('那一位走了，那一份作废；下一位排第一的报了就换成他的', () => {
+    const { h } = hub();
+    const a = join(h), b = join(h, [1, 1]);
+    h.message(a.cl, sky([480, 1]));
+    h.close(a.cl);
+    const c = join(h, [2, 2]);
+    expect(c.c.got.find((m) => m.t === 'wel')?.sky).toBeUndefined();
+    expect(h.message(b.cl, sky([60, 3]))).toBe(true);
+    expect(c.c.got.at(-1)).toEqual({ t: 'sky', fr: b.cl.id, d: [60, 3] });
+  });
+  it('报得太勤：多出来的不收（四回之后要等）', () => {
+    const { h, tick } = hub();
+    const a = join(h);
+    let ok = 0;
+    for (let i = 0; i < 8; i++) if (h.message(a.cl, sky([480, i % 4]))) ok++;
+    expect(ok).toBe(4);
+    tick(4100);
+    expect(h.message(a.cl, sky([480, 0]))).toBe(true);
+  });
+  it('客户端：wel 里的天时、sky 消息认得；越界的不要', () => {
+    expect(readIn({ t: 'sky', fr: 3, d: [480, 2] })).toEqual({ t: 'sky', fr: 3, d: [480, 2] });
+    expect(readIn({ t: 'sky', fr: 3, d: [999, 2] })).toBeNull();
+    expect(readIn({ t: 'sky', fr: 0, d: [480, 2] })).toBeNull();
+    const wel = readIn({ t: 'wel', id: 5, rm: 'r1', cap: 24, ps: [], sky: [2, 480, 1] });
+    expect(wel?.t === 'wel' ? wel.sky : 'x').toEqual([2, 480, 1]);
+    const wel2 = readIn({ t: 'wel', id: 5, rm: 'r1', cap: 24, ps: [], sky: [2, 480, 9] });
+    expect(wel2?.t === 'wel' ? wel2.sky : 'x').toBeNull();
+    const wel3 = readIn({ t: 'wel', id: 5, rm: 'r1', cap: 24, ps: [] });
+    expect(wel3?.t === 'wel' ? wel3.sky : 'x').toBeNull();
+  });
+});
+
+describe('中转：样子、名片、玩法、路标', () => {
+  const msg = (o: Record<string, unknown>) => JSON.stringify(o);
+  it('进门时报上样子与名片：同屋的人在 in 里拿到；后进门的在 wel 的 px 里拿到；x 说认得', () => {
+    const { h } = hub();
+    const a = join(h, [0, 0], '1.1.1.1', { lk: [1, 3, 5], cd: [2, 0, 17] });
+    expect(a.c.got[0].x).toBe(EXT);
+    const b = join(h, [1, 1]);
+    const wel = b.c.got.find((m) => m.t === 'wel')!;
+    expect(wel.px).toEqual([[a.cl.id, [1, 3, 5], [2, 0, 17]]]);
+    expect(wel.mk).toEqual([]);
+    const c = join(h, [2, 2], '1.1.1.2', { lk: [0, 2] });
+    expect(a.c.got.at(-1)).toEqual({ t: 'in', id: c.cl.id, n: [2, 2], c: 0, lk: [0, 2] });
+    // 不对的样子只当没给（不断开）
+    const d = join(h, [3, 3], '1.1.1.3', { lk: [999], cd: ['x'] });
+    expect(d.cl.lk).toBeNull(); expect(d.cl.cd).toBeNull(); expect(d.c.closed).toBeNull();
+  });
+  it('换了样子、名片：转给同屋的人（自己不收）；太勤的不收；不对的记一笔', () => {
+    const { h, tick } = hub();
+    const a = join(h), b = join(h, [1, 1]);
+    expect(h.message(a.cl, msg({ t: 'lk', d: [1, 4, 4, 9] }))).toBe(true);
+    expect(b.c.got.at(-1)).toEqual({ t: 'lk', id: a.cl.id, d: [1, 4, 4, 9] });
+    expect(a.c.got.some((m) => m.t === 'lk')).toBe(false);
+    let ok = 1;
+    for (let i = 0; i < 6; i++) if (h.message(a.cl, msg({ t: 'lk', d: [i] }))) ok++;
+    expect(ok).toBe(4);
+    tick(10100);
+    expect(h.message(a.cl, msg({ t: 'lk', d: [0] }))).toBe(true);
+    expect(h.message(a.cl, msg({ t: 'cd', d: [5, 120] }))).toBe(true);
+    expect(b.c.got.at(-1)).toEqual({ t: 'cd', id: a.cl.id, d: [5, 120] });
+    for (const bad of [[256], [-1], [0.5], new Array(17).fill(0), 'x']) expect(h.message(a.cl, msg({ t: 'lk', d: bad }))).toBe(false);
+    expect(h.message(a.cl, msg({ t: 'cd', d: [1e6] }))).toBe(false);
+    expect(a.cl.strikes).toBe(6);
+    expect(readLook([0, 255])).toEqual([0, 255]);
+    expect(readCard([999999])).toEqual([999999]);
+  });
+  it('玩法：发给同屋某一位（远近不论）只他收到；发给 0 是同屋的人；别屋的、自己、不认得的种类不行', () => {
+    const { h } = hub({ roomSize: 2 });
+    const a = join(h), b = join(h, [1, 1]), c = join(h, [2, 2]);
+    expect(c.cl.room).not.toBe(a.cl.room);
+    h.message(a.cl, st(1, 0, 10)); h.message(b.cl, st(1, 150, 240));
+    for (const x of [a, b, c]) x.c.got.length = 0;
+    const k = GAMES.indexOf('cock');
+    expect(k).toBeGreaterThanOrEqual(0);
+    expect(h.message(a.cl, msg({ t: 'g', to: b.cl.id, k, d: [1, 2, -3] }))).toBe(true);
+    expect(b.c.got).toEqual([{ t: 'g', fr: a.cl.id, to: b.cl.id, k, d: [1, 2, -3] }]);
+    expect(h.message(b.cl, msg({ t: 'g', to: 0, k, d: [7] }))).toBe(true);
+    expect(a.c.got.at(-1)).toEqual({ t: 'g', fr: b.cl.id, to: 0, k, d: [7] });
+    expect(b.c.got.length).toBe(1);
+    // 别屋的人：不送（不算不对）；自己、不认得的种类、不是整数：记一笔
+    expect(h.message(a.cl, msg({ t: 'g', to: c.cl.id, k, d: [] }))).toBe(false);
+    expect(c.c.got).toEqual([]);
+    const s0 = a.cl.strikes;
+    expect(h.message(a.cl, msg({ t: 'g', to: a.cl.id, k, d: [] }))).toBe(false);
+    expect(h.message(a.cl, msg({ t: 'g', to: 0, k: GAMES.length, d: [] }))).toBe(false);
+    expect(h.message(a.cl, msg({ t: 'g', to: 0, k, d: [1.5] }))).toBe(false);
+    expect(h.message(a.cl, msg({ t: 'g', to: 0, k, d: [1e8] }))).toBe(false);
+    expect(a.cl.strikes - s0).toBe(4);
+    expect(readGame([-9999999, 9999999])).toEqual([-9999999, 9999999]);
+  });
+  it('玩法发得太勤：多出来的不送（发给同屋的人算两条）', () => {
+    const { h, tick } = hub();
+    const a = join(h), b = join(h, [1, 1]);
+    const k = GAMES.indexOf('cuju');
+    let ok = 0;
+    for (let i = 0; i < 30; i++) if (h.message(a.cl, msg({ t: 'g', to: 0, k, d: [i] }))) ok++;
+    expect(ok).toBe(12);
+    tick(1000);
+    ok = 0;
+    for (let i = 0; i < 30; i++) if (h.message(a.cl, msg({ t: 'g', to: b.cl.id, k, d: [i] }))) ok++;
+    expect(ok).toBe(8);
+    expect(a.c.closed).toBeNull();
+  });
+  it('路标：人人看得见（不分屋子）；留标的那一位收到的那份带 me；后进门的在 wel 里拿到', () => {
+    const { h } = hub({ roomSize: 1 });
+    const a = join(h), b = join(h, [1, 1]);
+    expect(b.cl.room).not.toBe(a.cl.room);
+    expect(h.message(a.cl, msg({ t: 'mk', d: [12.346, 40.5, 58, 8, 17, 1] }))).toBe(true);
+    const m = a.c.got.at(-1)!;
+    expect(m.t).toBe('mk'); expect(m.me).toBe(1);
+    expect(m.m).toEqual([1, 12.35, 40.5, 58, 8, 17, 1, 0, 0, 0, 0]);
+    expect(b.c.got.at(-1)).toEqual({ t: 'mk', m: [1, 12.35, 40.5, 58, 8, 17, 1, 0, 0, 0, 0] });
+    const c = join(h, [2, 2]);
+    expect(c.c.got.find((x) => x.t === 'wel')!.mk).toEqual([[1, 12.35, 40.5, 58, 8, 17, 1, 0, 0, 0, 0]]);
+    // 客户端认它
+    const w = readIn(c.c.got.find((x) => x.t === 'wel'));
+    expect(w?.t === 'wel' ? w.mk[0] : null).toEqual({ id: 1, x: 12.35, z: 40.5, g: 58, mo: 8, h: 17, w: 1, n: [0, 0], c: 0, age: 0 });
+    expect(readIn(m)).toEqual({ t: 'mk', m: { id: 1, x: 12.35, z: 40.5, g: 58, mo: 8, h: 17, w: 1, n: [0, 0], c: 0, age: 0, mine: true } });
+  });
+  it('路标：一个人同时至多三枚（再留收回最早的）；一分钟一枚；只收得回自己的；三天后没了', () => {
+    const { h, tick } = hub({ markTtl: 3600 * 1000 });
+    const a = join(h), b = join(h, [1, 1]);
+    const put = (x: number) => h.message(a.cl, msg({ t: 'mk', d: [x, 10, 0, 1, 0, 0] }));
+    expect(put(1)).toBe(true); expect(put(2)).toBe(true);
+    expect(put(3)).toBe(false);
+    for (let i = 3; i <= MARK_PER + 1; i++) { tick(61000); expect(put(i)).toBe(true); }
+    expect(h.marks.length).toBe(MARK_PER);
+    expect(h.marks.map((k) => k.d[0])).toEqual([2, 3, 4]);
+    expect(b.c.got.some((m) => m.t === 'mkx' && m.id === 1)).toBe(true);
+    // 别人的收不回；自己的收得回
+    expect(h.message(b.cl, msg({ t: 'mkx', id: h.marks[0].id }))).toBe(false);
+    expect(h.message(a.cl, msg({ t: 'mkx', id: h.marks[0].id }))).toBe(true);
+    expect(h.marks.length).toBe(MARK_PER - 1);
+    // 不对的：越界、卦不对、月不对
+    for (const bad of [[999, 0, 0, 1, 0, 0], [0, 0, 64, 1, 0, 0], [0, 0, 0, 13, 0, 0], [0, 0, 0, 1, 24, 0], [0, 0, 0, 1, 0, 9], [0, 0, 0, 1, 0]]) expect(readMark(bad)).toBeNull();
+    // 过了留的时候：没了
+    tick(3600 * 1000 + 1);
+    h.sweep();
+    expect(h.marks.length).toBe(0);
+    expect(h.stats().marks).toBe(0);
+  });
+  it('路标总数有顶：满了收回全园最早的那一枚', () => {
+    const { h, tick } = hub({ markMax: 4 });
+    const xs = [join(h), join(h, [1, 1]), join(h, [2, 2]), join(h, [3, 3]), join(h, [4, 4])];
+    for (const [i, x] of xs.entries()) { h.message(x.cl, msg({ t: 'mk', d: [i, 0, 0, 1, 0, 0] })); tick(10); }
+    expect(h.marks.length).toBe(4);
+    expect(h.marks.map((k) => k.d[0])).toEqual([1, 2, 3, 4]);
+  });
+  it('客户端：样子、名片、玩法认得；越界的、不认得的种类不要；旧的一版中转（没有 x）照旧认得', () => {
+    expect(readIn({ t: 'lk', id: 3, d: [1, 2] })).toEqual({ t: 'lk', id: 3, d: [1, 2] });
+    expect(readIn({ t: 'lk', id: 3, d: [300] })).toBeNull();
+    expect(readIn({ t: 'cd', id: 3, d: [1, 2] })).toEqual({ t: 'cd', id: 3, d: [1, 2] });
+    expect(readIn({ t: 'g', fr: 3, to: 0, k: 0, d: [1, -2] })).toEqual({ t: 'g', fr: 3, to: 0, k: 0, d: [1, -2] });
+    expect(readIn({ t: 'g', fr: 3, to: 0, k: GAMES.length, d: [] })).toBeNull();
+    expect(readIn({ t: 'mkx', id: 4 })).toEqual({ t: 'mkx', id: 4 });
+    const old = readIn({ t: 'wel', id: 5, rm: 'r1', cap: 24, ps: [[2, 0, 0, 1, null]] });
+    expect(old?.t === 'wel' ? [old.x, old.px, old.mk, old.ps.length] : null).toEqual([0, [], [], 1]);
+    const neu = readIn({ t: 'wel', id: 5, rm: 'r1', cap: 24, ps: [[2, 0, 0, 1, null]], x: 1, px: [[2, [1, 2], [3]], [9, [999], []]], mk: [[1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 5], [2, 0, 0, 70, 1, 0, 0, 0, 0, 0, 5]], mt: 4320 });
+    expect(neu?.t === 'wel' ? [neu.x, neu.px, neu.mk.length, neu.mt] : null).toEqual([1, [{ id: 2, lk: [1, 2], cd: [3] }], 1, 4320]);
+  });
+});
+
 describe('客户端：收到的消息再认一遍', () => {
   it('认得的规整成一份；越界、缺字段的整条或那一项不要', () => {
-    expect(readIn({ t: 'in', id: 3, n: [1, 2], c: 1 })).toEqual({ t: 'in', id: 3, n: [1, 2], c: 1 });
+    expect(readIn({ t: 'in', id: 3, n: [1, 2], c: 1 })).toEqual({ t: 'in', id: 3, n: [1, 2], c: 1, lk: null, cd: null });
     expect(readIn({ t: 'in', id: 3, n: [999, 2], c: 1 })).toBeNull();
     expect(readIn({ t: 'say', fr: 3, to: 0, k: 1 })).toEqual({ t: 'say', fr: 3, to: 0, k: 1 });
     expect(readIn({ t: 'say', fr: 3, to: 0, k: 999 })).toBeNull();

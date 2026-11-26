@@ -1,5 +1,5 @@
 /**
- * 全村的名册：谁、叫什么、怎么称呼先生、做什么的、多大、住哪家、家里有谁、什么脾气、喜欢什么、一天怎么过。
+ * 全村的名册：谁、叫什么、怎么称呼你（来作客的外乡人）、做什么的、多大、住哪家、家里有谁、什么脾气、喜欢什么、一天怎么过。
  *
  * 这一份同时是村里人「真的怎么过日子」的出处：src/world/life/ 里每个人的日程就是照着 plan 走的
  * （plan 里每一步的 act 是那件事在 people.ts / villagers.ts 里的名字；没有 act 的那一步是人在家里或不在村里）。
@@ -31,7 +31,10 @@ export interface FolkDef {
   id: string;
   /** 名字（村里人怎么叫他） */
   name: string;
-  /** 他怎么称呼先生 */
+  /**
+   * 他怎么称呼你。你是外乡来的客人：「后生|闺女」是对男客、女客的两样叫法（男女一样就不写「|」）。
+   * 熟了以后怎么改口，写在 src/data/talk2.ts 那个人的 calls 里；此刻真叫的是哪一样，看 acts/favor.ts 的 callOf
+   */
   call: string;
   /** 身份、活计 */
   role: string;
@@ -112,7 +115,7 @@ const storyRow = (ss: number, s: Season, who = '在槐树下听韩翁说书'): R
 export const FOLK: FolkDef[] = [
   // ———————————————————————— 甲家·王家（种田的） ————————————————————————
   {
-    id: 'farmer', name: '王伯', call: '先生', role: '农夫（王家当家的，村里小辈都叫他王伯）', age: 47, sex: 'm', home: 'a', family: ['farmwife', 'picker', 'farmson', 'lunch', 'kid1'],
+    id: 'farmer', name: '王伯', call: '后生|闺女', role: '农夫（王家当家的，村里小辈都叫他王伯）', age: 47, sex: 'm', home: 'a', family: ['farmwife', 'picker', 'farmson', 'lunch', 'kid1'],
     temper: '话少，肯下死力气；一说起庄稼就停不住。', likes: ['wine', 'seedWheat', '旱地里的雨'],
     plan: days({
       home: A,
@@ -132,7 +135,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'farmwife', name: '王大娘', call: '先生', role: '农夫的老伴', age: 45, sex: 'f', home: 'a', family: ['farmer', 'picker', 'farmson', 'lunch', 'kid1', 'aunt'],
+    id: 'farmwife', name: '王大娘', call: '客人|娘子', role: '农夫的老伴', age: 45, sex: 'f', home: 'a', family: ['farmer', 'picker', 'farmson', 'lunch', 'kid1', 'aunt'],
     temper: '嘴快心热，见了谁都要往人手里塞点吃的。', likes: ['thread', 'greens', 'egg'],
     plan: days({
       home: A,
@@ -148,8 +151,8 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'farmson', name: '二郎', call: '先生', role: '农夫的小儿子，跟着爹下地', age: 15, sex: 'm', home: 'a', family: ['farmer', 'farmwife', 'picker', 'lunch', 'kid1'],
-    temper: '憨，手脚勤快，见了先生有点腼腆。', likes: ['peach', 'fish', '一把好镰'],
+    id: 'farmson', name: '二郎', call: '大哥|大姐', role: '农夫的小儿子，跟着爹下地', age: 15, sex: 'm', home: 'a', family: ['farmer', 'farmwife', 'picker', 'lunch', 'kid1'],
+    temper: '憨，手脚勤快，见了生人有点腼腆。', likes: ['peach', 'fish', '一把好镰'],
     plan: days({
       home: A,
       fair: (sr, ss, s) => s === 'winter' ? [
@@ -170,7 +173,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'picker', name: '桂姐', call: '先生', role: '采桑女，王家的大女儿', age: 17, sex: 'f', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'lunch', 'kid1'],
+    id: 'picker', name: '桂姐', call: '大哥|姐姐', role: '采桑女，王家的大女儿', age: 17, sex: 'f', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'lunch', 'kid1'],
     temper: '利落，爱干净，不大说话，一笑就红脸。', likes: ['flower', 'thread'],
     plan: days({
       home: A,
@@ -192,7 +195,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'lunch', name: '阿秀', call: '先生', role: '王家的小女儿，晌午给地里送饭', age: 13, sex: 'f', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'picker', 'kid1'],
+    id: 'lunch', name: '阿秀', call: '哥哥|姐姐', role: '王家的小女儿，晌午给地里送饭', age: 13, sex: 'f', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'picker', 'kid1'],
     temper: '机灵，嘴甜，走路一蹦一跳的。', likes: ['candy', 'flower', 'peach'],
     plan: days({
       home: A,
@@ -209,8 +212,8 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'kid1', name: '三郎', call: '先生', role: '王家的小儿子，在村塾念书', age: 8, sex: 'm', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'picker', 'lunch'],
-    temper: '爱问，什么都要问个为什么；天一黑就想看星星。', likes: ['candy', 'peach', '先生讲的星星'],
+    id: 'kid1', name: '三郎', call: '大哥哥|大姐姐', role: '王家的小儿子，在村塾念书', age: 8, sex: 'm', home: 'a', family: ['farmer', 'farmwife', 'farmson', 'picker', 'lunch'],
+    temper: '爱问，什么都要问个为什么；天一黑就想看星星。', likes: ['candy', 'peach', '听人讲星星'],
     plan: days({
       home: A,
       fair: (sr, ss) => [
@@ -223,7 +226,7 @@ export const FOLK: FolkDef[] = [
   },
   // ———————————————————————— 乙家·李家 ————————————————————————
   {
-    id: 'elder', name: '李公', call: '先生', role: '村里最年长的老人', age: 73, sex: 'm', home: 'b', family: ['watchman', 'neighbor', 'washer', 'kid2'],
+    id: 'elder', name: '李公', call: '后生|闺女', role: '村里最年长的老人', age: 73, sex: 'm', home: 'b', family: ['watchman', 'neighbor', 'washer', 'kid2'],
     temper: '慢性子，爱晒太阳，爱讲古；棋下得不好，悔棋。', likes: ['tea', 'wine', 'jujube'],
     plan: days({
       home: B,
@@ -237,7 +240,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'basketman', name: '陈篾匠', call: '先生', role: '篾匠（己家，住村西头，屋后不远就是竹林）', age: 44, sex: 'm', home: 'f', family: [],
+    id: 'basketman', name: '陈篾匠', call: '郎君|娘子', role: '篾匠（己家，住村西头，屋后不远就是竹林）', age: 44, sex: 'm', home: 'f', family: [],
     temper: '手巧话少，编东西时不爱人打扰，编完了却爱拿给人看。', likes: ['wine', '好竹子'],
     plan: days({
       home: F,
@@ -253,7 +256,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'neighbor', name: '李二嫂', call: '先生', role: '邻家妇人（打更的李二的媳妇）', age: 40, sex: 'f', home: 'b', family: ['watchman', 'elder', 'washer', 'kid2'],
+    id: 'neighbor', name: '李二嫂', call: '客人|娘子', role: '邻家妇人（打更的李二的媳妇）', age: 40, sex: 'f', home: 'b', family: ['watchman', 'elder', 'washer', 'kid2'],
     temper: '热心，什么事都要张罗；隔一阵就给公公端碗茶。', likes: ['flower', 'thread', 'greens'],
     plan: days({
       home: B,
@@ -269,7 +272,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'washer', name: '小莲', call: '先生', role: '浣衣女（李二的女儿）', age: 16, sex: 'f', home: 'b', family: ['watchman', 'neighbor', 'elder', 'kid2'],
+    id: 'washer', name: '小莲', call: '大哥|姐姐', role: '浣衣女（李二的女儿）', age: 16, sex: 'f', home: 'b', family: ['watchman', 'neighbor', 'elder', 'kid2'],
     temper: '爱笑，一边捶衣一边哼歌。', likes: ['flower', 'peach', 'thread'],
     plan: days({
       home: B,
@@ -282,7 +285,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'kid2', name: '虎子', call: '先生', role: '李家的小孙子，在村塾念书', age: 9, sex: 'm', home: 'b', family: ['watchman', 'neighbor', 'elder', 'washer'],
+    id: 'kid2', name: '虎子', call: '哥哥|姐姐', role: '李家的小孙子，在村塾念书', age: 9, sex: 'm', home: 'b', family: ['watchman', 'neighbor', 'elder', 'washer'],
     temper: '淘气，爬树掏鸟，跑得最快。', likes: ['candy', 'peach', 'persimmon'],
     plan: days({
       home: B,
@@ -296,7 +299,7 @@ export const FOLK: FolkDef[] = [
   },
   // ———————————————————————— 丁家·赵家 ————————————————————————
   {
-    id: 'elder2', name: '赵老', call: '先生', role: '老木匠，如今只下棋', age: 68, sex: 'm', home: 'd', family: ['carpenter1', 'teacher', 'weaver', 'kid3', 'swinger'],
+    id: 'elder2', name: '赵老', call: '小哥|小娘子', role: '老木匠，如今只下棋', age: 68, sex: 'm', home: 'd', family: ['carpenter1', 'teacher', 'weaver', 'kid3', 'swinger'],
     temper: '棋下得慢，输了也笑；看儿子干活总忍不住指点两句。', likes: ['tea', 'wine'],
     plan: days({
       home: D,
@@ -309,7 +312,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'carpenter1', name: '赵大', call: '先生', role: '木匠，正修着东头的木桥', age: 45, sex: 'm', home: 'd', family: ['elder2', 'teacher', 'weaver', 'kid3', 'swinger'],
+    id: 'carpenter1', name: '赵大', call: '郎君|娘子', role: '木匠，正修着东头的木桥', age: 45, sex: 'm', home: 'd', family: ['elder2', 'teacher', 'weaver', 'kid3', 'swinger'],
     temper: '讲究，活儿不对宁可拆了重做。', likes: ['wine', '老榆木'],
     plan: days({
       home: D,
@@ -326,7 +329,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'carpenter2', name: '小乙', call: '先生', role: '木匠的徒弟（外村来的，跟着赵大学手艺，住在师傅家）', age: 19, sex: 'm', home: 'd', family: [],
+    id: 'carpenter2', name: '小乙', call: '大哥|大姐', role: '木匠的徒弟（外村来的，跟着赵大学手艺，住在师傅家）', age: 19, sex: 'm', home: 'd', family: [],
     temper: '老实，力气大，师傅说一句他应一句。', likes: ['candy', 'wine'],
     plan: days({
       home: D,
@@ -343,7 +346,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'weaver', name: '赵大嫂', call: '先生', role: '织布的媳妇（赵大的妻子）', age: 41, sex: 'f', home: 'd', family: ['carpenter1', 'elder2', 'teacher', 'kid3', 'swinger'],
+    id: 'weaver', name: '赵大嫂', call: '客人|娘子', role: '织布的媳妇（赵大的妻子）', age: 41, sex: 'f', home: 'd', family: ['carpenter1', 'elder2', 'teacher', 'kid3', 'swinger'],
     temper: '安静，手不停；织机一响一整天。', likes: ['thread', 'flower'],
     plan: days({
       home: D,
@@ -360,8 +363,8 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'teacher', name: '赵先生', call: '先生', role: '村塾的塾师（赵老的小儿子）', age: 36, sex: 'm', home: 'd', family: ['elder2', 'carpenter1', 'weaver', 'kid3', 'swinger'],
-    temper: '迂，好学，常拿着书来向先生请教。', likes: ['poem', 'tea', '书'],
+    id: 'teacher', name: '赵先生', call: '郎君|娘子', role: '村塾的塾师（赵老的小儿子）', age: 36, sex: 'm', home: 'd', family: ['elder2', 'carpenter1', 'weaver', 'kid3', 'swinger'],
+    temper: '迂，好学；邵先生在家时，常拿着书去草堂请教。', likes: ['poem', 'tea', '书'],
     plan: days({
       home: D,
       fair: (sr, ss, s) => [
@@ -377,12 +380,12 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'kid3', name: '石头', call: '先生', role: '赵家的小孙子，在村塾念书', age: 7, sex: 'm', home: 'd', family: ['carpenter1', 'weaver', 'elder2', 'teacher', 'swinger'],
+    id: 'kid3', name: '石头', call: '哥哥|姐姐', role: '赵家的小孙子，在村塾念书', age: 7, sex: 'm', home: 'd', family: ['carpenter1', 'weaver', 'elder2', 'teacher', 'swinger'],
     temper: '蔫儿，不爱跑，爱蹲着看蚂蚁、看爷爷下棋。', likes: ['candy', 'jujube'],
     plan: days({
       home: D,
       fair: (sr, ss, s) => [
-        [7, 11, SCHOOL, '念书（先生是他二叔）', 'school'],
+        [7, 11, SCHOOL, '念书（塾师是他二叔）', 'school'],
         [13, 14, '槐树南边的空地', '蹲着看蚂蚁', 'play'],
         [14, s === 'winter' ? 15 : Math.min(17, ss - 0.4), ELM, '站在石桌边看爷爷下棋', 'watch'],
         storyRow(ss, s, '挨着娘听说书'),
@@ -391,7 +394,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'swinger', name: '杏儿', call: '先生', role: '赵家的小孙女', age: 6, sex: 'f', home: 'd', family: ['carpenter1', 'weaver', 'elder2', 'teacher', 'kid3'],
+    id: 'swinger', name: '杏儿', call: '哥哥|姐姐', role: '赵家的小孙女', age: 6, sex: 'f', home: 'd', family: ['carpenter1', 'weaver', 'elder2', 'teacher', 'kid3'],
     temper: '胆小，爱跟着娘；坐上秋千就不肯下来。', likes: ['candy', 'flower', 'peach'],
     plan: days({
       home: D,
@@ -407,7 +410,7 @@ export const FOLK: FolkDef[] = [
   },
   // ———————————————————————— 戊家·孙家（酒家） ————————————————————————
   {
-    id: 'keeper', name: '孙掌柜', call: '先生', role: '酒家掌柜', age: 52, sex: 'm', home: 'e', family: ['tofu', 'miller'],
+    id: 'keeper', name: '孙掌柜', call: '客官|小娘子', role: '酒家掌柜', age: 52, sex: 'm', home: 'e', family: ['tofu', 'miller'],
     temper: '和气，会算账，好客；记账只记大数。', likes: ['fish', 'egg', '好米'],
     plan: days({
       home: E,
@@ -416,7 +419,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'tofu', name: '孙嫂', call: '先生', role: '做豆腐的（孙掌柜的妻子）', age: 48, sex: 'f', home: 'e', family: ['keeper', 'miller'],
+    id: 'tofu', name: '孙嫂', call: '小哥|小娘子', role: '做豆腐的（孙掌柜的妻子）', age: 48, sex: 'f', home: 'e', family: ['keeper', 'miller'],
     temper: '起得最早，说话爽利，豆腐点得嫩。', likes: ['bean', 'seedBean'],
     plan: days({
       home: E,
@@ -430,7 +433,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'miller', name: '柱子', call: '先生', role: '舂米人（孙家的儿子）', age: 23, sex: 'm', home: 'e', family: ['keeper', 'tofu'],
+    id: 'miller', name: '柱子', call: '大哥|大姐', role: '舂米人（孙家的儿子）', age: 23, sex: 'm', home: 'e', family: ['keeper', 'tofu'],
     temper: '一身力气，饭量大，见人就笑。', likes: ['wine', 'flour'],
     plan: days({
       home: E,
@@ -445,7 +448,7 @@ export const FOLK: FolkDef[] = [
   },
   // ———————————————————————— 村外来的、过路的 ————————————————————————
   {
-    id: 'fisher', name: '老许', call: '先生', role: '渔父（住在渡口的乌篷船上）', age: 61, sex: 'm', home: '渔船', family: [],
+    id: 'fisher', name: '老许', call: '后生|小娘子', role: '渔父（住在渡口的乌篷船上）', age: 61, sex: 'm', home: '渔船', family: [],
     temper: '不急不躁，鱼不咬钩就看云；与樵夫老刘最说得来。', likes: ['wine', 'tea'],
     plan: days({
       home: '渡口的船上',
@@ -459,7 +462,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'woodcutter', name: '老刘', call: '先生', role: '樵夫（住在伊水南边的山里）', age: 50, sex: 'm', home: '村外', family: [],
+    id: 'woodcutter', name: '老刘', call: '小兄弟|大妹子', role: '樵夫（住在伊水南边的山里）', age: 50, sex: 'm', home: '村外', family: [],
     temper: '爽快，山里的路闭着眼也认得；砍枯枝，留活树。', likes: ['wine', 'fish'],
     plan: days({
       home: '南山里',
@@ -469,7 +472,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'herdboy', name: '牛儿', call: '先生', role: '牧童（西边张家庄的）', age: 11, sex: 'm', home: '村外', family: [],
+    id: 'herdboy', name: '牛儿', call: '大哥|大姐', role: '牧童（西边张家庄的）', age: 11, sex: 'm', home: '村外', family: [],
     temper: '野，爱吹笛；牛走到哪他就睡到哪。', likes: ['candy', 'peach', '一支新笛'],
     plan: days({
       home: '西边张家庄',
@@ -479,7 +482,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'drinker', name: '钱三', call: '先生', role: '酒客（东边过来的脚夫）', age: 38, sex: 'm', home: '村外', family: [],
+    id: 'drinker', name: '钱三', call: '兄弟|妹子', role: '酒客（东边过来的脚夫）', age: 38, sex: 'm', home: '村外', family: [],
     temper: '豪爽，三碗下肚就爱唱两句。', likes: ['wine'],
     plan: days({
       home: '东边',
@@ -489,7 +492,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'peddler', name: '吴四', call: '先生', role: '货郎（走村串巷的）', age: 35, sex: 'm', home: '村外', family: [],
+    id: 'peddler', name: '吴四', call: '小官人|小娘子', role: '货郎（走村串巷的）', age: 35, sex: 'm', home: '村外', family: [],
     temper: '嘴甜，记性好，谁家要什么他都记得。', likes: ['tea', 'coin'],
     plan: days({
       home: '路上',
@@ -499,7 +502,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'guest', name: '郑先生', call: '先生', role: '客（城里来访的读书朋友）', age: 50, sex: 'm', home: '村外', family: [],
+    id: 'guest', name: '郑先生', call: '足下|娘子', role: '客（邵先生的读书朋友，从洛阳城里来）', age: 50, sex: 'm', home: '村外', family: [],
     temper: '清雅，好谈诗论易，一盏茶能坐一下午。', likes: ['tea', 'poem', 'wine'],
     plan: days({
       home: '洛阳城里',
@@ -510,7 +513,7 @@ export const FOLK: FolkDef[] = [
   },
   // ———————————————————————— 后来添的几位 ————————————————————————
   {
-    id: 'potter', name: '陶大', call: '先生', role: '陶工（庚家，住村东头的溪岸上，屋东南一座窑）', age: 50, sex: 'm', home: 'g', family: [],
+    id: 'potter', name: '陶大', call: '后生|娘子', role: '陶工（庚家，住村东头的溪岸上，屋东南一座窑）', age: 50, sex: 'm', home: 'g', family: [],
     temper: '手稳话慢，一只罐拉得不圆宁可揉了重来；开窑那天谁来都给一只碗。', likes: ['wine', 'firewood', 'tea'],
     plan: days({
       home: G,
@@ -526,7 +529,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'herbalist', name: '孟老', call: '先生', role: '药农（上山采药，回来晒药）', age: 59, sex: 'm', home: '村外', family: [],
+    id: 'herbalist', name: '孟老', call: '后生|小娘子', role: '药农（上山采药，回来晒药）', age: 59, sex: 'm', home: '村外', family: [],
     temper: '识得百草，脾气有点古怪，最烦人踩他的药匾。', likes: ['herb', 'wine', 'tea'],
     plan: days({
       home: '北山脚的草屋',
@@ -539,7 +542,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'shepherd', name: '冯老汉', call: '先生', role: '放羊的老汉（替赵家和几户人家放羊，住村东头外的草棚）', age: 64, sex: 'm', home: '村外', family: [],
+    id: 'shepherd', name: '冯老汉', call: '后生|闺女', role: '放羊的老汉（替赵家和几户人家放羊，住村东头外的草棚）', age: 64, sex: 'm', home: '村外', family: [],
     temper: '一个人惯了，跟羊说的话比跟人说的多。', likes: ['wine', 'tea'],
     plan: days({
       home: '村东头外的草棚',
@@ -553,7 +556,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'watchman', name: '李二', call: '先生', role: '打更的（李公的儿子）', age: 44, sex: 'm', home: 'b', family: ['elder', 'neighbor', 'washer', 'kid2'],
+    id: 'watchman', name: '李二', call: '小哥|娘子', role: '打更的（李公的儿子）', age: 44, sex: 'm', home: 'b', family: ['elder', 'neighbor', 'washer', 'kid2'],
     temper: '夜里眼尖耳灵，白天困得睁不开眼。', likes: ['wine', 'tea', '一盏好灯'],
     plan: days({
       home: B,
@@ -570,7 +573,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'teller', name: '韩翁', call: '先生', role: '说书的盲翁（负鼓，邻村来）', age: 66, sex: 'm', home: '村外', family: [],
+    id: 'teller', name: '韩翁', call: '客官|娘子', role: '说书的盲翁（负鼓，邻村来）', age: 66, sex: 'm', home: '村外', family: [],
     temper: '眼看不见，耳朵极灵；一开口满村都静下来。', likes: ['wine', 'tea'],
     plan: days({
       home: '邻村',
@@ -581,7 +584,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'monk', name: '了然', call: '施主', role: '行脚僧（过路，在茶亭歇脚）', age: 45, sex: 'm', home: '村外', family: [],
+    id: 'monk', name: '了然', call: '施主|女施主', role: '行脚僧（过路，在茶亭歇脚）', age: 45, sex: 'm', home: '村外', family: [],
     temper: '和气，话少，见人先合十。', likes: ['tea', 'bun'],
     plan: days({
       home: '路上',
@@ -591,7 +594,7 @@ export const FOLK: FolkDef[] = [
     }),
   },
   {
-    id: 'aunt', name: '刘二姐', call: '先生', role: '王大娘的娘家妹子（东边刘家庄的，王家孩子叫她二姨）', age: 42, sex: 'f', home: '村外', family: ['farmwife'],
+    id: 'aunt', name: '刘二姐', call: '小哥|妹子', role: '王大娘的娘家妹子（东边刘家庄的，王家孩子叫她二姨）', age: 42, sex: 'f', home: '村外', family: ['farmwife'],
     temper: '爱说爱笑，来一趟要把两个庄子的新闻都说完。', likes: ['egg', 'thread', 'flower'],
     plan: days({
       home: '东边刘家庄',

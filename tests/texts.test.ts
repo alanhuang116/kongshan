@@ -322,8 +322,10 @@ describe('村里人的话（LINES，自撰）', () => {
   const WHO = [...FIRST, ...LATER, 'guest'];
   /** 「」里引的字，去掉标点 */
   const quoted = (s: string) => [...s.matchAll(/「([^」]*)」/g)].map((m) => hanOnly(m[1]));
-  /** 一句话连同主人接的那句 */
+  /** 一句话连同你接的那句 */
   const both = (l: (typeof LINES)[number]) => (l.reply === undefined ? [l.text] : [l.text, l.reply]);
+  /** 说出口的样子：「{你}」（他此刻怎么叫你）按四个字算（叫法至多四个字，见 tests/talk.test.ts） */
+  const said = (s: string) => s.replace(/\{你\}/g, '这位郎君');
 
   it('十五种人，句数各在约定之内，各有不限时令的话', () => {
     unique(LINES.map((l) => l.id));
@@ -344,9 +346,9 @@ describe('村里人的话（LINES，自撰）', () => {
     expect(n('guest')).toBeLessThanOrEqual(10);
     for (const w of WHO) expect(LINES.filter((l) => l.who === w && !l.when).length, `${w} 要有不限时令的话`).toBeGreaterThanOrEqual(2);
   });
-  it('每句不超过 30 字，没有 ASCII，句末有标点', () => {
+  it('每句不超过 30 字，没有 ASCII（{你} 按叫法算），句末有标点', () => {
     for (const l of LINES) {
-      for (const t of both(l)) {
+      for (const t of both(l).map(said)) {
         expect(len(t), l.id).toBeLessThanOrEqual(30);
         expect(len(t), l.id).toBeGreaterThanOrEqual(4);
         expect(t, l.id).not.toMatch(ASCII);

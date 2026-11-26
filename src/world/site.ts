@@ -57,16 +57,21 @@ export const SITE = {
   pots: [{ x: -3.05, z: 3.05, kind: 'orchid' }, { x: 3.1, z: 3.05, kind: 'daylily' }] as Array<Pt & { kind: 'orchid' | 'daylily' }>,
   /** 菜畦（院西） */
   veg: { x0: -24, x1: -14, z0: 2, z1: 13 } as Rect,
-  /** 屋后小池（椭圆）与水面的高度 */
-  pond: { x: 7, z: -19.5, rx: 8, rz: 6, y: 8.75 },
-  /** 观物亭：池西岸的矮亭。floor 是亭里地面比外面高多少 */
-  pavilion: { x: -3.8, z: -21, half: 1.9, floor: 0.32 },
-  /** 小石桥：三条石板，南北向跨溪 */
-  bridge: { x: 0, z: 30, w: 2.0, len: 7.2 },
-  /** 汀步：溪里的几块踏脚石（村口） */
-  stones: { x: 62, z: 30.6 },
-  /** 东头正在修的木桥 */
-  plank: { x: 128, z: 49.5, len: 7, yaw: 0.5 },
+  /**
+   * 门前塘（椭圆）与水面的高度：柴门西南、门前那条路的西边——屋前聚水（明堂），屋后不设池。
+   * 水面高开场时按那里的地势定（见下面「过溪的几处」）。
+   */
+  pond: { x: -10, z: 30.5, rx: 8.5, rz: 5.5, y: 6 },
+  /** 观物亭：草堂背后小坡顶上的矮亭（坡在 base 里垒起来）。floor 是亭里地面比外面高多少 */
+  pavilion: { x: -4, z: -24, half: 1.9, floor: 0.32 },
+  /** 小石桥：三条石板，南北向跨溪（柴门往南，过了门前塘、明堂，溪在这里兜到最南；过桥就是田）。z 开场时按溪的中线算准 */
+  bridge: { x: 0, z: 64, w: 2.0, len: 7.2 },
+  /** 汀步：溪里的几块踏脚石（村口往南，过去是东边的田与桑园）。z 开场时算准 */
+  stones: { x: 62, z: 57.6 },
+  /** 东头正在修的木桥（z、yaw 开场时按溪算准：桥身横跨溪） */
+  plank: { x: 128, z: 44.5, len: 7, yaw: 0.5 },
+  /** 板桥：桃林的路在这里过溪（溪从西边流来，在这里折向南，兜着村子流到石桥底下）。x、yaw 开场时算准 */
+  board: { x: -83, z: 40.6, len: 7.2, yaw: 0 },
   /**
    * 村子：几户人家（都不进去）。school 是村塾，前面敞着。
    * 己（f）是篾匠，住村西头，屋后不远就是竹林；庚（g）是陶家，住村东头溪岸上，屋东南一座窑、屋西一间坯棚（见 crafts）。
@@ -91,8 +96,8 @@ export const SITE = {
   },
   /** 大槐树（树下石凳，老人常坐）、井 */
   elm: { x: 90, z: 12.5 }, well: { x: 66, z: 15.5 },
-  /** 桑园 */
-  mulberry: { x0: 74, x1: 121, z0: 47, z1: 68 } as Rect,
+  /** 桑园（溪南，田的东北角） */
+  mulberry: { x0: 74, x1: 121, z0: 71, z1: 92 } as Rect,
   /** 渡口：伊水北岸，渔舟泊在这里 */
   ferry: { x: 132, z: 226 },
   /**
@@ -103,13 +108,15 @@ export const SITE = {
    *   草垛；渡口的晒网架；牧童骑牛来回的一段溪岸；晌午给田里送饭走的路。
    */
   more: {
-    teaShed: { x: 33.5, z: 24.8, yaw: 0 }, wash: { x: 47, z: 28.7 }, mill: { x: 107, z: 36.2, yaw: 0.4 }, dryYard: { x: 63, z: 3.5, r: 5.6 },
+    // 洗衣埠、碓房的 z 开场时按溪算准（在北岸，离水边一步）
+    teaShed: { x: 33.5, z: 24.8, yaw: 0 }, wash: { x: 46, z: 58.6 }, mill: { x: 107, z: 48.6, yaw: 0.4 }, dryYard: { x: 63, z: 3.5, r: 5.6 },
     oxShed: { x: 45.2, z: 0.4, yaw: 0.12 }, wineShop: { house: 'e', bench: { x: 81.4, z: 17.8 } }, swing: { x: 105.6, z: 8.2 }, chess: { x: 91.9, z: 14.6 },
-    duckPen: { x: 56.4, z: 26.9 }, shrine: { x: 40.6, z: 19.1 }, cart: { x: -4.8, z: 18.2 }, trellis: { x: -19, z: 8.6 },
-    haystacks: [{ x: 26.8, z: 45.3 }, { x: -45.2, z: 44.1 }, { x: 70.8, z: 95.2 }, { x: 58.6, z: -3.4 }] as Pt[],
+    duckPen: { x: 54, z: 51.6 }, shrine: { x: 40.6, z: 19.1 }, cart: { x: -4.8, z: 18.2 }, trellis: { x: -19, z: 8.6 },
+    haystacks: [{ x: 26.8, z: 45.3 }, { x: -44, z: 47.6 }, { x: 70.8, z: 119.2 }, { x: 58.6, z: -3.4 }] as Pt[],
     netRack: { x: 137.6, z: 221.8 },
-    herd: [[-66, 43.6], [-24, 43.9]] as Array<[number, number]>,
-    lunch: [[52, 9], [34, 21], [2, 23], [0, 35.4], [22, 41], [22, 77], [-13, 77], [-13, 90]] as Array<[number, number]>,
+    // 放牛那一段溪岸、送饭的路：开场时按溪与桥算准（见下面「过溪的几处」）
+    herd: [[-58, 52], [-26, 58]] as Array<[number, number]>,
+    lunch: [[52, 9], [34, 21], [2, 23], [1.6, 40], [0.9, 52], [0, 58.6], [0, 69.4], [22, 69.2], [22, 101], [-13, 101], [-13, 114]] as Array<[number, number]>,
   },
   /** 入口：桃林最西头，面朝东 */
   entry: { x: -176, z: 41.5, yaw: Math.PI / 2 },
@@ -117,24 +124,59 @@ export const SITE = {
   bounds: { x0: -188, x1: 152, z0: -46, z1: 236 } as Rect,
 };
 
+// —— 后添的几样（2026-11-25，为观象添的，只往上加，不挪别的） ——
+/** 药圃西边的低冈：中心、半径、高（地势在 base 里垒起来） */
+export const MOUND = { x: -33, z: -12.5, r: 7.5, h: 2.3 };
+/**
+ * 几道小水：都只是画上的（屋舍那边砌石、铺水），不挡路，地也不挖。
+ *   ditch   渠：石桥南头往东的溪南岸，从溪里引出一道石砌的小渠，往南钻进溪南小路底下的涵洞（culvert：涵洞南北两口），出来顺着田边往南，拐进那一畦田头（观象「师」）；
+ *   spring  泉：村塾东山墙外的坡脚下一眼小泉，泉眼一圈石，一线细流顺着墙根往南淌（观象「蒙」：山下出泉）；
+ *   gutter  门前沟：乙家门前一道浇菜的小水沟，东头一只石臼接着竹笕的水（观象「比」：水流过地面）。
+ */
+export const RILLS = {
+  ditch: [[18.3, 65.6], [18.05, 67.4], [18, 68.6], [18, 70.35], [18.05, 77], [17.85, 84.3], [16.9, 85.7], [15.3, 86.3]] as Array<[number, number]>,
+  culvert: { x: 18, z0: 68.6, z1: 70.35 },
+  spring: { x: 106.4, z: -1.3, run: [[106.4, -0.7], [106.2, 1.4], [105.9, 3.6], [106.1, 5.6]] as Array<[number, number]> },
+  gutter: [[76.1, -4.3], [74.4, -3.85], [72.6, -3.5], [70.6, -3.05], [69.4, -2.4]] as Array<[number, number]>,
+};
+/**
+ * 门前塘北岸叠的一溜石（观象「咸」：池子落在一圈石岸、坡地的怀里，像山上的一汪水）：x、z、半径。
+ * 不进 ROCKS（草木那几路照 ROCKS 一块一块点苔、取随机数，添进去别处的草就挪了）：屋舍那边另砌，挡路的另报。
+ */
+export const BANK_STONES: Array<[number, number, number]> = (() => {
+  const P = SITE.pond, out: Array<[number, number, number]> = [];
+  // 外一圈大的、里一圈小的，从西北拐到东北（东边留给路与那株卧柳）
+  const R = mulberry32(2511);
+  for (let i = 0; i < 11; i++) { const a = Math.PI * (1.04 + 0.7 * (i / 10)) + (R() - 0.5) * 0.08, k = 1.2 + R() * 0.1; out.push([P.x + Math.cos(a) * P.rx * k, P.z + Math.sin(a) * P.rz * k, 0.95 + R() * 0.55]); }
+  for (let i = 0; i < 8; i++) { const a = Math.PI * (1.1 + 0.6 * (i / 7)) + (R() - 0.5) * 0.1, k = 1.06 + R() * 0.05; out.push([P.x + Math.cos(a) * P.rx * k, P.z + Math.sin(a) * P.rz * k, 0.5 + R() * 0.35]); }
+  return out;
+})();
+
 // —— 田畴 ——
 export type Crop = 'wheat' | 'rape' | 'plough' | 'veg' | 'bean' | 'fallow';
 export interface Plot extends Rect { crop: Crop; /** 垄的走向：0 东西向，1 南北向 */ rows: 0 | 1; y: number; /** 行者自己种的那几畦在这一块里：农事那一路画、那一路管（src/world/farm） */ farm?: boolean }
 const PLOT_DEF: Array<[number, number, number, number, Crop, 0 | 1, boolean?]> = [
   // 井田：九畦成一个「井」字，当中一畦（公田）正在耕。东北那一畦（过桥就到）北头是行者的两畦，南边是邻家王伯的麦
-  [-70, -43, 47, 76, 'wheat', 1], [-41, -14, 47, 76, 'rape', 0], [-12, 15, 47, 76, 'wheat', 0, true],
-  [-70, -43, 78, 107, 'rape', 1], [-41, -14, 78, 107, 'plough', 0], [-12, 15, 78, 107, 'wheat', 1],
-  [-70, -43, 109, 138, 'bean', 0], [-41, -14, 109, 138, 'wheat', 0], [-12, 15, 109, 138, 'rape', 1],
+  // （溪兜到村南 z≈64 以后，田整体往南挪了二十四米：田从溪南岸起）
+  [-70, -43, 71, 100, 'wheat', 1], [-41, -14, 71, 100, 'rape', 0], [-12, 15, 71, 100, 'wheat', 0, true],
+  [-70, -43, 102, 131, 'rape', 1], [-41, -14, 102, 131, 'plough', 0], [-12, 15, 102, 131, 'wheat', 1],
+  [-70, -43, 133, 162, 'bean', 0], [-41, -14, 133, 162, 'wheat', 0], [-12, 15, 133, 162, 'rape', 1],
   // 路东的几畦
-  [27, 69, 47, 68, 'veg', 0], [27, 69, 71, 91, 'wheat', 1], [73, 121, 71, 91, 'rape', 0], [27, 69, 95, 116, 'wheat', 0],
-  [73, 121, 95, 116, 'wheat', 1], [27, 69, 119, 139, 'rape', 1], [73, 121, 119, 139, 'fallow', 0],
+  [27, 69, 71, 92, 'veg', 0], [27, 69, 95, 115, 'wheat', 1], [73, 121, 95, 115, 'rape', 0], [27, 69, 119, 140, 'wheat', 0],
+  [73, 121, 119, 140, 'wheat', 1], [27, 69, 143, 163, 'rape', 1], [73, 121, 143, 163, 'fallow', 0],
 ];
 
 // —— 溪 ——
 /** 溪的中线（自上游而下）与各处的半宽 */
+/**
+ * 溪的走向（2026-11-25 按风水改过）：原先过了桃林一直往东，直直地从院前流过（直流、反弓）。
+ * 改成一只碗抱着村子（玉带环腰、弯曲有情）：上游仍从西北峡里下来、沿桃林往东（缘溪行，夹岸桃林）；过了桃林在板桥那里折向南，
+ * 兜着院子、草堂、邻家流到村南（石桥那里最南），再往东北抬到陶家窑后，出了能走到的地方折向东南入伊水（水口藏在窑后）。
+ */
 const STREAM_CTRL: Array<[number, number, number]> = [
-  [-232, -78, 1.3], [-204, -44, 1.5], [-178, -6, 1.6], [-158, 21, 1.8], [-128, 31, 2.0], [-96, 27.5, 2.0], [-62, 31.5, 2.1], [-30, 28.5, 2.1], [0, 30, 2.0],
-  [30, 33, 2.2], [62, 30.6, 2.4], [96, 36, 2.3], [128, 49.5, 2.3], [164, 78, 2.5], [206, 126, 2.8], [248, 188, 3.2], [300, 262, 4],
+  [-232, -78, 1.3], [-204, -44, 1.5], [-178, -6, 1.6], [-158, 21, 1.8], [-128, 31, 2.0], [-106, 30.5, 2.0], [-90, 31, 2.1], [-84, 36, 2.1], [-82, 44, 2.1],
+  [-76, 52, 2.1], [-60, 58.5, 2.1], [-36, 62.5, 2.1], [-10, 64, 2.1], [16, 64, 2.2], [42, 62, 2.3], [70, 57.5, 2.4], [98, 52, 2.3], [124, 45.5, 2.3],
+  [146, 37.5, 2.4], [168, 30, 2.5], [192, 28, 2.8], [222, 46, 3.0], [256, 96, 3.2], [286, 172, 3.6], [302, 250, 4],
 ];
 /** 伊水的中线与半宽（从伊阙出来，朝北流到田畴之南，折向东） */
 export const RIVER: Array<[number, number, number]> = [
@@ -166,7 +208,12 @@ export const RIVER_PTS: Poly = spline(RIVER, 12);
 
 /** 没有溪、池、院子时的地势 */
 function base(x: number, z: number): number {
-  let h = YARD_Y + Math.min(60, Math.max(0, -z)) * 0.05 + (2.5 + 5.5 * fbm(x * 0.011 + 2, 0.5, 2, 33)) * smooth(-44, -84 - 14 * fbm(x * 0.02, 1.5, 2, 35), z) * smooth(-140, -100, z) - 3 * smooth(-100, -140, z);
+  // 往北一路缓缓抬起；村里那一段（东边）抬得快一些，各家的屋基一级高过一级（高低有落差）
+  let h = YARD_Y + Math.min(60, Math.max(0, -z)) * (0.05 + 0.035 * smooth(24, 50, x)) + (2.5 + 5.5 * fbm(x * 0.011 + 2, 0.5, 2, 33)) * smooth(-44, -84 - 14 * fbm(x * 0.02, 1.5, 2, 35), z) * smooth(-140, -100, z) - 3 * smooth(-100, -140, z);
+  // 草堂背后的小坡：观物亭在坡顶（坡顶比院子高三米，四面缓下来）
+  { const PV = SITE.pavilion, d = Math.hypot(x - PV.x, (z - PV.z) * 1.1); h += 3.0 * smooth(21, 3.2, d); }
+  // 药圃西边一座低冈（观象「谦」站在冈上北望）：高两米多，四面缓缓下去，不碍药圃
+  { const M = MOUND, d = Math.hypot(x - M.x, (z - M.z) * 1.15); if (d < M.r) h += M.h * smooth(M.r, 1.4, d); }
   // 院前到溪边是一道缓坡（散步的地方，别陡）
   h -= 1.7 * smooth(12, 32, z) + 2.3 * smooth(42, 140, z) + 2.9 * smooth(140, 262, z);
   h -= 0.007 * Math.max(-200, Math.min(200, x));
@@ -178,6 +225,49 @@ function base(x: number, z: number): number {
   let m = 1e9;
   for (const p of STREAM) { m = Math.min(m, base(p.x, p.z) - 0.62); p.y = m; }
 }
+
+// —— 过溪的几处：按溪的中线算准（桥横跨溪、汀步在溪心）；门前塘的水面、放牛的那段岸、送饭的路也在这里定 ——
+/** 溪在 x = v（axis 'x'）或 z = v（axis 'z'）上穿过的那一点：中线的位置与流向；另一轴落在 lo…hi 里的那一处 */
+function streamCross(axis: 'x' | 'z', v: number, lo: number, hi: number): { x: number; z: number; tx: number; tz: number } {
+  for (let i = 0; i < STREAM.length - 1; i++) {
+    const a = STREAM[i], b = STREAM[i + 1], av = axis === 'x' ? a.x : a.z, bv = axis === 'x' ? b.x : b.z;
+    if ((av - v) * (bv - v) > 0 || av === bv) continue;
+    const t = (v - av) / (bv - av), x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t, o = axis === 'x' ? z : x;
+    if (o < lo || o > hi) continue;
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    return { x, z, tx: (b.x - a.x) / l, tz: (b.z - a.z) / l };
+  }
+  return axis === 'x' ? { x: v, z: (lo + hi) / 2, tx: 1, tz: 0 } : { x: (lo + hi) / 2, z: v, tx: 0, tz: 1 };
+}
+/** 溪在 x 处的中线 z（村南那一段：x 在 −74 … 150） */
+export const streamZ = (x: number) => streamCross('x', x, 25, 80).z;
+{
+  const r2 = (v: number) => Math.round(v * 100) / 100, r3 = (v: number) => Math.round(v * 1000) / 1000;
+  SITE.bridge.z = r2(streamZ(SITE.bridge.x));
+  SITE.stones.z = r2(streamZ(SITE.stones.x));
+  // 木桥、板桥：桥身（自己的 z 轴，朝 (sin yaw, cos yaw)）沿溪的法向，横跨溪
+  { const c = streamCross('x', SITE.plank.x, 25, 70); SITE.plank.z = r2(c.z); SITE.plank.yaw = r3(Math.atan2(-c.tz, c.tx)); }
+  { const c = streamCross('z', SITE.board.z, -100, -60); SITE.board.x = r2(c.x); SITE.board.yaw = r3(Math.atan2(-c.tz, c.tx)); }
+  // 洗衣埠、碓房在北岸，离水边一步；鸭栏在北岸坡上
+  SITE.more.wash.z = r2(streamZ(SITE.more.wash.x) - 3.1);
+  SITE.more.mill.z = r2(streamZ(SITE.more.mill.x) - 2.6);
+  SITE.more.duckPen.z = r2(streamZ(SITE.more.duckPen.x) - 7.2);
+  // 放牛：村南溪的北岸那一段
+  SITE.more.herd = [[-58, r2(streamZ(-58) - 5.6)], [-26, r2(streamZ(-26) - 5.6)]];
+  // 门前塘的水面：比那里的地低一点（池岸在 ground 里按它垫）
+  SITE.pond.y = r2(base(SITE.pond.x, SITE.pond.z) - 0.4);
+}
+/** 石桥南北两头的岸（桥面两头再往外一步）、板桥东西两头、汀步南北两头 */
+const BRIDGE_N: [number, number] = [SITE.bridge.x, SITE.bridge.z - SITE.bridge.len / 2 - 1.8], BRIDGE_S: [number, number] = [SITE.bridge.x, SITE.bridge.z + SITE.bridge.len / 2 + 1.8];
+const BOARD_ENDS: [[number, number], [number, number]] = (() => {
+  const B = SITE.board, ux = Math.sin(B.yaw), uz = Math.cos(B.yaw), h = B.len / 2 + 1.4;
+  const a: [number, number] = [B.x - ux * h, B.z - uz * h], b: [number, number] = [B.x + ux * h, B.z + uz * h];
+  return a[0] < b[0] ? [a, b] : [b, a];
+})();
+/** 溪南岸边一点（x 处，离中线 off 米） */
+const southBank = (x: number, off = 5.6): [number, number] => [x, Math.round((streamZ(x) + off) * 100) / 100];
+// 送饭的路：甲家 → 村路 → 柴门前 → 门前那条路 → 石桥 → 溪南 → 田间路 → 井田横一 → 当中那一畦的东埂
+SITE.more.lunch = [[52, 9], [34, 21], [2, 23], [1.6, 40], [0.9, 52], BRIDGE_N, BRIDGE_S, southBank(22), [22, 101], [-13, 101], [-13, 114]];
 
 export interface Near { /** 到中线的距离 */ d: number; /** 那一处的半宽、水面高、里程 */ w: number; y: number; s: number; /** 那一处水流的方向 */ tx: number; tz: number }
 type Poly = Array<{ x: number; z: number; w: number; s: number; y?: number }> & { boxes?: Float64Array };
@@ -240,9 +330,9 @@ export const houseY = (id: string) => PADS.find((p) => p.id === id)?.y ?? YARD_Y
 /** 地面的高度（溪床、池底也算在内） */
 export function ground(x: number, z: number): number {
   let h = base(x, z);
-  // 院子与屋后池边是整平的
-  const yd = rectDist({ x0: SITE.yard.x0 - 1.5, x1: SITE.yard.x1 + 1.5, z0: -30, z1: SITE.yard.z1 + 1 }, x, z);
-  if (yd < 9) h = lerp(h, YARD_Y + (z < -6 ? Math.min(1.1, (-z - 6) * 0.075) : 0), smooth(9, 0, yd));
+  // 院子是整平的；屋后起坡（观物亭那一道），背后只抹平窄窄一条，不把坡削掉
+  const yd = rectDist({ x0: SITE.yard.x0 - 1.5, x1: SITE.yard.x1 + 1.5, z0: SITE.yard.z0 - 1.5, z1: SITE.yard.z1 + 1 }, x, z), yb = z < SITE.yard.z0 - 1.5 ? 3.5 : 9;
+  if (yd < yb) h = lerp(h, YARD_Y, smooth(yb, 0, yd));
   for (const p of PADS) {
     const lx = (x - p.x) * p.c - (z - p.z) * p.s, lz = (x - p.x) * p.s + (z - p.z) * p.c;
     const d = Math.max(Math.abs(lx) - p.w / 2 - 3, Math.abs(lz) - p.d / 2 - 4);
@@ -281,21 +371,28 @@ export function waterAt(x: number, z: number): { depth: number; y: number; kind:
 // —— 路 ——
 /** 土路（折线），人走出来的 */
 export const PATHS: Array<{ id: string; w: number; pts: Array<[number, number]> }> = [
-  { id: '桃林', w: 1.5, pts: [[-186, 42], [-166, 39.5], [-150, 37.5], [-128, 39.5], [-98, 36.5], [-64, 40], [-34, 37.5], [-10, 38], [0, 35.4]] },
-  { id: '过桥进门', w: 1.5, pts: [[0, 35.4], [0, 24.6], [0.4, 20], [0, 16]] },
+  // 桃林：自园口往东，夹岸桃花，在板桥上过溪，进了溪抱着的这一片，一直走到柴门前那条路上
+  { id: '桃林', w: 1.5, pts: [[-186, 42], [-166, 39.5], [-150, 37.5], [-128, 39.5], [-106, 38.4], [-94, 40.3], BOARD_ENDS[0], BOARD_ENDS[1], [-70, 41.6], [-52, 41.2], [-34, 40.6], [-16, 40.2], [1.6, 40]] },
+  // 过桥进门：自溪南（石桥南头）过石桥，经门前塘东边，进柴门
+  { id: '过桥进门', w: 1.5, pts: [BRIDGE_S, BRIDGE_N, [0.9, 52], [1.6, 40], [1.4, 30], [0.4, 20], [0, 16]] },
   { id: '村路', w: 1.6, pts: [[0, 22], [16, 22.5], [34, 21], [50, 17], [66, 18.5], [82, 13.5], [98, 11.5], [116, 8], [136, 6], [150, 9]] },
-  { id: '溪南', w: 1.4, pts: [[0, 35.4], [10, 39.5], [22, 41], [44, 40], [62, 36.5], [84, 40.5], [104, 44], [124, 54.5], [133, 56]] },
-  { id: '田间', w: 1.2, pts: [[22, 41], [22, 69.5], [22, 93], [22, 117.5], [22.5, 141], [40, 165], [78, 192], [112, 214], [132, 226]] },
-  { id: '井田横一', w: 1.0, pts: [[-71, 77], [-42, 77], [-13, 77], [22, 77]] },
-  { id: '井田横二', w: 1.0, pts: [[-71, 108], [-42, 108], [-13, 108], [22, 108]] },
-  { id: '井田纵一', w: 1.0, pts: [[-42, 45.5], [-42, 77], [-42, 108], [-42, 139]] },
-  { id: '井田纵二', w: 1.0, pts: [[-13, 45.5], [-13, 77], [-13, 108], [-13, 139]] },
-  { id: '田埂东', w: 1.0, pts: [[22, 93], [71, 93], [122, 93]] },
-  { id: '池边', w: 1.1, pts: [[-11.5, 1.5], [-15, 0], [-14.5, -10], [-9, -17.5], [-5.6, -20]] },
+  // 溪南：沿溪的南岸、田的北沿，自石桥南头往东，过汀步南头，到修着的木桥南头
+  { id: '溪南', w: 1.4, pts: [BRIDGE_S, southBank(10), southBank(22), southBank(44), [SITE.stones.x, SITE.stones.z + 3.6], southBank(84), southBank(104), southBank(124, 5.2), southBank(133, 6.2)] },
+  { id: '田间', w: 1.2, pts: [southBank(22), [22, 93.5], [22, 117], [22, 141.5], [22.5, 165], [48, 189], [86, 209], [114, 219], [132, 226]] },
+  { id: '井田横一', w: 1.0, pts: [[-71, 101], [-42, 101], [-13, 101], [22, 101]] },
+  { id: '井田横二', w: 1.0, pts: [[-71, 132], [-42, 132], [-13, 132], [22, 132]] },
+  { id: '井田纵一', w: 1.0, pts: [southBank(-42), [-42, 101], [-42, 132], [-42, 163]] },
+  { id: '井田纵二', w: 1.0, pts: [southBank(-13), [-13, 101], [-13, 132], [-13, 163]] },
+  // 溪南西：石桥南头往西，沿溪南岸、井田的北沿（井田两条纵路的北头都接在这条路上）
+  { id: '溪南西', w: 1.2, pts: [BRIDGE_S, southBank(-13), southBank(-42), southBank(-66)] },
+  { id: '田埂东', w: 1.0, pts: [[22, 117], [71, 117], [122, 117]] },
+  // 池边（名字是旧的，路如今上坡）：出院西小门，绕菜畦北头，沿坡的西肩上去，到观物亭南面（亭北、亭西是坐凳）
+  { id: '池边', w: 1.1, pts: [[-11.5, 1.5], [-15, 0], [-15.8, -9], [-12.8, -16.4], [-7.8, -20.4]] },
   { id: '菜畦', w: 1.0, pts: [[-15, 0], [-19, 0.8], [-25, 7]] },
-  { id: '踏石', w: 1.2, pts: [[62, 36.5], [62, 30.6], [63, 24.5], [66, 18.5]] },
-  { id: '洗衣埠', w: 1.0, pts: [[50, 17], [48.6, 23], [47, 27.9]] },
-  { id: '碓房', w: 1.0, pts: [[98, 11.5], [101, 20], [105, 29], [106.4, 34.2]] },
+  // 踏石：溪南岸 → 溪心那几块 → 北岸 → 往北上村路（村口）
+  { id: '踏石', w: 1.2, pts: [[SITE.stones.x, SITE.stones.z + 3.6], [SITE.stones.x, SITE.stones.z], [SITE.stones.x + 0.6, SITE.stones.z - 3.6], [64, 40], [65.5, 28], [66, 18.5]] },
+  { id: '洗衣埠', w: 1.0, pts: [[50, 17], [48.5, 30], [47, 44], [SITE.more.wash.x, SITE.more.wash.z - 0.8]] },
+  { id: '碓房', w: 1.0, pts: [[98, 11.5], [101, 22], [104.5, 34], [106.4, SITE.more.mill.z - 1.8]] },
   { id: '茶亭', w: 1.0, pts: [[34, 21], [33.6, 23.4]] },
 ];
 function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {
@@ -315,7 +412,7 @@ export function pathDist(x: number, z: number): number {
 
 // —— 草木各在哪（画的人、挡路的图都用这一份） ——
 export type TreeKind = 'peach' | 'willow' | 'pine' | 'plum' | 'mulberry' | 'elm' | 'bamboo' | 'wood';
-export interface Tree { kind: TreeKind; x: number; z: number; /** 大小（1 是寻常） */ s: number; seed: number; /** 树干多粗（挡路用） */ r: number }
+export interface Tree { kind: TreeKind; x: number; z: number; /** 大小（1 是寻常） */ s: number; seed: number; /** 树干多粗（挡路用） */ r: number; /** 歪着长：干朝水那边斜多少（弧度；只柳用） */ lean?: number }
 export const TREES: Tree[] = (() => {
   const R = mulberry32(20261113), out: Tree[] = [];
   const rr = (a: number, b: number) => a + (b - a) * R();
@@ -340,7 +437,12 @@ export const TREES: Tree[] = (() => {
     if (clear(x, z, 4.6)) { add('peach', x, z, rr(0.85, 1.25), 0.15); peach++; }
   }
   // 柳：溪湾、桥头、池边、河滩
-  for (const [x, z, s] of [[-142, 26.5, 1.2], [-78, 24.8, 1.1], [-12, 25.2, 1.25], [14, 36.8, 1.0], [46, 27.6, 1.15], [70, 35.6, 1.1], [112, 37, 1.2], [15.8, -22, 1.0], [150, 62, 1.2], [118, 219, 1.3], [146, 215, 1.15]] as Array<[number, number, number]>) add('willow', x, z, s, 0.3);
+  // （溪改道以后：板桥头、村南溪湾、石桥东、洗衣埠、汀步、碓房、门前塘东南岸那一株卧柳、窑后；河滩两株照旧）
+  // 卧柳（观象「大过」）：根落在池东南的水线上，干朝池心斜出去三十五度，冠探到水面上（只这一株带 lean）
+  for (const [x, z, s, lean] of [[-142, 21.8, 1.2], [-95, 25, 1.1], [-71, 47.5, 1.25], [-21, 55.2, 1.0], [-10.2, SITE.bridge.z - 5.6, 1.15], [11, 58.4, 1.1], [49.5, SITE.more.wash.z - 1.4, 1.15], [72, 51.6, 1.1], [113, 44.4, 1.2], [-5.35, 34.65, 1.0, 0.62], [150, 46, 1.2], [118, 219, 1.3], [146, 215, 1.15]] as Array<[number, number, number, number?]>) {
+    add('willow', x, z, s, 0.3);
+    if (lean) out[out.length - 1].lean = lean;
+  }
   // 桑园：一行一行
   const M = SITE.mulberry;
   for (let x = M.x0 + 4; x < M.x1 - 2; x += 6.6) for (let z = M.z0 + 3.5; z < M.z1 - 2; z += 6) { const tx = x + rr(-0.7, 0.7), tz = z + rr(-0.7, 0.7), ts = rr(0.85, 1.1); if (pathDist(tx, tz) > 1.4) add('mulberry', tx, tz, ts, 0.17); }
@@ -368,13 +470,13 @@ export interface Rock { x: number; z: number; /** 大小（半径，米） */ r:
 export const ROCKS: Rock[] = (() => {
   const R = mulberry32(77), out: Rock[] = [];
   for (let i = 0; i < 90; i++) {
-    const p = STREAM[Math.floor(16 + R() * 122)], side = R() < 0.5 ? -1 : 1, x = p.x + (R() - 0.5) * 4, z = p.z + side * p.w * (0.4 + R() * 1.5);
-    if (pathDist(x, z) < 0.9 || (Math.abs(x - SITE.bridge.x) < 3 && Math.abs(z - SITE.bridge.z) < 6) || Math.hypot(x - SITE.stones.x, z - SITE.stones.z) < 4.5 || Math.hypot(x - SITE.plank.x, z - SITE.plank.z) < 6) continue;
+    const p = STREAM[Math.floor(16 + R() * 170)], side = R() < 0.5 ? -1 : 1, x = p.x + (R() - 0.5) * 4, z = p.z + side * p.w * (0.4 + R() * 1.5);
+    if (pathDist(x, z) < 0.9 || (Math.abs(x - SITE.bridge.x) < 3 && Math.abs(z - SITE.bridge.z) < 6) || Math.hypot(x - SITE.stones.x, z - SITE.stones.z) < 4.5 || Math.hypot(x - SITE.plank.x, z - SITE.plank.z) < 6 || Math.hypot(x - SITE.board.x, z - SITE.board.z) < 5.5) continue;
     out.push({ x, z, r: 0.22 + R() * R() * 0.95, seed: i + 3 });
   }
   const P = SITE.pond;
   for (let i = 0; i < 10; i++) { const a = 0.5 + R() * 5.2, x = P.x + Math.cos(a) * P.rx * 1.03, z = P.z + Math.sin(a) * P.rz * 1.03; out.push({ x, z, r: 0.28 + R() * 0.5, seed: 200 + i }); }
-  for (const [x, z, r] of [[-170, 47, 1.5], [-166.5, 48.4, 0.8], [-139, 44.5, 1.1], [-101, 42.5, 1.3], [-99, 44, 0.6], [-52, 44.8, 0.9], [-18.5, 21.2, 1.0], [17, 18.8, 0.7], [30, 44.5, 1.1], [47.5, 33.5, 0.9], [115.5, 222, 1.3], [143, 224.5, 1.0], [-30.5, -14, 1.2], [18.5, -27.5, 1.1]] as Array<[number, number, number]>) out.push({ x, z, r, seed: Math.floor(R() * 1e5) });
+  for (const [x, z, r] of [[-170, 47, 1.5], [-166.5, 48.4, 0.8], [-139, 44.5, 1.1], [-101, 42.5, 1.3], [-99, 44, 0.6], [-52, 44.8, 0.9], [-18.5, 21.2, 1.0], [17, 18.8, 0.7], [30, 44.5, 1.1], [47.5, 33.5, 0.9], [115.5, 222, 1.3], [143, 224.5, 1.0], [-30.5, -14, 1.2], [18.5, -27.5, 1.1], [-13.5, -15.5, 0.9], [4.5, -18, 0.7]] as Array<[number, number, number]>) out.push({ x, z, r, seed: Math.floor(R() * 1e5) });
   return out;
 })();
 
@@ -382,11 +484,11 @@ export const ROCKS: Rock[] = (() => {
 export interface PlaceDef { id: string; name: string; /** 村图上点了去的地方：人落在哪、面朝哪 */ spawn: [number, number, number]; /** 一句话 */ note: string }
 export const PLACES: PlaceDef[] = [
   { id: 'grove', name: '桃林', spawn: [SITE.entry.x, SITE.entry.z, SITE.entry.yaw], note: '入口是桃林' },
-  { id: 'bridge', name: '石桥', spawn: [0, 36.2, Math.PI], note: '溪水清浅' },
+  { id: 'bridge', name: '石桥', spawn: [BRIDGE_S[0], BRIDGE_S[1] + 0.8, Math.PI], note: '溪水清浅' },
   { id: 'yard', name: '院中', spawn: [1.2, 13.6, Math.PI], note: '竹篱茅舍' },
   { id: 'hall', name: '草堂', spawn: [0, 1.2, Math.PI], note: '有书数架' },
-  { id: 'pavilion', name: '观物亭', spawn: [-6.6, -19.2, Math.PI * 0.6], note: '看云起，候星移' },
-  { id: 'fields', name: '田畴', spawn: [22, 80, 0], note: '春种秋收' },
+  { id: 'pavilion', name: '观物亭', spawn: [-7.2, -19.6, 2.55], note: '看云起，候星移' },
+  { id: 'fields', name: '田畴', spawn: [22, 104, 0], note: '春种秋收' },
   { id: 'village', name: '邻家', spawn: [79.5, 12.2, Math.PI / 2], note: '深处是书声' },
   { id: 'ferry', name: '渡口', spawn: [126, 220, 0.3], note: '伊水绕前' },
 ];
@@ -397,8 +499,10 @@ export function placeId(x: number, z: number): string {
   if (inRect(SITE.yard, x, z) && z > -5) return 'yard';
   if (Math.hypot(x - SITE.pavilion.x, z - SITE.pavilion.z) < 9 || (z < -6 && Math.abs(x) < 30)) return 'pavilion';
   if (z > 150) return 'ferry';
-  if (z > 44 && x > -72) return 'fields';
-  if (x > 36 && z < 34) return 'village';
+  // 溪抱着的这一片之外、溪南：田；溪北、村路以南的东边：村里；西边：桃林；其余（柴门前、门前塘、石桥一带）是石桥
+  const inBowl = x > -90 && x < 150 && z < streamZ(Math.max(-74, Math.min(150, x))) && !(x < -74 && z > 44);
+  if (!inBowl && x > -74 && z > 30) return 'fields';
+  if (x > 36 && z < 50) return 'village';
   if (x < -24) return 'grove';
   return 'bridge';
 }

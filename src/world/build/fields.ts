@@ -14,7 +14,8 @@ export function buildFields(c: Ctx, sub?: string[]): void {
 
   // ———————————— 草人：十字的木架，披一身草，扣一顶破斗笠；略歪 ————————————
   if (on('scarecrow')) {
-    const x = 10.6, z = 60, gy = ground(x, z), ry = Math.PI / 2 - 0.2;
+    // （麦田随溪南移以后：自家那畦东边的麦里）
+    const x = 10.6, z = 84, gy = ground(x, z), ry = Math.PI / 2 - 0.2;
     b.push(M.mul(M.t(x, gy, z), M.ry(ry), M.rz(0.06)));
     b.add('wood', pole(v3(0, -0.4, 0), v3(0.02, 1.86, 0), 0.03, 0.024, 6, 2));
     b.add('bamboo', pole(v3(-0.78, 1.42, 0), v3(0.8, 1.5, 0.02), 0.02, 0.016, 6));
@@ -33,7 +34,8 @@ export function buildFields(c: Ctx, sub?: string[]): void {
 
   // ———————————— 窝棚：两面草披直落到地的人字棚，西头敞着朝小路；里面一张板铺 ————————————
   if (on('hut')) {
-    const x = 25.2, z = 69.6, gy = ground(x, z), L = 3.0, D = 2.9, H = 1.95;
+    // （田南移以后：田间路西、菜畦与麦田之间那道空当里）
+    const x = 25.2, z = 93.6, gy = ground(x, z), L = 3.0, D = 2.9, H = 1.95;
     b.push(M.t(x, gy, z));
     const th = thatchRoof({ w: L, d: D, rise: H - 0.22, hip: 0, thick: 0.17, sag: 0.02, lift: 0.04, ridgeSag: 0.06, droop: 0.04, courses: 3, step: 0.045, rag: 0.07, cell: 0.14, seed: 751, roll: 0.1, cross: 0, tone: 0.95 });
     b.add('thatch', th.thatch.translate(0, 0.24, 0));

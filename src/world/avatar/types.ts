@@ -1,5 +1,5 @@
 /**
- * 小人：安乐窝里由你操纵着走动的那个人（邵雍），村里的农夫、童子、老人也是同一副身子换一身打扮。
+ * 小人：安乐窝里由你操纵着走动的那个人（来作客的外乡人，男或女），村里的农夫、童子、老人也是同一副身子换一身打扮。
  * 这里只有接口——怎么建模、怎么动在 figure.ts 等文件里。
  *
  * 分工：位置与朝向由外面（player.ts、life/）设在 root 上；小人自己负责「身体怎么动」：
@@ -20,8 +20,19 @@ export type PoseName = 'stand' | 'kneel' | 'sit' | 'crouch' | 'bench' | 'lie';
 /**
  * 头上：none 光着髻（束一条带）；li 斗笠（戴着，或挂在背后）；jin 幅巾（软巾裹着髻，脑后垂两条带——读书人）；
  * bun 妇人的髻（插一根簪）；tufts 童子的总角（头顶两个小髻）。
+ * 外乡客的几样（衣饰铺里有）：
+ *   男子——dongpo 东坡巾（高而方的巾，外一重墙矮一些、四角对着前后左右）；futou 软脚幞头（裹着头、脑后一个高起的巾子，两条软脚垂到肩）；
+ *          guan 小冠（髻上一顶小冠，横贯一根簪）。
+ *   女子——gaoji 高髻（髻盘得高，略向前倾）；baoji 包髻（髻用一方帕子包起来，打一个结）；huaguan 花冠（髻上一圈花，四季的花各一两朵——宋人叫「一年景」）。
  */
-export type HatKind = 'none' | 'li' | 'jin' | 'bun' | 'tufts';
+export type HatKind = 'none' | 'li' | 'jin' | 'bun' | 'tufts' | 'dongpo' | 'futou' | 'guan' | 'gaoji' | 'baoji' | 'huaguan';
+/**
+ * 身上戴的小物件（attire.ts 里各有画法）：
+ *   头上——zanYin 银簪、zanYu 玉簪、zanJin 金簪；buyao 步摇（簪头垂一串珠叶，走起来晃）；huazan 簪花（髻边、巾边一朵花）；zhuhua 珠花（髻前一簇珍珠）；
+ *          erdang 耳珰（两耳各垂一颗珠，跟着头晃）。
+ *   腰间——pei 玉佩（绦上系一枚玉璧，下垂流苏）；nang 香囊（绣的小囊）；jinbu 禁步（女子压裙的一串玉）；hebao 荷包；shan 折扇（插在腰带上）。
+ */
+export type OrnId = 'zanYin' | 'zanYu' | 'zanJin' | 'buyao' | 'huazan' | 'zhuhua' | 'erdang' | 'pei' | 'nang' | 'jinbu' | 'hebao' | 'shan';
 
 /**
  * 一身打扮。颜色都按画法给：颜料（一层透在纸上的颜色）与浓度（叠几层）——见 docs/INK.md。
@@ -50,6 +61,25 @@ export interface Look {
   /** 一点点缀色（发绳、童子身上的那一点红） */ accent?: RGB;
   /** 衣纹（衣上那几笔线）画几成：0 不画 … 1 */ folds: number;
   /** 背光面是受光面的几倍浓 */ shade: number;
+  /**
+   * 身形：m 男子（默认）；f 女子——肩窄、腰细、颈细一点，手脚小一点，步子略小。个子另由 scale 给
+   */
+  build?: 'm' | 'f';
+  /** 领：cross 交领右衽（默认）；round 圆领（襕衫）；duijin 对襟（褙子、鹤氅：两襟直下不交，中间露出里面的衣） */
+  collar?: 'cross' | 'round' | 'duijin';
+  /**
+   * 罩在外头的那一件（褙子、鹤氅）：颜料、浓度、下摆离地多高（米；0.1 垂到脚面，0.45 到膝）。
+   * 下摆以下露出里面的长衣（robe）或裙（skirt）；两侧开衩处、对襟敞开处也露出里面的。袖子是这一件的
+   */
+  coat?: RGB; coatDens?: number; coatHem?: number;
+  /** 襕：膝下一道横襕（襕衫）——离地多高（米；不给就没有） */
+  lan?: number;
+  /** 里衣（对襟敞开处、领口露出来的那一点）：不给是素白 */
+  inner?: RGB; innerDens?: number;
+  /** 花（花冠、簪花）的颜料：不给按季节的花色 */
+  flower?: RGB;
+  /** 身上戴的小物件（attire.ts） */
+  orn?: OrnId[];
 }
 /**
  * 手的摆法：free 自然下垂、走路时随步子摆（跑起来屈肘前后摆）；sleeve 两手拢在身前（古人站立行走的常态）；pray 胸前合十；

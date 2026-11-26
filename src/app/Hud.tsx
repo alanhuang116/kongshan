@@ -6,7 +6,7 @@ import { useBrush, useGlyphKey } from './face';
 import { doAct, getKs, openSheet, setRun, setStick, SUN, toggleMenu } from './ks';
 import { hasSheet } from './sheets/extra';
 import { patch, saved, ui, useStore, type Sheet } from './store';
-import { XIAOXI } from './texts';
+import { XIAOXI, YUE } from './texts';
 
 const coarse = () => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
@@ -210,13 +210,13 @@ function PlaceName({ id }: { id: string }) {
 }
 
 /**
- * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（今日、村图、天时、行囊、村人簿、星图），
- * 左边一卷是记下的与设置（观象册、起居注、声音、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
- * 村人簿、星图那两页的文件还没有时，那一枚不出。
+ * 右上的简册：两卷竹简，一枚一页。右边一卷是在园里随手要用的（今日、村图、天时、行囊、衣饰、村人簿、星图），
+ * 左边一卷是记下的与设置（观象册、修为、起居注、声音、关于）。屏窄放不下并排的两卷时，第二卷落到第一卷下面。
+ * 村人簿、星图、修为、衣饰那几页的文件还没有时，那一枚不出。
  */
 const ROLLS: Array<Array<[Exclude<Sheet, null>, string]>> = [
-  [['today', '今日'], ['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['folk', '村人簿'], ['stars', '星图']],
-  [['xiang', '观象册'], ['journal', '起居注'], ['sound', '声音'], ['about', '关于']],
+  [['today', '今日'], ['map', '村图'], ['sky', '天时'], ['bag', '行囊'], ['wardrobe', '衣饰'], ['folk', '村人簿'], ['stars', '星图']],
+  [['xiang', '观象册'], ['xiu', '修为'], ['journal', '起居注'], ['sound', '声音'], ['about', '关于']],
 ];
 const rolls = () => ROLLS.map((r) => r.filter(([id]) => hasSheet(id))).filter((r) => r.length > 0);
 function Menu() {
@@ -225,7 +225,7 @@ function Menu() {
   return (
     <>
       <div className="menu-back" onClick={() => toggleMenu(false)} />
-      <nav className="menu" aria-label="册" key={gk}>
+      <nav className="menu" aria-label="册" key={gk} style={{ '--nmax': Math.max(...rolls().map((r) => r.length)) } as CSSProperties}>
         {rolls().map((r, i) => (
           <div className="roll" key={i}>
             {r.map(([id, name]) => (
@@ -264,6 +264,8 @@ export default function Hud() {
   // 只看时辰（画里的钟点每秒都在走，时辰换了才重画这一角）
   const branch = useStore(ui, (s) => branchOf(s.hour));
   const day = useStore(ui, (s) => s.day);
+  // 十二消息卦：按月（默认）显这一月之卦，按时辰显这一时之卦（天时那一页上切换）
+  const xx = useStore(ui, (s) => s.xx), month = useStore(ui, (s) => s.month);
   const [touch] = useState(coarse);
   useEffect(() => {
     if (!menu) return;
@@ -271,12 +273,12 @@ export default function Hud() {
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [menu]);
-  const now = XIAOXI[branch];
+  const byMonth = xx === 'month', now = XIAOXI[byMonth ? month : branch], tag = byMonth ? YUE[now.i] : now.branch;
   // 扫叶这样的事，做的时候人照常走动：摇杆得留着
   const free = !!(act && getKs()?.acts[act]?.free);
   const dayName = `第${cn(day + 1)}日`;
   // 时辰、卦名的字体晚到时让它们重画（iPhone 的磨砂层里会留空白）
-  const gk = useGlyphKey(`${dayName}${now.branch}·${now.gua.name}册`);
+  const gk = useGlyphKey(`${dayName}${tag}·${now.gua.name}册`);
   return (
     <div className={`hud${busy ? ' is-busy' : ''}${act ? ' is-act' : ''}${free ? ' is-free' : ''}${sheet ? ' has-sheet' : ''}${touch ? ' is-touch' : ''}${skyOn ? ' has-sky' : ''}`}>
       <Markers touch={touch} />
@@ -285,8 +287,8 @@ export default function Hud() {
         <div className="corner-bar">
           {/* 「第几日」单独一格：点它看今天能做什么（「今日」）；时辰与卦那一格看天时 */}
           <button className="when-day" onClick={() => openSheet('today')} aria-label={`${dayName}。今天能做什么`} data-testid="hud-day" key={`d${gk}`}>{dayName}</button>
-          <button className="when" onClick={() => openSheet('sky')} aria-label={`${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when">
-            <span key={`s${gk}`}>{now.branch}<i>·</i>{now.gua.name}</span>
+          <button className="when" onClick={() => openSheet('sky')} aria-label={byMonth ? `${now.month}之卦，${now.gua.name}。看天时` : `${now.branch}时，${now.gua.name}卦。看天时`} data-testid="key-when" data-xx={xx}>
+            <span key={`s${gk}`}>{tag}<i>·</i>{now.gua.name}</span>
             <GuaGlyph lines={now.gua.lines} />
             <DayLine />
           </button>

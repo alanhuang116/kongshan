@@ -112,6 +112,11 @@ await shot(page, `flow-${size}-5-pavilion`);
 // —— 天时 ——
 await tapSel('[data-testid="key-when"]'); await wait(900);
 ok('点时辰的卦：天时开了', await ev(() => window.__ui.ui.get().sheet === 'sky'));
+// 十二消息卦默认按月：点「八月」——到了八月（秋），右上写「八月·观」
+await tapSel('[data-testid="dial-9"]'); await wait(1200);
+ok('按月：点「八月」，到了八月、秋天，右上写八月·观', await ev(() => window.__ks.month === 9 && window.__ks.season === 'autumn' && /八月/.test(document.querySelector('[data-testid=key-when]')?.textContent ?? '')), await ev(() => `month=${window.__ks.month} season=${window.__ks.season} 右上=${document.querySelector('[data-testid=key-when]')?.textContent}`));
+// 换成按时辰，再点「酉」
+await tapSel('[data-testid="xx-hour"]'); await wait(400);
 await tapSel('[data-testid="dial-9"]'); await wait(1500);            // 酉时 · 观
 // 时辰流转着（默认每秒一分钟），点过之后会往前走一点
 ok('点「酉」：画里到酉时', await ev(() => Math.abs(window.__ks.atmos.hour - 18) < 0.15 && Math.abs(Number(window.__ui.saved.get().time) - 18) < 0.15), await ev(() => `hour=${window.__ks.atmos.hour.toFixed(3)} 右上=${document.querySelector('.when span')?.textContent}`));
@@ -139,7 +144,8 @@ await wait(700);
 ok('世界说一句话：画面下方浮起来', await ev(() => [...document.querySelectorAll('.notes .note')].some((n) => n.textContent === '得麦三捆')));
 await shot(page, `flow-${size}-6b-note`);
 await wait(4600);
-ok('过一会儿那句话退下去', await ev(() => !document.querySelector('.notes .note')));
+// （只看「得麦三捆」那一句：秋天头一回见雁会另浮一句诗，时候不定）
+ok('过一会儿那句话退下去', await ev(() => ![...document.querySelectorAll('.notes .note')].some((n) => n.textContent === '得麦三捆')), await ev(() => [...document.querySelectorAll('.notes .note')].map((n) => n.textContent).join('｜')));
 
 // —— 重开：记住了没有 ——
 await wait(500);

@@ -45,9 +45,11 @@ void main() {
   // 岸边一道水痕
   float edge = smoothstep(0.0, 0.02, wd) * (1.0 - smoothstep(0.03, 0.2, wd));
   c *= 1.0 - 0.14 * edge;
-  // 朝着日出日落那一边的水面带一点霞色（半江瑟瑟半江红）
-  float gl = uGlowDir.w * pow(max(dot(normalize(-ray.xz), normalize(uGlowDir.xz + vec2(1e-5))), 0.0), 3.0) * smoothstep(40.0, 500.0, dist);
-  c *= pow(uGlowCol, vec3(gl));
+  // 朝着日出日落那一边的水面带一点霞色（半江瑟瑟半江红），正对着日头的那一道更浓（一条金红的光路）
+  // （渡口跟前的水面也映着：站在栈桥头朝西南看，脚下的水已是一片金红——观象「未济」；只有贴着镜头的两三米淡出去）
+  float gd = max(dot(normalize(-ray.xz), normalize(uGlowDir.xz + vec2(1e-5))), 0.0);
+  float gl = min(1.1, uGlowDir.w * (pow(gd, 2.4) + 0.7 * pow(gd, 26.0)) * smoothstep(0.5, 24.0, dist));
+  c *= pow(uGlowCol, vec3(gl * 2.2));
   // 水纹：近处几笔顺流的长线（远水无波）
   float nearK = (1.0 - smoothstep(50.0, 380.0, dist)) * uW.z;
   if (nearK > 0.003) {
@@ -73,7 +75,7 @@ export function farWaterMat(o: FarWaterOpts = {}): THREE.ShaderMaterial {
       uPig: { value: new THREE.Color(p[0], p[1], p[2]) },
       uW: { value: new THREE.Vector4(o.dens ?? 0.12, o.light ?? 0.5, o.ripple ?? 1, o.deep ?? 0.2) },
       /** xyz 霞在哪一边（水平方向），w 多少；颜色 */
-      uGlowDir: { value: new THREE.Vector4(1, 0, 0, 0) }, uGlowCol: { value: new THREE.Color(0.98, 0.8, 0.72) },
+      uGlowDir: { value: new THREE.Vector4(1, 0, 0, 0) }, uGlowCol: { value: new THREE.Color(0.97, 0.76, 0.6) },
     },
     vertexShader: WATER_V, fragmentShader: WATER_F,
     transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide,

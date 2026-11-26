@@ -13,7 +13,7 @@ const TAU = Math.PI * 2;
 const I = TREE.idx;
 const JIE = [I.jie0, I.jie1, I.jie2, I.jie3], PEPPER = [I.pepper0, I.pepper1], HUN = [I.hun0, I.hun1, I.hun2], HUAI = [I.huai0, I.huai1, I.huai2];
 const SANG = [I.sang0, I.sang1], FAR = [I.far0, I.far1, I.far2], WASH = [I.far0, I.far2], LUJIAO = [I.lujiao0, I.lujiao1], HANLIN = [I.hanlin0, I.hanlin1];
-type Broad = 'broadA' | 'broadB' | 'broadC';
+type Broad = 'broadA' | 'broadB' | 'broadC' | 'huai';
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export interface BroadSpec {
@@ -45,15 +45,17 @@ export function broad(S: Sink, R: Rand, sp: BroadSpec, tips?: V3[]) {
     bulge: (i, a) => 1 + 0.2 * Math.exp(-(tp[i].y + 0.3) / (sp.r0 * 1.8)) * Math.sin(a * 5 + knot) + 0.06 * Math.sin(a * 3 + i * 1.1 + knot) + 0.04 * Math.sin(a * 7 - i * 0.7),
   });
   // —— 一团叶：先染一笔淡的大点作底（次序排在后面：春天叶稀时不画），再点叶——上明下暗 ——
+  // 槐的叶自成一层：原先那一层（broadA）同一处垫一个空笔，那一层的笔序号一个不变（中低画质按序号抽笔，别的树抽到的还是那几笔）
+  const dab = (...a: Parameters<Sink['dab']>) => { S.dab(...a); if (a[0] === 'huai') { const b = [...a] as Parameters<Sink['dab']>; b[0] = 'broadA'; b[4] = 0; S.dab(...b); } };
   const clump = (c: V3, r: number, w: number) => {
     const sw = swayAt(c);
-    if (w > 0.7) S.dab(sp.layer, c.x + R.pm(r * 0.15), c.y + r * 0.05, c.z + R.pm(r * 0.15), r * R.r(1.5, 1.9), R.pick(WASH), c.x - cc.x, r * 2.5, c.z - cc.z, R.r(0.98, 1.08), null, R.pm(0.4), sw, R.r(0.64, 1));
+    if (w > 0.7) dab(sp.layer, c.x + R.pm(r * 0.15), c.y + r * 0.05, c.z + R.pm(r * 0.15), r * R.r(1.5, 1.9), R.pick(WASH), c.x - cc.x, r * 2.5, c.z - cc.z, R.r(0.98, 1.08), null, R.pm(0.4), sw, R.r(0.64, 1));
     const n = Math.max(2, Math.round(sp.per * w));
     for (let i = 0; i < n; i++) {
       const a = R.r(0, TAU), q = Math.pow(R(), 0.5) * r, u = R.r(-0.5, 1);
       const x = c.x + Math.cos(a) * q, z = c.z + Math.sin(a) * q, y = c.y + u * 0.5 * Math.sqrt(Math.max(0.04, r * r - q * q * 0.8));
       const up = clamp01(0.5 + u * 0.5), tone = lerp(0.7, 1.06, up) * R.r(0.92, 1.06);
-      S.dab(sp.layer, x, y, z, R.r(sp.dab[0], sp.dab[1]) * (0.85 + 0.3 * up), R.pick(sp.leaf), (x - c.x) + (x - cc.x) * 0.3, (y - c.y) + r * 0.8, (z - c.z) + (z - cc.z) * 0.3, tone, [R.r(0.95, 1.04), 1, R.r(0.9, 1.03)], R.pm(sp.rot), sw, R.r(0, 0.98));
+      dab(sp.layer, x, y, z, R.r(sp.dab[0], sp.dab[1]) * (0.85 + 0.3 * up), R.pick(sp.leaf), (x - c.x) + (x - cc.x) * 0.3, (y - c.y) + r * 0.8, (z - c.z) + (z - cc.z) * 0.3, tone, [R.r(0.95, 1.04), 1, R.r(0.9, 1.03)], R.pm(sp.rot), sw, R.r(0, 0.98));
     }
   };
   const twig = (p: V3, size: number) => { if (R() < 0.8) S.dab('twig', p.x, p.y + size * 0.3, p.z, size, R.pick(sp.twig), 0, 1, 0, R.r(0.92, 1.06), TW, R.pm(0.5), swayAt(p)); };
@@ -126,10 +128,10 @@ export function broad(S: Sink, R: Rand, sp: BroadSpec, tips?: V3[]) {
   S.wood('bark', bark);
 }
 
-/** 村口的大槐：干粗而矮，干顶分三股粗枝，四面撑开，冠广而平；叶是胡椒点夹成对的小叶，一层层叠上去 */
+/** 村口的大槐：干粗而矮，干顶分三股粗枝，四面撑开，冠广而平；叶是胡椒点夹成对的小叶，一层层叠上去。叶自成一层（huai）：秋天它落得比别的树多 */
 export const huaiSpec = (_R: Rand, lite: boolean): BroadSpec => ({
   H: 9.4, fork: 2.1, r0: 0.37, cy: 6.0, rx: 5.8, ry: 2.9, lean: 0.07, prim: 4, limbs: 12, subs: [2, 3], fine: !lite, zig: 0.34,
-  layer: 'broadA', leaf: [...PEPPER, ...PEPPER, ...PEPPER, ...HUAI, I.hun0], dab: [0.8, 1.25], rot: 0.6, per: lite ? 8 : 11, twig: [I.xiezhao, I.xiezhao, ...LUJIAO], bark: [0.6, 0.57, 0.53], lite,
+  layer: 'huai', leaf: [...PEPPER, ...PEPPER, ...PEPPER, ...HUAI, I.hun0], dab: [0.8, 1.25], rot: 0.6, per: lite ? 8 : 11, twig: [I.xiezhao, I.xiezhao, ...LUJIAO], bark: [0.6, 0.57, 0.53], lite,
 });
 /** 村里村外的杂树三种：高的（椿、杨一类）、圆冠的（榆、朴）、矮而横的（柿、枣）。色分三层，秋天各黄各的 */
 export function woodSpec(R: Rand, lite: boolean): BroadSpec {

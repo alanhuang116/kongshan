@@ -40,6 +40,10 @@ export const DEFS: Record<LayerId, LayerDef> = {
   broadC: { atlas: 'tree', shade: 1.7, snow: 0.7, look: {
     spring: { pig: [0.76, 0.86, 0.62], dens: 1.0, frac: 0.66, size: 0.9 }, summer: { pig: [0.55, 0.69, 0.6], dens: 1.4, frac: ALL },
     autumn: { pig: [0.82, 0.76, 0.56], dens: 1.25, frac: 0.85 }, winter: null } },
+  // 村口的大槐：春夏同杂树的第一色；秋天叶黄而落了大半，枝上稀稀拉拉（观象「剥」），冬天光着
+  huai: { atlas: 'tree', shade: 1.7, snow: 0.7, look: {
+    spring: { pig: YOUNG, dens: 0.9, frac: 0.62, size: 0.9 }, summer: { pig: DEEP, dens: 1.3, frac: ALL },
+    autumn: { pig: [0.95, 0.83, 0.52], dens: 1.0, frac: 0.36, size: 0.92 }, winter: null } },
   // 枯枝：颜料写在每一笔上（跟各自的干同色）。夏天叶密，不画
   twig: { atlas: 'tree', shade: 1.25, snow: 0.5, look: { spring: { pig: [1, 1, 1], dens: 1.6, frac: ALL }, summer: null, autumn: { pig: [1, 1, 1], dens: 1.6, frac: ALL }, winter: { pig: [1, 1, 1], dens: 1.6, frac: ALL } } },
   // 冬柳光的垂条（秋天叶疏了，露出一些）

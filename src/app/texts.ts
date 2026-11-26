@@ -96,6 +96,8 @@ const ZHI = '子丑寅卯辰巳午未申酉戌亥';
 const XX: Array<[string, string]> = [['复', '十一月'], ['临', '十二月'], ['泰', '正月'], ['大壮', '二月'], ['夬', '三月'], ['乾', '四月'], ['姤', '五月'], ['遁', '六月'], ['否', '七月'], ['观', '八月'], ['剥', '九月'], ['坤', '十月']];
 const realXx = objs<{ gua?: unknown; month?: unknown; qi?: unknown }>(YI.XIAOXI);
 /** 子时复、丑时临……亥时坤；月份自冬月（十一月）复起，到十月坤 */
+/** 十二个月的短名，按月建排（子月是冬月、丑月是腊月、寅月是正月……）：右上那一格与天时那一圈上地方小，都写两个字 */
+export const YUE = ['冬月', '腊月', '正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月'] as const;
 export const XIAOXI: Xiaoxi[] = XX.map(([name, month], i) => {
   const r = realXx.find((x) => isStr(x.gua) && normGua(x.gua) === name);
   // 文字里的月份写得全（「建子之月（夏历十一月）」）：界面上只取「十一月」

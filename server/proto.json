@@ -27,8 +27,11 @@
     ["mums", "浇菊"], ["hens", "喂鸡"], ["eggs", "捡蛋"], ["fishFeed", "喂鱼"], ["dog", "摸狗"], ["cat", "逗猫"], ["ducks", "赶鸭"], ["ants", "观蚁"],
     ["oxHay", "添草"], ["henCatch", "抱鸡"], ["boat", "摇橹"], ["broom", "扫院"], ["chime", "听风铃"], ["farm", "做农活"], ["favor", "替人办事"], ["fishing", "垂钓"],
     ["couch", "歇息"], ["scroll", "看先天图"], ["kite", "放纸鸢"], ["lantern", "点灯"], ["bagua", "看八卦盘"], ["pitchpot", "投壶"], ["skip", "打水漂"], ["snowman", "堆雪人"],
-    ["stars", "观星"], ["swing", "荡秋千"], ["talk", "和村里人说话"], ["xiang", "观象"], ["cart", "推小车"], ["roadTea", "讨茶"]
+    ["stars", "观星"], ["swing", "荡秋千"], ["talk", "和村里人说话"], ["xiang", "观象"], ["cart", "推小车"], ["roadTea", "讨茶"],
+    ["archery", "射箭"], ["cuju", "蹴鞠"], ["cock", "斗鸡"], ["ox", "骑牛"], ["donkey", "骑驴"], ["sit", "打坐"], ["lecture", "听讲"], ["mark", "留路标"]
   ],
   "bounds": { "x": [-200, 160], "y": [-30, 120], "z": [-60, 250], "speed": 9 },
-  "near": 40
+  "near": 40,
+  "weathers": ["clear", "mist", "rain", "snow"],
+  "games": ["cock", "cuju", "archery", "seat", "quiz", "ride", "pitchpot", "skip", "sit", "misc"]
 }

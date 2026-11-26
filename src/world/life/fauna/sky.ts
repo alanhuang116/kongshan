@@ -97,6 +97,18 @@ export class SkyBirds {
     return [o, o + n];
   }
   private off(kind: Parameters<SkyBirds['range']>[0]) { const [a, b] = this.range(kind); for (let i = a; i < b; i++) this.birds[i].on = false; }
+  /**
+   * 叫一行雁从站在 (x, z)、朝 az（度：0 正南，同观象的 far）看的人头顶上过去：自北边来，斜斜地往南偏西去，
+   * 一出现就在他眼前的天上（前头一百五十米、略偏左、四十来米高：画的上三分之一，手机竖着也在画里），慢慢走远（观象「渐」）。
+   * 天上已经有一行（多半在别处、看不见）：就叫那一行改走这一条。下一行照常隔一两分钟。
+   */
+  geeseAcross(x: number, z: number, az: number) {
+    const a = ((az - 8) * Math.PI) / 180, dx = Math.sin(a), dz = Math.cos(a), f = (az * Math.PI) / 180, fx = Math.sin(f), fz = Math.cos(f);
+    // 起处：看的方向前头 150 米、往左（东）15 米
+    const sx = x + fx * 150 + fz * 15, sz = z + fz * 150 - fx * 15;
+    this.geese = { x: sx, z: sz, y: ground(x, z) + 46, dx, dz, s: 0, L: 640, n: 9, honk: 0.6 };
+    this.geeseNext = Math.max(this.geeseNext, 80);
+  }
 
   update(c: Ctx, day: Day) {
     const R = this.R, dt = c.dt, t = c.t, h = c.hour;

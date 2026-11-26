@@ -97,9 +97,10 @@ export function buildFlora(o: FloraOpts, plan: Plan): Flora {
         break;
       }
       case 'willow': {
-        const w = plan.water?.(t.x, t.z);
-        S.place(t.x, y, t.z, w ? yawTo(w[0], w[1]) + R.pm(0.3) : R.r(0, 6.283), t.s);
-        willow(S, R, { lite });
+        const w = plan.water?.(t.x, t.z), yaw = w ? yawTo(w[0], w[1]) + R.pm(0.3) : R.r(0, 6.283);
+        // 卧柳正对着水斜出去（偏的那一点随机数照旧取掉）
+        S.place(t.x, y, t.z, t.lean && w ? yawTo(w[0], w[1]) : yaw, t.s);
+        willow(S, R, { lite, lean: t.lean });
         break;
       }
       case 'pine': {

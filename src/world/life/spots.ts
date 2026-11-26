@@ -94,8 +94,8 @@ export const LUNCH_WAIT: Spot = { x: LEND[0] + 0.1, z: LEND[1] - 0.9, yaw: -Math
 /** 牛白天歇着吃草的地方（畦里东北角）；打谷的场（畦里靠北沿） */
 export const OX_REST: Spot = { x: FIELD.x1 - 3.2, z: FIELD.z0 + 3.4, yaw: -Math.PI / 2 + 0.3 };
 export const THRESH: Spot = { x: FIELD.x0 + (FIELD.x1 - FIELD.x0) * 0.4, z: FIELD.z0 + 3.2, yaw: 0 };
-/** 田间的窝棚（build/fields.ts：棚在 (25.2, 69.6)，西头敞着）：冬天农夫在棚口修农具 */
-export const HUT: Spot = { x: 25.2 - 2.3, z: 69.6 + 0.75, yaw: -Math.PI / 2 - 0.5 };
+/** 田间的窝棚（build/fields.ts：棚在 (25.2, 93.6)，西头敞着）：冬天农夫在棚口修农具 */
+export const HUT: Spot = { x: 25.2 - 2.3, z: 93.6 + 0.75, yaw: -Math.PI / 2 - 0.5 };
 /** 牛棚（build/more.ts oxShed）：牛在棚里站的地方，头朝食槽 */
 export const OX_SHED: Spot = beside(X.oxShed, -0.4, 0.45, Math.PI);
 /** 牛棚门口（牵牛进出经过的一点） */
