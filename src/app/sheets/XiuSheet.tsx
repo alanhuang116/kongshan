@@ -8,7 +8,7 @@ import { GUA } from '../../data/yi';
 import { getTogether } from '../../world/net';
 import { cn } from '../calendar';
 import { getKs, goDo } from '../ks';
-import { ui, useStore } from '../store';
+import { legacyPref, pref, setPref, ui, useStore } from '../store';
 import Sheet from './Sheet';
 
 /**
@@ -100,9 +100,9 @@ export default function XiuSheet() {
   const pts = m?.pts ?? 0;
   const { level, next, toNext, frac } = levelOf(pts);
   const list = boards();
-  const [tab, setTab] = useState<BoardKey>(() => { try { const v = localStorage.getItem('anlewo:xiu:tab'); if (v) return v as BoardKey; } catch { /* 无妨 */ } return 'xiu'; });
+  const [tab, setTab] = useState<BoardKey>(() => pref('xiuTab', legacyPref('anlewo:xiu:tab') ?? 'xiu') as BoardKey);
   const cur = list.some((b) => b.key === tab) ? tab : list[0]?.key ?? 'xiu';
-  const pick = (key: BoardKey) => { setTab(key); try { localStorage.setItem('anlewo:xiu:tab', key); } catch { /* 无妨 */ } };
+  const pick = (key: BoardKey) => { setTab(key); setPref('xiuTab', key); };
   const tiers = useMemo(() => new Set(m?.tiers ?? []), [m?.tiers]);
   const sitBest = k ? rows(k, 'sit').find((r) => r.me) : null;
   const used = m?.used ?? {};

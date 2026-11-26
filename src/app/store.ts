@@ -232,7 +232,7 @@ function persist(): void {
 let pending = 0;
 saved.sub(() => {
   if (pending) return;
-  pending = window.setTimeout(() => { pending = 0; persist(); }, 300);
+  pending = setTimeout(() => { pending = 0; persist(); }, 300) as unknown as number;
 });
 export const patch = (p: Partial<Saved>) => saved.set((s) => ({ ...s, ...p }));
 export function addEntry(e: Omit<Entry, 't'>) {
@@ -253,6 +253,38 @@ export function saveWorld(ns: string, v: unknown) {
     if (v === undefined || v === null) delete world[ns]; else world[ns] = v;
     return { ...s, world };
   });
+}
+
+/**
+ * 界面偏好（村人簿按家还是按处、修为看哪一张榜……）就存在 `Saved.world` 的 `ui` 这一份里：
+ * 不碰 `Saved` 的顶层字段，旧档没有这一份时用调用方给的默认值，随存档一起同步到别的设备。
+ */
+const PREF_NS = 'ui';
+const prefBag = (): Record<string, unknown> => {
+  const bag = saved.get().world[PREF_NS];
+  return bag && typeof bag === 'object' ? (bag as Record<string, unknown>) : {};
+};
+/** 读一份界面偏好：没存过（或存的不是字串）就用 fallback */
+export function pref(name: string, fallback: string): string {
+  const v = prefBag()[name];
+  return typeof v === 'string' ? v : fallback;
+}
+/** 记一份界面偏好：跟着存档落本机、随同步走 */
+export function setPref(name: string, value: string) {
+  setPrefValue(name, value);
+}
+/** 读一份结构化的偏好（雅号、衣色这类对象/数组/开关）：没存过就用 fallback，形状由调用方校验 */
+export function prefValue(name: string, fallback: unknown): unknown {
+  const v = prefBag()[name];
+  return v === undefined ? fallback : v;
+}
+/** 记一份结构化的偏好：跟着存档落本机、随同步走 */
+export function setPrefValue(name: string, value: unknown) {
+  saveWorld(PREF_NS, { ...prefBag(), [name]: value });
+}
+/** 旧版本只存在本机的偏好：初次读时兜底，之后不再写这份键 */
+export function legacyPref(key: string): string | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
 }
 
 export type Sheet = null | 'today' | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars' | 'xiu' | 'wardrobe';
