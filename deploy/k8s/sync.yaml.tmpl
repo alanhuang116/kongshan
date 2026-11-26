@@ -42,6 +42,11 @@ spec:
             - name: http
               containerPort: 3830
               protocol: TCP
+          # 非敏感配置（IDENTITY_*、SSO_*、ANLEWO_CORS）在 ConfigMap anlewo-sync-config，
+          # 口令类只在 anlewo-sync-env。CM 需先于本模板 apply，否则 Pod 会因缺 CM 起不来。
+          envFrom:
+            - configMapRef:
+                name: anlewo-sync-config
           env:
             - name: NODE_ENV
               value: production
@@ -54,45 +59,12 @@ spec:
                 secretKeyRef:
                   name: anlewo-sync-env
                   key: DATABASE_URL
-            - name: ANLEWO_CORS
-              value: https://anlewo.iwenxuai.com
-            # SSO 配置全部走 anlewo-sync-env；键不存在时为空，等于关闭，
-            # 不会因为模板写死 "0" 而在正式环境静默不上线。
-            - name: IDENTITY_ENABLED
-              valueFrom:
-                secretKeyRef:
-                  name: anlewo-sync-env
-                  key: IDENTITY_ENABLED
-                  optional: true
-            - name: IDENTITY_ISSUER
-              valueFrom:
-                secretKeyRef:
-                  name: anlewo-sync-env
-                  key: IDENTITY_ISSUER
-                  optional: true
-            - name: IDENTITY_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: anlewo-sync-env
-                  key: IDENTITY_CLIENT_ID
-                  optional: true
+            # 密钥缺失时为空，等于关闭身份，不会因为模板写死 "0" 而在正式环境静默不上线。
             - name: IDENTITY_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: anlewo-sync-env
                   key: IDENTITY_CLIENT_SECRET
-                  optional: true
-            - name: SSO_COOKIE_DOMAIN
-              valueFrom:
-                secretKeyRef:
-                  name: anlewo-sync-env
-                  key: SSO_COOKIE_DOMAIN
-                  optional: true
-            - name: SSO_COOKIE_SECURE
-              valueFrom:
-                secretKeyRef:
-                  name: anlewo-sync-env
-                  key: SSO_COOKIE_SECURE
                   optional: true
             - name: REDIS_URL
               valueFrom:
