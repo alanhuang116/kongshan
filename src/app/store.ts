@@ -232,7 +232,7 @@ function persist(): void {
 let pending = 0;
 saved.sub(() => {
   if (pending) return;
-  pending = window.setTimeout(() => { pending = 0; persist(); }, 300);
+  pending = setTimeout(() => { pending = 0; persist(); }, 300) as unknown as number;
 });
 export const patch = (p: Partial<Saved>) => saved.set((s) => ({ ...s, ...p }));
 export function addEntry(e: Omit<Entry, 't'>) {
@@ -255,13 +255,46 @@ export function saveWorld(ns: string, v: unknown) {
   });
 }
 
-export type Sheet = null | 'today' | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars';
+/**
+ * 界面偏好（村人簿按家还是按处、修为看哪一张榜……）就存在 `Saved.world` 的 `ui` 这一份里：
+ * 不碰 `Saved` 的顶层字段，旧档没有这一份时用调用方给的默认值，随存档一起同步到别的设备。
+ */
+const PREF_NS = 'ui';
+const prefBag = (): Record<string, unknown> => {
+  const bag = saved.get().world[PREF_NS];
+  return bag && typeof bag === 'object' ? (bag as Record<string, unknown>) : {};
+};
+/** 读一份界面偏好：没存过（或存的不是字串）就用 fallback */
+export function pref(name: string, fallback: string): string {
+  const v = prefBag()[name];
+  return typeof v === 'string' ? v : fallback;
+}
+/** 记一份界面偏好：跟着存档落本机、随同步走 */
+export function setPref(name: string, value: string) {
+  setPrefValue(name, value);
+}
+/** 读一份结构化的偏好（雅号、衣色这类对象/数组/开关）：没存过就用 fallback，形状由调用方校验 */
+export function prefValue(name: string, fallback: unknown): unknown {
+  const v = prefBag()[name];
+  return v === undefined ? fallback : v;
+}
+/** 记一份结构化的偏好：跟着存档落本机、随同步走 */
+export function setPrefValue(name: string, value: unknown) {
+  saveWorld(PREF_NS, { ...prefBag(), [name]: value });
+}
+/** 旧版本只存在本机的偏好：初次读时兜底，之后不再写这份键 */
+export function legacyPref(key: string): string | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
+}
+
+export type Sheet = null | 'today' | 'map' | 'sky' | 'xiang' | 'sound' | 'journal' | 'about' | 'bag' | 'folk' | 'stars' | 'xiu' | 'wardrobe';
 /** 画面下方浮着的一句话（「得麦三捆」「王婶记下了你的好」）；kind 是世界给的种类（bag 收得、folk 人情……），样式据此略有不同 */
 export interface Note { id: number; text: string; kind?: string }
 /** 星笺：夜里点了天上一处，它是什么（题、方位、原话与出处、白话；月是两句诗） */
 export interface SkyNote { kind: 'star' | 'planet' | 'moon' | 'han' | 'small'; title: string; hint: string; text?: string; source?: string; gloss?: string; lines?: string[] }
 export interface Ui {
-  phase: 'boot' | 'title' | 'intro' | 'roam';
+  /** select 是头一回来时「入」之后的选人那一页（男女、穿着、雅号） */
+  phase: 'boot' | 'title' | 'select' | 'intro' | 'roam';
   /** 画到哪一步了（0…1）与那一步的名字（铺纸、远山、种桃……） */
   progress: number; stage: string;
   /** 人在哪一处（处的 id）；busy 是正在换处（画面淡在雾里） */
@@ -286,13 +319,17 @@ export interface Ui {
   run: boolean;
   /** 第几日（头一回来是第 0 日） */
   day: number;
+  /** 此刻的月建（子 0 … 亥 11），十二消息卦按月时显它 */
+  month: number;
+  /** 右上与天时那一圈的十二消息卦：按月（默认）还是按时辰 */
+  xx: 'month' | 'hour';
   /** 夜里点了天上一处：那张星笺（null 是收着） */
   sky: SkyNote | null;
   error: string | null;
 }
 export const ui = createStore<Ui>({
   phase: 'boot', progress: 0, stage: '', place: 'grove', busy: false, arrivedAt: 0, near: null, act: null, actState: {}, sheet: null, menu: false,
-  hour: 9.2, tone: 'day', sound: false, notes: [], bag: {}, run: false, day: 0, sky: null, error: null,
+  hour: 9.2, tone: 'day', sound: false, notes: [], bag: {}, run: false, day: 0, month: 3, xx: 'month', sky: null, error: null,
 });
 export const setUi = (p: Partial<Ui>) => ui.set((s) => ({ ...s, ...p }));
 

@@ -1,5 +1,5 @@
 // 小人的动态：按键方向与三档快慢（键盘走、摇杆推到头快走、Shift 跑）、步态（步幅、步频、脚下滑不滑、身子起伏、腾空、落脚在哪）、
-// 起停（走与跑）、转身（掉头、跑着拐弯向内倾）、上下坡与台阶（台基、桥、亭、汀步；走着与跑着）、撞篱笆、姿势、镜头、闲时的小动作、
+// 起停（走与跑）、转身（掉头、跑着拐弯身子立着）、上下坡与台阶（台基、桥、亭、汀步；走着与跑着）、撞篱笆、姿势、镜头、闲时的小动作、
 // 仰卧（躺在席上头胯脚贴着席面不穿、看天、躺下起身三回不漂移、起身后能走）；走、快走、跑的时候腿不从衣裳里穿出来、手不插进衣身。
 // 用法：node tests/play/motion.mjs [--shots]
 import { readFileSync } from 'node:fs';
@@ -20,7 +20,8 @@ const ev = (fn, arg) => page.evaluate(fn, arg);
 await ev(() => { window.__ks.player.idle.on = false; });
 const tp = (x, z, yaw, zone = 'ground') => ev(([x, z, yaw, zone]) => { const k = window.__ks; if (k.act) k.exitAct(); k.setRun(false); k.stick.set(0, 0); k.player.teleport(x, z, yaw, zone); k.nav.snapBehind(); }, [x, z, yaw, zone]);
 // 井田当中那条东西向的田埂路：九十米长、平（跑的几项在这里量）
-const FIELD = { z: 77, x0: -68, x1: 20 };
+// 井田横一那条路（田随溪南移以后在 z = 101）
+const FIELD = { z: 101, x0: -68, x1: 20 };
 const pos = () => ev(() => { const p = window.__ks.player; return { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, speed: p.speed }; });
 const rec = async (ms, fn) => { await ev(() => window.__probe.start()); if (fn) await fn(); if (ms) await wait(ms); return ev(() => window.__probe.stop()); };
 const mean = (a) => a.reduce((s, v) => s + v, 0) / Math.max(1, a.length);
@@ -93,7 +94,7 @@ async function gait(name, mode) {
   const fast = mode !== 'walk', run = mode === 'run';
   if (run) {
     await tp(FIELD.x0, FIELD.z, Math.PI / 2); await wait(300);
-    await ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 77); }, FIELD.x1);
+    await ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 101); }, FIELD.x1);
     await wait(2200);                                 // 起跑要一秒多，等跑匀了再量
   } else if (fast) {
     await tp(-10, 14.7, Math.PI / 2); await wait(300);
@@ -195,9 +196,9 @@ console.log('\n二之二、衣裳');
     R.ok(`${name}：手不插进衣身`, hand <= 4, `150 帧里 ${hand} 帧`);
     R.ok(`${name}：两只手都在摆`, swL > 0.1 && swR > 0.1 && Math.abs(swL - swR) < 0.15 * Math.max(swL, swR), `前后摆幅 左 ${f3(swL)} 右 ${f3(swR)} 米`);
   };
-  await clipRun('走', () => ev((x1) => window.__ks.player.goTo(x1, 77, { r: 0.2 }), FIELD.x1), 1.6);
+  await clipRun('走', () => ev((x1) => window.__ks.player.goTo(x1, 101, { r: 0.2 }), FIELD.x1), 1.6);
   await clipRun('快走（摇杆推到头）', () => ev(() => { const k = window.__ks; k.nav.yaw = k.nav.yawS = -Math.PI / 2; k.stick.set(0, 1); }), 1.6);
-  await clipRun('跑（Shift）', () => ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 77, { r: 0.2 }); }, FIELD.x1), 2.2);
+  await clipRun('跑（Shift）', () => ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 101, { r: 0.2 }); }, FIELD.x1), 2.2);
 }
 
 // —— 三、起步与停步 ——
@@ -221,7 +222,7 @@ console.log('\n三、起停');
 {
   // 起跑：站着 → 跑起来要一秒上下（不是一下子换速），头几步由小到大
   await tp(FIELD.x0, FIELD.z, Math.PI / 2); await wait(500);
-  const a = await rec(2600, () => ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 77); }, FIELD.x1));
+  const a = await rec(2600, () => ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 101); }, FIELD.x1));
   const rows = a.rows, vmax = Math.max(...rows.map((r) => r.speed)), t90 = (rows.find((r) => r.speed > 0.9 * vmax).t - rows[0].t) / 1000;
   // 加速度：按 0.1 秒一段量（一帧一帧的会抖）
   let accMax = 0;
@@ -252,8 +253,10 @@ console.log('\n四、转身');
   const wrap = (x) => { x = (x + Math.PI) % (Math.PI * 2); return (x < 0 ? x + Math.PI * 2 : x) - Math.PI; };
   const y0 = a.rows[0].yaw, turned = a.rows.map((r) => Math.abs(wrap(r.yaw - y0)));
   const tTurn = (a.rows[turned.findIndex((v) => v > Math.PI * 0.94)]?.t - a.rows[0].t) / 1000;
+  // 最快转多快：按至少六十毫秒的一段量（逐帧量时，取样的钟与世界那一帧的 dt 对不齐，机器忙时会量出转身上限 7.5 弧度/秒以上的假快；
+  // 真「瞬间翻面」是一帧转过半圈，按六十毫秒量也有五十弧度/秒，照样抓得住）
   let rate = 0;
-  for (let i = 1; i < a.rows.length; i++) rate = Math.max(rate, Math.abs(wrap(a.rows[i].yaw - a.rows[i - 1].yaw)) / Math.max(1e-3, (a.rows[i].t - a.rows[i - 1].t) / 1000));
+  for (let i = 0; i < a.rows.length; i++) { let j = i + 1; while (j < a.rows.length && a.rows[j].t - a.rows[i].t < 60) j++; if (j >= a.rows.length) break; rate = Math.max(rate, Math.abs(wrap(a.rows[j].yaw - a.rows[i].yaw)) / ((a.rows[j].t - a.rows[i].t) / 1000)); }
   R.ok('掉头：转过去，不是瞬间翻面', tTurn > 0.25 && tTurn < 1.3 && rate < 14, `${f2(tTurn)} 秒转过身，最快 ${f2(rate)} 弧度/秒`);
   await ev(() => window.__ks.player.stop());
 }
@@ -277,7 +280,8 @@ console.log('\n四、转身');
   }
   const deg = (v) => ((v * 180) / Math.PI).toFixed(1);
   console.log(`  跑着拐弯：向内倾最多 ${deg(inward)}°，向外 ${deg(-outward)}°，转身最快 ${f2(rate)} 弧度/秒，身子与去向最多差 ${deg(side)}°`);
-  R.ok('跑着拐弯：身子向内倾（明显而不过分）', inward > 0.05 && inward < 0.3 && outward > -0.035, `内 ${deg(inward)}°，外 ${deg(-outward)}°`);
+  // （试玩的人要跑起来身子立着：拐弯至多微微内倾，三四度以内，不往外歪）
+  R.ok('跑着拐弯：身子基本立着（至多微微内倾）', inward < 0.07 && outward > -0.035, `内 ${deg(inward)}°，外 ${deg(-outward)}°`);
   R.ok('跑着拐弯：顺着弧跑，不横着跑、不瞬间翻面', rate < 6 && side < 0.6 && n > 20, `转速最快 ${f2(rate)}，偏差最多 ${deg(side)}°`);
 }
 
@@ -312,24 +316,26 @@ async function stairs(name, from, to, { zone = 'ground', run = false } = {}) {
   R.ok(`${name}：走得到`, arrived, `停在 (${f2(e.pos[0])}, ${f2(e.pos[2])})`);
   R.ok(`${name}：身子升降连贯`, jump < (run ? 0.035 : 0.03), `一帧最多 ${f3(jump)} 米`);
   if (rows[0].fl) R.ok(`${name}：脚不陷进台阶`, -sink < 0.09, `最深 ${f3(-sink)} 米`);
-  if (run && st.length >= 2 && RUNG?.stepLen) R.ok(`${name}：台阶上步子自动收小`, mean(st) < 0.8 * RUNG.stepLen, `台阶上平均 ${f2(mean(st))} 米，平地跑 ${f2(RUNG.stepLen)} 米`);
+  // （只在真爬了一段的地方查：石桥随溪挪到村南以后两岸一样高，桥只拱起一点，平平的桥面上跑满步是对的）
+  const climb = Math.max(...rows.map((r) => r.pos[1])) - Math.min(...rows.map((r) => r.pos[1]));
+  if (run && st.length >= 2 && RUNG?.stepLen && climb > 0.32) R.ok(`${name}：台阶上步子自动收小`, mean(st) < 0.8 * RUNG.stepLen, `台阶上平均 ${f2(mean(st))} 米，平地跑 ${f2(RUNG.stepLen)} 米`);
   return a;
 }
 await stairs('上草堂（踏步石、台基、门槛）', [0, 6.2], [0, 1.0]);
 await stairs('下草堂', [0, 1.0], [0, 6.2]);
-await stairs('出柴门下坡到溪边', [0.3, 17.2], [0, 25.2]);
-await stairs('过石桥', [0, 25.2], [0, 35.2]);
-await stairs('上坡回柴门', [0, 25.2], [0.3, 17.2]);
-await stairs('上观物亭', [-0.9, -20.1], [-3.6, -20.4]);
-await stairs('过汀步', [62, 35.8], [62.6, 25.2]);
+await stairs('出柴门下坡到塘边', [0.3, 17.2], [1.2, 31]);
+await stairs('过石桥', [0, 58.8], [0, 69.4]);
+await stairs('上坡回柴门', [1.2, 31], [0.3, 17.2]);
+await stairs('上观物亭', [-0.9 - 0.2, -23.1], [-3.8, -23.4]);
+await stairs('过汀步', [62, 64.1], [62.6, 53.5]);
 // 跑着过：台阶、坡、桥、汀步（步子自动收小、慢下来，脚照样落在踏面上）
 await stairs('跑上草堂', [0, 7.4], [0, 1.0], { run: true });
 await stairs('跑下草堂', [0, 1.0], [0, 7.4], { run: true });
-await stairs('跑下坡到溪边', [0.3, 17.2], [0, 25.2], { run: true });
-await stairs('跑过石桥', [0, 24.6], [0, 35.4], { run: true });
-await stairs('跑上坡回柴门', [0, 25.2], [0.3, 17.2], { run: true });
-await stairs('跑上观物亭', [-0.9, -20.1], [-3.6, -20.4], { run: true });
-await stairs('跑过汀步', [62, 35.8], [62.6, 25.2], { run: true });
+await stairs('跑下坡到塘边', [0.3, 17.2], [1.2, 31], { run: true });
+await stairs('跑过石桥', [0, 58.8], [0, 69.6], { run: true });
+await stairs('跑上坡回柴门', [1.2, 31], [0.3, 17.2], { run: true });
+await stairs('跑上观物亭', [-0.9 - 0.2, -23.1], [-3.8, -23.4], { run: true });
+await stairs('跑过汀步', [62, 64.1], [62.6, 53.5], { run: true });
 
 // —— 六、撞墙 ——
 console.log('\n六、撞篱笆');
@@ -405,7 +411,7 @@ console.log('\n八、镜头');
   await tp(FIELD.x0, FIELD.z, Math.PI / 2); await wait(600);
   const camD = () => ev(() => { const k = window.__ks, c = k.world.camera.position, p = k.player.pos; return { d: Math.hypot(c.x - p.x, c.z - p.z), fov: k.world.camera.fov }; });
   const c0 = await camD();
-  await ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 77); }, FIELD.x1); await wait(3200);
+  await ev((x1) => { const k = window.__ks; k.setRun(true); k.player.goTo(x1, 101); }, FIELD.x1); await wait(3200);
   const c1 = await camD();
   await ev(() => { const k = window.__ks; k.setRun(false); k.player.stop(); }); await wait(900);
   const c2 = await camD(); await wait(3000);

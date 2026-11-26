@@ -10,6 +10,7 @@
  */
 import * as THREE from 'three';
 import type { Anlewo } from '../Anlewo';
+import { merge, norm } from '../core/geo';
 import { wash } from '../ink/ink';
 import { HALL_Y } from '../walk';
 import type { Act } from './types';
@@ -418,8 +419,42 @@ function makeStream(k: Anlewo): THREE.Mesh {
 }
 
 // —— 自斟 ——
+/**
+ * 夜里自斟（点了灯以后，观象「需」：屋里炉火正旺，水壶坐在火上，还没开）：西间那只泥炉生着火——风口里几条火舌、几块红炭，
+ * 夜里四周一圈火光；壶坐在炉上，壶嘴里冒一缕细细的热气。白天自斟不生火。返回熄火（收走）的那一手。
+ */
+function lightStove(k: Anlewo, st: THREE.Object3D): () => void {
+  const g = new THREE.Group(), F = new THREE.Vector3(0, 0, -1).applyAxisAngle(V(0, 1, 0), st.rotation.y + Math.PI);
+  const flame = wash({ pig: [1, 0.72, 0.4], dens: 1, body: 1, flat: 1, line: 0, glow: [0.95, 0.5, 0.16], snow: 0, vertexColors: false });
+  const coal = wash({ pig: [0.98, 0.52, 0.34], dens: 1, body: 0.8, flat: 0.6, line: 0, glow: [0.7, 0.22, 0.06], snow: 0, vertexColors: false });
+  // 风口：炉北面（跪着煮茶的人那一面）离炉心十三四公分、离炉底七八公分。几何各并成一块：风口的火舌、壶底的火舌、炭与那一圈红（三次绘制）
+  const mouth = st.position.clone().addScaledVector(F, 0.13).setY(HALL_Y + 0.07), top = st.position.clone().setY(st.position.y - 0.02);
+  const cone = (r: number, h: number, x: number, y: number, z: number, rx = 0, rz = 0) => norm(new THREE.ConeGeometry(r, h, 6, 1, true).translate(0, h / 2, 0)).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, 0, rz)).setPosition(x, y, z));
+  const vent = new THREE.Mesh(merge([0, 1, 2].map((i) => cone(0.022 - i * 0.004, 0.09 - i * 0.015, (i - 1) * 0.022, 0, 0))), flame);
+  vent.position.copy(mouth); g.add(vent);
+  const lick = new THREE.Mesh(merge(Array.from({ length: 7 }, (_, i) => { const a = (i / 7) * Math.PI * 2 + 0.3; return cone(0.016, 0.075 + 0.02 * (i % 3), Math.cos(a) * 0.1, 0, Math.sin(a) * 0.1, Math.sin(a) * 0.35, -Math.cos(a) * 0.35); })), flame);
+  lick.position.copy(top); g.add(lick);
+  const coals = [0, 1, 2, 3].map((i) => norm(new THREE.SphereGeometry(0.016, 6, 4).scale(1.3, 0.7, 1)).translate(mouth.x + (i - 1.5) * 0.02, mouth.y - 0.012, mouth.z + 0.012 * (i % 2)));
+  coals.push(norm(new THREE.TorusGeometry(0.108, 0.007, 4, 20).rotateX(Math.PI / 2)).translate(top.x, top.y + 0.01, top.z));
+  g.add(new THREE.Mesh(merge(coals), coal));
+  g.name = 'stoveFire';
+  k.world.scene.add(g);
+  // 壶嘴里一缕热气（还没开：细细的）
+  const kettle = part(k, 'kettle'), sp = kettle ? (kettle.userData.spout as THREE.Vector3 | undefined) : undefined;
+  const spout = kettle && sp ? sp.clone().applyQuaternion(kettle.getWorldQuaternion(new THREE.Quaternion())).add(kettle.getWorldPosition(new THREE.Vector3())) : st.position.clone().add(V(0, 0.2, 0));
+  const wisp = k.fx?.smoke(spout, { size: 0.05, rise: 0.45, amount: 0.45, warm: 0 }) ?? null;
+  let tt = 0;
+  const tick = (dt: number) => { tt += dt; vent.scale.y = 0.8 + 0.25 * Math.sin(tt * 8) + 0.1 * Math.sin(tt * 15); lick.scale.y = 0.8 + 0.22 * Math.sin(tt * 9.7 + 1) + 0.1 * Math.sin(tt * 17 + 2); lick.rotation.y = 0.3 * Math.sin(tt * 1.3); };
+  k.world.tick.push(tick);
+  k.events.loop?.('kettle', 0.08);
+  return () => {
+    const i = k.world.tick.indexOf(tick); if (i >= 0) k.world.tick.splice(i, 1);
+    g.removeFromParent(); g.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    wisp?.dispose(); k.events.loop?.('kettle', 0);
+  };
+}
 function wine(k: Anlewo): Act | null {
-  const jar = anchor(k, 'jar'), ladle = part(k, 'ladle'), cup = part(k, 'wineCup');
+  const jar = anchor(k, 'jar'), ladle = part(k, 'ladle'), cup = part(k, 'wineCup'), stove = anchor(k, 'stove');
   if (!jar) return null;
   const { state, set, undo, restore } = base(k);
   const p4 = poemOf(['kuaihuo'], '四长吟');
@@ -434,7 +469,13 @@ function wine(k: Anlewo): Act | null {
       const av = k.player.av;
       av.setHands('free'); av.lookAt(jar.position);
       if (cup) undo.push(hold(cup, av.joints.handL, [0, 0.03, 0.03], [0, 0, 0]));
-      k.nav.setPose(shot(jar.position, jar.rotation.y + 0.95, 2.4, 0.95, 0.4, 42, { yaw: 22, up: 10, down: 8 }), 1.6);
+      // 夜里（点了灯）：炉子生上火、壶坐在火上；镜头从东南看进西间，瓮边的人与那一炉火都在画里
+      if (stove && inActNow(k, '需')) {
+        undo.push(lightStove(k, stove));
+        // （竖着拿的手机画幅窄：退远一点，两样都框得进）
+        const mid = jar.position.clone().lerp(stove.position, 0.55).setY(HALL_Y + 0.5), tall = k.world.camera.aspect < 1;
+        k.nav.setPose({ pos: tall ? new THREE.Vector3(0.9, HALL_Y + 2.5, 5.9) : new THREE.Vector3(0.35, HALL_Y + 1.85, 3.75), look: mid, fov: 46, yaw: 18, up: 10, down: 8 }, 1.6);
+      } else k.nav.setPose(shot(jar.position, jar.rotation.y + 0.95, 2.4, 0.95, 0.4, 42, { yaw: 22, up: 10, down: 8 }), 1.6);
       idle();
     },
     exit() { restore(); const av = k.player.av; av.reach('L', null); av.reach('R', null); av.lookAt(null); av.bow = 0; },
@@ -506,7 +547,7 @@ function couch(k: Anlewo): Act | null {
       sitDown(k, seatAt, { ground: HALL_Y, mat: { h: c.position.y - HALL_Y, hx: 0.9, hz: 0.38 } });
       k.player.av.setHands('lap');
       k.nav.setPose(shot(c.position, 0.35, 3.0, 1.1, 0.4, 40, { yaw: 18, up: 8, down: 8 }), 1.6);
-      set({ kind: 'rest', title: night ? '安歇' : '小憩', hint: night ? '夜深了。一觉到天亮' : '歇一会儿' });
+      set({ kind: 'rest', title: night && !k.shared ? '安歇' : '小憩', hint: k.shared ? '同游时随园中天时：躺一会儿就起' : night ? '夜深了。一觉到天亮' : '歇一会儿' });
     },
     exit() { k.veil = 0; k.world.fpsCap = 0; },
     update(dt) {
@@ -520,7 +561,11 @@ function couch(k: Anlewo): Act | null {
         if (t > 2.6) { phase = 'up'; t = 0; if (k.atmos.dawn > 0.2) k.sfx('rooster', { vel: 0.5 }); }
       } else if (phase === 'up') {
         k.veil = Math.max(0, 1 - t / 1.8); av.bow = Math.max(0, 0.5 - t * 0.3);
-        if (t > 1.9) { phase = 'done'; k.veil = 0; k.world.fpsCap = 0; k.log({ kind: 'rest' }); set({ kind: 'read', title: '醒来', lines: wake?.lines ?? [], text: wake ? undefined : '醒了，窗纸已白。', source: wake ? `${wake.author}《${wake.title}》　${wake.source}` : undefined, choices: [{ id: 'done', label: '起身' }] }); }
+        if (t > 1.9) {
+          phase = 'done'; k.veil = 0; k.world.fpsCap = 0; k.log({ kind: 'rest' });
+          if (k.shared) set({ kind: 'read', title: '起来', text: '歇了一会儿，起来了。', choices: [{ id: 'done', label: '起身' }] });
+          else set({ kind: 'read', title: '醒来', lines: wake?.lines ?? [], text: wake ? undefined : '醒了，窗纸已白。', source: wake ? `${wake.author}《${wake.title}》　${wake.source}` : undefined, choices: [{ id: 'done', label: '起身' }] });
+        }
       }
     },
     cmd(n) { if (n === 'done') k.exitAct(); },

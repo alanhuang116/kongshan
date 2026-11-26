@@ -37,6 +37,8 @@ let SURFS: Surf[] = [
   rectSurf(H.x - H.w / 2 + 0.15, H.x + H.w / 2 - 0.15, H.z - H.d / 2 + 0.15, H.z + H.d / 2 + 0.25, HALL_Y),     // 草堂屋里（连门槛外一小条）
   rectSurf(PV.x - PV.half, PV.x + PV.half, PV.z - PV.half, PV.z + PV.half, PAV_Y),                               // 亭
   rectSurf(BR.x - BR.w / 2, BR.x + BR.w / 2, BR.z - BR.len / 2, BR.z + BR.len / 2, BRIDGE_Y),                    // 石桥
+  // 板桥（桃林路上过溪）：桥身斜着，沿溪的法向
+  ((D) => { const hw = 0.79, hd = D.len / 2 + 0.6; return { kind: 'rect' as const, x: D.x, z: D.z, hw, hd, c: Math.cos(D.yaw), s: Math.sin(D.yaw), r: 0, y: streamAt(D.x, D.z).y + 0.55 + 0.28, R: Math.hypot(hw, hd) }; })(SITE.board),
 ];
 // 踏石：南北一溜，每块一小方
 {

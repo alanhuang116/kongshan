@@ -1,7 +1,6 @@
 /**
- * 观物亭：池西岸一座矮矮的方草亭。八根木柱（四角、四边正中各一），四面都敞着；北、西两边柱间架着板凳；
+ * 观物亭：草堂背后小坡顶上一座矮矮的方草亭（2026-11-25 起：屋后不设池，亭挪上坡）。八根木柱（四角、四边正中各一），四面都敞着；北、西两边柱间架着板凳；
  * 东檐下一块小小的素木牌「观物」；亭心地上嵌一方圆石，石面浅浅刻着先天八卦（按真方位：乾南、坤北、离东、坎西）。
- * 亭前池边一块平石。
  */
 import * as THREE from 'three';
 import { M, box, cyl, lathe, norm, shade, tint, type Geo } from '../core/geo';
@@ -95,7 +94,7 @@ export function buildPavilion(c: Ctx): void {
     for (const [ax, az, bx, bz] of [[-e, -e, e, -e], [-e, -e, -e, e]]) for (const y of [0.88, 0.62]) b.add('bamboo', pole(v3(ax, fl + y, az), v3(bx, fl + y + 0.01, bz), 0.019, 0.017, 6, 3));
   }
 
-  // —— 东檐下的小木牌「观物」（朝东，朝着池）——
+  // —— 东檐下的小木牌「观物」（朝东，朝着草堂）——
   {
     const m = M.mul(M.t(e + 0.36, fl + 1.64, -e / 2), M.ry(Math.PI / 2), M.rx(0.16));
     lab.push(blankUV(dye(wobble(box(0.66, 0.33, 0.024), 0.0012, 3, 101), [0.88, 0.85, 0.78], 1.3), c.blank).applyMatrix4(m));
@@ -116,15 +115,4 @@ export function buildPavilion(c: Ctx): void {
   b.pop();
   c.anchor('pavilion', P.x - e / 2, g0, P.z + hf + 0.9, 0);
 
-  // —— 亭前池边的一块平石（半探在水上）——
-  {
-    const pond = SITE.pond, z = P.z + 0.4;
-    let x = P.x + hf;
-    while (x < pond.x && ground(x, z) > pond.y - 0.04) x += 0.05;
-    const sx = x - 0.35, gy = ground(sx, z), top = pond.y + 0.2;
-    c.home.add('stone', tint(at(flatRock(951, 0.85, 0.5, 0.7, 2, 0.62), sx, top - 0.5, z, 0.3), 1.08));
-    c.home.add('stone', at(flatRock(952, 0.3, 0.2, 0.24, 1), sx - 0.5, ground(sx - 0.5, z + 0.75) - 0.04, z + 0.75, 1.1));
-    c.solid({ id: '池边平石', kind: 'disc', x: sx, z, r: 0.45, top, walk: true });
-    c.anchor('pondStone', sx, top, z, -Math.PI / 2);
-  }
 }

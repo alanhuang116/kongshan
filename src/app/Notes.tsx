@@ -44,6 +44,13 @@ export default function Notes() {
       }
       if (right - left < 220) left = 0;
       const cx = (left + right) / 2;
+      // 屋矮（横着的手机）、下面又压着高的星笺、面板：话被推到顶上时，别压着右上那一排与左上的处名——
+      // 落到它们底下的那几句（多半是旧的）先不出，等下面的纸收了再说
+      for (const o of document.querySelectorAll<HTMLElement>('.corner-bar, .place.is-on')) {
+        const r = o.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2 || !shown(o)) continue;
+        if (r.left < cx + half && r.right > cx - half) floor = Math.max(floor, r.bottom + 6);
+      }
       let top = Infinity;
       for (const { r } of occ) {
         if (r.left >= right - 1 || r.right <= left + 1) continue;

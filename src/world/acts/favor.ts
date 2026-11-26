@@ -7,10 +7,13 @@
  *   F.meet('farmer')               // 说了一回话（一天里头一回说话，情分添一分）
  *   F.plan('farmer', 'egg', 4)     // 送这个会怎样（先不动行囊：递东西的动作要先知道他收不收、交几个）
  *   F.give('farmer', 'egg', 4)     // 送他四个鸡蛋（合心意的添两分，平常的一分；一天只算一回）
- *   F.drainGot()                   // 他这一阵给先生的东西（回赠、见面塞的、讨来的、回礼）：已经在行囊里了，说话那一路拿去一样样递过来、到手再浮字
+ *   F.drainGot()                   // 他这一阵给你的东西（回赠、见面塞的、讨来的、回礼）：已经在行囊里了，说话那一路拿去一样样递过来、到手再浮字
+ *   F.you('farmer')                // 他此刻怎么叫你（看情分、看你是男客女客：callOf）
  *   F.favorChoices('farmer', …)    // 此刻跟他说得上的托事（交东西、讨东西、带话、回话、打听人）
  *   folkView(k)                    // 村人簿：全村的人，各人此刻在哪做什么、今天的日程、情分、喜好、托事
  *
+ * 你是外乡来的客人（k.persona.sex：男客 'm'、女客 'f'）：草堂的主人邵先生出门访友去了，把草堂、园子和借你种的两畦地托给你照看。
+ * 村里人怎么叫你看情分、看男女（callOf）；话里的 {你}、{他|她} 在 fill 里换。
  * 名册（谁、叫什么、住哪、家里有谁、每天做什么）在 src/data/folk.ts（村人那一路写）；那份不在时用 src/data/talk2.ts 的 META 垫着。
  * 托事的话与条件在 src/data/favors.ts。说话在 talk.ts。
  * 本文件的 create(k) 交出托事里要用的一件小事：「守网」（渔父托你看着岸上晒的网）。
@@ -25,14 +28,14 @@ import { ITEMS, defineItems } from '../bag';
 import { PLACES, SITE, placeId } from '../site';
 import { groundAt, standable } from '../walk';
 import { FAVORS, FAVOR_ITEMS, type FavorDef } from '../../data/favors';
-import { META, type Meta } from '../../data/talk2';
+import { BOOKS as TALK, META, type Meta } from '../../data/talk2';
 import { backN } from '../../data/itemUses';
 import type { Act } from './types';
 
 defineItems(FAVOR_ITEMS);
 
 // ———————————————————————— 名册 ————————————————————————
-/** 名册里的一个人（src/data/folk.ts 的 FOLK）；call 是他怎么称呼先生 */
+/** 名册里的一个人（src/data/folk.ts 的 FOLK）；call 是他怎么称呼你（「后生|闺女」：对男客、女客两样叫法） */
 export interface FolkDef { id: string; name: string; call?: string; role?: string; age?: number; sex?: string; home?: string; family?: string[]; temper?: string; likes?: string[]; plan?: PlanStep[] }
 /** 一天里的一段：from 点到 to 点，在哪、做什么；seasons 只在这几季；weather 只在晴天（fair）或雨雪天（wet）；act 是那件事在村人脚本里的名字 */
 export interface PlanStep { from: number; to: number; where: string; doing: string; seasons?: string[]; weather?: 'fair' | 'wet'; act?: string }
@@ -65,7 +68,7 @@ const RACK = SITE.more.netRack as { x: number; z: number };
 /** 一个村人：名册与本应用垫着的那份合在一起 */
 export interface Person {
   id: string; name: string;
-  /** 他怎么称呼先生（先生、施主……） */ you: string;
+  /** 他怎么称呼你：名册的 call 原样（「后生|闺女」男客、女客两样；行脚僧「施主|女施主」）。此刻真叫的是哪一样，用 callOf */ you: string;
   /** 身份（名册里那一句）、短的（「农夫」，标题、面板上用） */ role: string; tag: string;
   age: number | null; sex: string | null;
   /** 住哪：屋的 id（a b d e）或「村外」「渔船」；homeText 是说给人听的（「甲家（王家）」「南山里」） */ home: string; homeText: string;
@@ -76,6 +79,8 @@ export interface Person {
   /** 他家门口在哪（村里四家）；住在村外的是 null */ door: { x: number; z: number } | null;
   /** 他的话从 src/data/talk.ts 的 LINES 里哪一种取（farmer kid elder……）；没有是 null */ kind: string | null;
 }
+/** 名册里没写怎么叫你时：叫一声「客人」（男客女客都一样） */
+const YOU = '客人';
 const str = (v: unknown, fb = ''): string => (typeof v === 'string' && v.trim() ? v.trim() : fb);
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()) : []);
 const steps = (v: unknown): PlanStep[] => (Array.isArray(v) ? v.filter((s): s is PlanStep => !!s && typeof s === 'object' && Number.isFinite((s as PlanStep).from) && Number.isFinite((s as PlanStep).to) && typeof (s as PlanStep).doing === 'string') : []);
@@ -94,7 +99,7 @@ function roster(): Map<string, Person> {
     // 住在村外的：名册里「在家」那几段写着他家在哪（南山里、渡口的船上……）
     const away = plan.find((s) => !s.act && s.where && !/家里$/.test(s.where))?.where ?? '';
     cache.set(id, {
-      id, name, you: str(f?.call, m.you ?? '先生'), role, tag: m.tag ?? (role.split(/[（，(、]/)[0] || name),
+      id, name, you: str(f?.call, m.you ?? YOU), role, tag: m.tag ?? (role.split(/[（，(、]/)[0] || name),
       age: typeof f?.age === 'number' ? f.age : m.age ?? null, sex: str(f?.sex, m.sex ?? '') || null,
       home, homeText: HOUSES[home] ?? (away || home || '村外'),
       family: f?.family ? strs(f.family) : m.family ?? [], temper: str(f?.temper, m.temper ?? ''),
@@ -184,7 +189,7 @@ function cleanMem(raw: unknown): FolkMem {
 }
 
 // ———————————————————————— 托事那边交回来的一步 ————————————————————————
-/** 先生说的一句、他答的一句；还要不要接着问「答应不答应」 */
+/** 你说的一句、他答的一句；还要不要接着问「答应不答应」 */
 export interface Turn { said: string; text: string; lines?: string[]; source?: string; yesno?: { yes: string; no: string; fid: string }; glad?: boolean }
 export interface FavorChoice { id: string; label: string; sub?: string; main?: boolean }
 export interface GiveResult {
@@ -195,9 +200,28 @@ export interface GiveResult {
   /** 头一回知道他喜欢这个 */ learned: boolean;
 }
 
-/** 一句话里的「{某人的 id}」换成那人的名字（王大、老刘……）；「{先生}」换成他此刻怎么叫你 */
-export function fill(text: string, you = '先生'): string {
-  return text.replace(/\{([a-zA-Z0-9_]+|先生)\}/g, (_, id: string) => (id === '先生' ? you : person(id)?.name ?? ''));
+/** 「郎君|娘子」这样一对：男客取前一半，女客取后一半；没有「|」就是男女一样（不知道男女就当男客） */
+export function bySex(s: string, sex?: string): string {
+  const i = s.indexOf('|');
+  return i < 0 ? s : sex === 'f' ? s.slice(i + 1) : s.slice(0, i);
+}
+/**
+ * 他此刻怎么叫你：情分到了哪一档（lv 0…4，未识也按初识叫）——talk2.ts 里他的 calls（初识、相熟、相得、知交各一样），
+ * 没给就用名册的 call；再看你是男客还是女客（sex：'m' | 'f'，即 k.persona.sex）。
+ */
+export function callOf(id: string, lv: number, sex?: string): string {
+  const raw = TALK[id]?.calls?.[Math.max(0, lv - 1)] ?? person(id)?.you ?? YOU;
+  return bySex(raw, sex);
+}
+/**
+ * 一句话里的「{某人的 id}」换成那人的名字（王大、老刘……）；「{你}」换成他此刻怎么叫你（you，callOf 取好的）；
+ * 「{他|她}」「{后生|小娘子}」这样用「|」隔开的一对，按你是男客（sex 'm'）还是女客（'f'）取一半。
+ * 旧写法「{先生}」也认，当作「{你}」。
+ */
+export function fill(text: string, you = YOU, sex = 'm'): string {
+  return text
+    .replace(/\{([^{}|]*)\|([^{}|]*)\}/g, (_, m: string, f: string) => (sex === 'f' ? f : m))
+    .replace(/\{([a-zA-Z0-9_]+|你|先生)\}/g, (_, id: string) => (/^\w+$/.test(id) ? person(id)?.name ?? '' : bySex(you, sex)));
 }
 
 const BOOKS = new WeakMap<Anlewo, FolkBook>();
@@ -214,7 +238,7 @@ export class FolkBook {
   private cur: { act: Act; t0: number; night: boolean; tea: number; poem: number; brewed: boolean; wrote: boolean } | null = null;
   /** 托事要的东西带上了没有（带上那一刻提一句） */
   private had = new Map<string, boolean>();
-  /** 村里人这一阵给先生的东西：已经进了行囊（先不浮字），等说话那一路真递到先生手里再说「得……」 */
+  /** 村里人这一阵给你的东西：已经进了行囊（先不浮字），等说话那一路真递到你手里再说「得……」 */
   private recv: Array<{ item: string; n: number; t: number }> = [];
   private t = 0; private acc = 0;
   constructor(private k: Anlewo) {
@@ -232,6 +256,12 @@ export class FolkBook {
     return 1 + STEPS.filter((s) => p.v >= s).length;
   }
   bondName(id: string): string { return BONDS[this.level(id)]; }
+  /** 你是男客还是女客（选人那一页定的；没定就当男客） */
+  get sex(): 'm' | 'f' { return this.k.persona?.sex === 'f' ? 'f' : 'm'; }
+  /** 他此刻怎么叫你（看情分、看男女） */
+  you(id: string): string { return callOf(id, this.level(id), this.sex); }
+  /** 他（id）说的一句、你对他说的签：{你} 换成他怎么叫你，{他|她} 按男女，{某人} 换成名字 */
+  private say(t: string, id: string): string { return fill(t, this.you(id), this.sex); }
   /** 最近在书案上写成的两句 */
   get poem() { return this.m.poem ?? null; }
   /** 添几分情分；够了一档就轻轻提一句 */
@@ -303,13 +333,13 @@ export class FolkBook {
     p.rd = this.day; p.got[g] = (p.got[g] ?? 0) + 1; this.save();
     return g;
   }
-  /** 村里人给先生的东西收进行囊：先不浮「得……」，记下来等说话那一路递到手里（返回收了几个） */
+  /** 村里人给你的东西收进行囊：先不浮「得……」，记下来等说话那一路递到手里（返回收了几个） */
   private receive(item: string, n: number): number {
     const got = this.k.bag.add(item, n, { quiet: true, later: true });
     if (got > 0) this.recv.push({ item, n: got, t: this.t });
     return got;
   }
-  /** 交出这一阵村里人给先生的东西（说话那一路拿去一样样递过来；递到手时它调 bag.announce） */
+  /** 交出这一阵村里人给你的东西（说话那一路拿去一样样递过来；递到手时它调 bag.announce） */
   drainGot(): Array<{ item: string; n: number }> {
     const out = this.recv.map(({ item, n }) => ({ item, n }));
     this.recv.length = 0;
@@ -391,10 +421,10 @@ export class FolkBook {
     for (const d of FAVORS) {
       const s = this.m.f[d.id]?.s, g = d.goal;
       if (s !== 'on' && s !== 'half') continue;
-      if (this.handable(d, id)) { out.push({ id: `fv:${d.id}:hand`, label: fill(d.hand ?? '东西带来了'), main: true }); continue; }
-      if (g.kind === 'fetch' && g.at === id && s === 'on' && !this.k.bag.has(g.item, g.n)) out.push({ id: `fv:${d.id}:fetch`, label: fill(g.ask), main: true });
-      else if (g.kind === 'tell' && g.to === id && s === 'on') out.push({ id: `fv:${d.id}:tell`, label: fill(g.ask), main: true });
-      else if ((g.kind === 'act' || g.kind === 'tell' || g.kind === 'hen') && d.from === id && s === 'half') out.push({ id: `fv:${d.id}:report`, label: fill(g.report), main: true });
+      if (this.handable(d, id)) { out.push({ id: `fv:${d.id}:hand`, label: this.say(d.hand ?? '东西带来了', id), main: true }); continue; }
+      if (g.kind === 'fetch' && g.at === id && s === 'on' && !this.k.bag.has(g.item, g.n)) out.push({ id: `fv:${d.id}:fetch`, label: this.say(g.ask, id), main: true });
+      else if (g.kind === 'tell' && g.to === id && s === 'on') out.push({ id: `fv:${d.id}:tell`, label: this.say(g.ask, id), main: true });
+      else if ((g.kind === 'act' || g.kind === 'tell' || g.kind === 'hen') && d.from === id && s === 'half') out.push({ id: `fv:${d.id}:report`, label: this.say(g.report, id), main: true });
       else if (s === 'on' && !asked.has(`fv:${d.id}:where`)) {
         // 要找的那个人（那只鸡）：跟别人打听在哪
         if ((g.kind === 'fetch' && g.at !== id && !this.k.bag.has(g.item, g.n)) || (g.kind === 'tell' && g.to !== id)) out.push({ id: `fv:${d.id}:where`, label: `可见着${person(g.kind === 'fetch' ? g.at : g.to)?.name ?? '他'}？` });
@@ -403,7 +433,7 @@ export class FolkBook {
     }
     return out;
   }
-  /** 点了托事的一枚签：照着做，交回先生说的与他答的 */
+  /** 点了托事的一枚签：照着做，交回你说的与他答的（话里的 {你} 是他——id——怎么叫你） */
   run(cmd: string, id: string): Turn | null {
     const [, fid, what] = cmd.split(':');
     const d = this.def(fid);
@@ -418,49 +448,50 @@ export class FolkBook {
             : what === 'report' ? d.from === id && s === 'half'
               : what === 'where' ? s === 'on' : false;
     if (!ok) return null;
-    if (what === 'ask') return { said: this.level(id) >= 3 ? '什么事？' : '可要帮手？', text: fill(d.ask), yesno: { yes: fill(d.yes ?? '好，我去'), no: fill(d.no ?? '改日吧'), fid } };
+    const say = (t: string) => this.say(t, id);
+    if (what === 'ask') return { said: this.level(id) >= 3 ? '什么事？' : '可要帮手？', text: say(d.ask), yesno: { yes: say(d.yes ?? '好，我去'), no: say(d.no ?? '改日吧'), fid } };
     if (what === 'yes') {
       if (g.kind === 'now') {
         this.m.f[fid] = { s: 'done', d: this.day };
         this.finish(d);
-        return { said: fill(d.yes ?? '好'), text: `${fill(d.ok)}\n${fill(g.text)}\n${fill(d.thanks)}`, glad: true };
+        return { said: say(d.yes ?? '好'), text: `${say(d.ok)}\n${say(g.text)}\n${say(d.thanks)}`, glad: true };
       }
       if (g.kind === 'hen') {
         const H = hens();
-        if (!H) return { said: fill(d.yes ?? '好，我去'), text: '……咦，它自己回来了。不劳先生了。' };
+        if (!H) return { said: say(d.yes ?? '好，我去'), text: say('……咦，它自己回来了。不劳{你}了。') };
         try { if (H.lost.state !== 'wander') H.stray(); } catch (e) { console.warn('鸡没走散成', e); }
       }
       this.m.f[fid] = { s: 'on', d: this.day };
       if (g.kind === 'bring') this.had.set(fid, this.hasAny(g.items));
       this.save();
       k.note(fill(d.note.on), 'favor');
-      return { said: fill(d.yes ?? '好，我去'), text: fill(d.ok) };
+      return { said: say(d.yes ?? '好，我去'), text: say(d.ok) };
     }
     if (what === 'no') {
       this.m.f[fid] = { s: 'no', d: this.day }; this.save();
-      return { said: fill(d.no ?? '改日吧'), text: fill(d.nope) };
+      return { said: say(d.no ?? '改日吧'), text: say(d.nope) };
     }
     if (what === 'hand') return this.hand(d);
     if (what === 'fetch' && g.kind === 'fetch') {
-      if (this.receive(g.item, g.n) <= 0) return { said: fill(g.ask), text: '先生手上满了，腾出空再来拿。' };
+      if (this.receive(g.item, g.n) <= 0) return { said: say(g.ask), text: say('{你}手上满了，腾出空再来拿。') };
       this.m.f[fid] = { s: 'half', d: this.day }; this.addV(id, 1); this.save();
       if (d.note.half) k.note(fill(d.note.half), 'favor');
-      return { said: fill(g.ask), text: fill(g.reply) };
+      return { said: say(g.ask), text: say(g.reply) };
     }
     if (what === 'tell' && g.kind === 'tell') {
       this.m.f[fid] = { s: 'half', d: this.day }; this.addV(id, 1); this.save();
       if (d.note.half) k.note(fill(d.note.half), 'favor');
-      return { said: fill(g.ask), text: fill(g.reply) };
+      return { said: say(g.ask), text: say(g.reply) };
     }
     if (what === 'report' && (g.kind === 'act' || g.kind === 'tell' || g.kind === 'hen')) {
       this.m.f[fid] = { s: 'done', d: this.day };
       this.finish(d);
-      return { said: fill(g.report), text: fill(d.thanks), glad: true };
+      return { said: say(g.report), text: say(d.thanks), glad: true };
     }
     if (what === 'where') {
       if (g.kind === 'hen') {
         const H = hens();
-        return { said: d.from === id ? '鸡平常爱往哪儿钻？' : '可见着一只芦花鸡？', text: H && H.lost.state === 'wander' ? henText(H.lost.pos.x, H.lost.pos.z, d.from === id) : '没瞧见。兴许已经回去了。' };
+        return { said: d.from === id ? '鸡平常爱往哪儿钻？' : '可见着一只芦花鸡？', text: H && H.lost.state === 'wander' ? henText(H.lost.pos.x, H.lost.pos.z, d.from === id, this.you(id)) : '没瞧见。兴许已经回去了。' };
       }
       const target = g.kind === 'fetch' ? g.at : g.kind === 'tell' ? g.to : null;
       if (!target) return null;
@@ -477,7 +508,7 @@ export class FolkBook {
     this.finish(d);
     // 诗笺：把那两句念出来
     const p = item === 'poem' ? this.m.poem : null;
-    return { said: fill(d.hand ?? '东西带来了'), text: fill(d.thanks), lines: p?.lines, source: p?.source, glad: true };
+    return { said: this.say(d.hand ?? '东西带来了', d.from), text: this.say(d.thanks, d.from), lines: p?.lines, source: p?.source, glad: true };
   }
   /** 办成了：记下、添情分、回礼、提一句、记进起居注 */
   private finish(d: FavorDef) {
@@ -566,27 +597,28 @@ export class FolkBook {
 // ———————————————————————— 打听：人在哪、鸡在哪 ————————————————————————
 /** 村人那一路给的 doing 里，说「人在路上」的几种（这时不必再说他在哪一处） */
 const MOVING = /^(正往|收了工|站在路上)/;
-/** 「某某这会儿在哪」：照他此刻在不在外头、日程，说成一句家常话（ask 是被问的那个人） */
+/** 「某某这会儿在哪」：照他此刻在不在外头、日程，说成一句家常话（ask 是被问的那个人，话里按他怎么叫你称呼你） */
 export function whereText(k: Anlewo, id: string, ask?: string): string {
   const P = person(id), npc = k.life?.npcs[id] as (NpcLike & { doing?: string }) | undefined;
-  if (!P) return '没留意，先生到村里问问。';
+  const you = ask ? folkOf(k).you(ask) : YOU;
+  if (!P) return `没留意，${you}到村里问问。`;
   const h = k.atmos.hour, wet = wetNow(k), s = stepAt(P, h, k.season, wet);
   const kin = ask ? !!person(ask)?.family.includes(id) : false;
   if (npc?.present) {
     const doing = str(npc.doing, s?.act ? s.doing : '');
     // 「正往某处去」「收了工，正往家里去」「站在路上和谁说话」：这一句就说了他在哪
-    if (MOVING.test(doing)) { const d = doing.startsWith('正往') ? doing.split('，')[0] : doing; return kin ? `${d}呢。先生去路上迎一迎。` : `方才还瞧见${P.name}${d}。`; }
+    if (MOVING.test(doing)) { const d = doing.startsWith('正往') ? doing.split('，')[0] : doing; return kin ? `${d}呢。${you}去路上迎一迎。` : `方才还瞧见${P.name}${d}。`; }
     const where = (s?.act ? s.where : '') || placeName(npc.pos.x, npc.pos.z);
-    return kin ? `在${where}呢${doing ? `，${doing}` : ''}。先生去那边找。` : `方才还瞧见${P.name}在${where}${doing ? `，${doing}` : ''}。`;
+    return kin ? `在${where}呢${doing ? `，${doing}` : ''}。${you}去那边找。` : `方才还瞧见${P.name}在${where}${doing ? `，${doing}` : ''}。`;
   }
   const nx = nextStep(P, h, k.season, wet);
-  if (nx) return `${P.name}这会儿不在外头。${hourWord(nx.from)}会在${nx.where}，先生那时候去。`;
-  return wet ? `这天气，${P.name}怕是在家里歇着。` : `${P.name}今日怕是不出来了，先生改日再寻。`;
+  if (nx) return `${P.name}这会儿不在外头。${hourWord(nx.from)}会在${nx.where}，${you}那时候去。`;
+  return wet ? `这天气，${P.name}怕是在家里歇着。` : `${P.name}今日怕是不出来了，${you}改日再寻。`;
 }
-/** 走散的鸡在哪一带 */
-function henText(x: number, z: number, mine: boolean): string {
+/** 走散的鸡在哪一带（you：说话的人怎么叫你） */
+function henText(x: number, z: number, mine: boolean, you = YOU): string {
   const near = nearWhat(x, z);
-  return mine ? `它最爱往${near}那一带钻，先生去那边瞧瞧。` : `方才好像瞧见一只芦花鸡，在${near}那边刨食呢。`;
+  return mine ? `它最爱往${near}那一带钻，${you}去那边瞧瞧。` : `方才好像瞧见一只芦花鸡，在${near}那边刨食呢。`;
 }
 /** 一点附近是什么（说给人听的：石桥头、竹林边、桑园……） */
 function nearWhat(x: number, z: number): string {
@@ -606,6 +638,7 @@ export function placeName(x: number, z: number): string {
 
 // ———————————————————————— 村人簿 ————————————————————————
 export interface FolkCard {
+  /** you：他此刻怎么叫你（看情分，按你是男客女客取好的） */
   id: string; name: string; you: string; role: string; tag: string; age: number | null; home: string; homeText: string; temper: string;
   family: Array<{ id: string; name: string; tag: string }>;
   /** 此刻：在不在外头、在哪、做什么；按地方分组时归哪一处（「田畴」「在家」「村外」） */
@@ -644,7 +677,7 @@ export function folkView(k: Anlewo): FolkCard[] {
       return [{ id: d.id, name: mine ? fill(d.name) : `${person(d.from)?.name ?? ''}托的：${fill(d.name)}`, state, note }];
     });
     return {
-      id: P.id, name: P.name, you: P.you, role: P.role, tag: P.tag, age: P.age, home: P.home, homeText: P.homeText, temper: lv >= 2 ? P.temper : '',
+      id: P.id, name: P.name, you: F.you(P.id), role: P.role, tag: P.tag, age: P.age, home: P.home, homeText: P.homeText, temper: lv >= 2 ? P.temper : '',
       family: P.family.map((f) => person(f)).filter((x): x is Person => !!x).map((x) => ({ id: x.id, name: x.name, tag: x.tag })),
       here, where, doing, place,
       plan: today(P, k.season, wet).filter((st) => !!st.act).map((st) => ({ from: st.from, to: st.to, when: span(st.from, st.to), where: st.where, doing: st.doing, on: h >= st.from && h < st.to })),

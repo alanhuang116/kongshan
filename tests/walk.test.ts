@@ -1,6 +1,6 @@
 // 行走图：各处走得到；水里、墙里、菊圃里走不进；桥与踏石过得去。
 import { describe, expect, it } from 'vitest';
-import { PLACES, SITE, streamAt } from '../src/world/site';
+import { PLACES, SITE, streamAt, streamZ } from '../src/world/site';
 import { BRIDGE_Y, HALL_Y, findPath, groundAt, placeAt, standable, waterDepth } from '../src/world/walk';
 
 describe('行走图', () => {
@@ -20,8 +20,9 @@ describe('行走图', () => {
     }
   }, 120000);
   it('溪心、池心不能走，桥上、踏石上能走', () => {
-    expect(waterDepth(-60, streamAt(-60, 31.5).d < 1 ? 31.5 : 31.5)).toBeGreaterThan(0.3);
-    expect(groundAt(-62, 31.5)).toBeNull();
+    // 村南那一段溪（石桥以西）
+    expect(waterDepth(-30, streamZ(-30))).toBeGreaterThan(0.3);
+    expect(groundAt(-32, streamZ(-32))).toBeNull();
     expect(groundAt(SITE.pond.x, SITE.pond.z)).toBeNull();
     expect(standable(SITE.bridge.x, SITE.bridge.z)).toBeCloseTo(BRIDGE_Y, 3);
     expect(standable(SITE.stones.x, SITE.stones.z)).not.toBeNull();
@@ -54,10 +55,11 @@ describe('走远路过溪', async () => {
   };
   const CASES: Array<[string, [number, number], [number, number]]> = [
     ['西坡 → 桃林路（桥在百来米外）', [-96, 20], [-98, 36.5]],
-    ['桃林路 → 西坡', [-60, 40], [-60, 15]],
-    ['碓房 → 溪南东（走汀步）', [98, 11.5], [104, 44]],
+    ['桃林口 → 院中（过板桥）', [-150, 37.5], [1.2, 13.6]],
+    ['园前 → 井田（过石桥）', [-34, 40.6], [-27, 86]],
+    ['碓房 → 溪南东（走汀步）', [98, 11.5], [100, 66]],
     ['东村 → 东田', [136, 6], [122, 93]],
-    ['茶亭 → 对岸', [33.6, 23.4], [30, 40]],
+    ['茶亭 → 对岸', [33.6, 23.4], [30, 72]],
   ];
   for (const [name, a, b] of CASES) {
     it(name, () => {

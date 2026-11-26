@@ -16,6 +16,7 @@ import { addDisc, groundAt } from '../walk';
 import type { Act } from './types';
 import { ARROW, DOT_INK, DOT_ZHU, Dots, POT, THROW_DIST, arrowGeo, makePot, potGeo } from '../play/pot';
 import { V, clamp, cnNum, onFrame, playGet, playSet, setStatic, sfx, stateOf } from '../play/kit';
+import { report } from '../play/board';
 import { merge } from '../core/geo';
 import { dye } from '../build/kit';
 
@@ -354,6 +355,8 @@ export function create(k: Anlewo): Act | null {
     // 倚竿不计筭，但也不算失：「于连中、全壶，皆为通数」
     const full = hits > 0 && hits + leans === ARROW.n, lose = hits === 0 && leans === 0;
     record(full);
+    // 投满十二支的一局上榜（几筭）
+    report(k, 'pitchpot', score);
     const verdict = full ? '十二支都中：全壶。' : lose ? '十二支一支未中：败壶。' : `中了${cn(hits)}支，共${cn(score)}筭。`;
     set({
       kind: 'pitchpot', title: '投壶', count: thrown, total: ARROW.n, done: true,

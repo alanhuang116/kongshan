@@ -16,9 +16,10 @@ import type { Anlewo } from '../Anlewo';
 import { cylUp, merge, sphere, type Geo } from '../core/geo';
 import { PIG, wash } from '../ink/ink';
 import { SITE, YARD_Y, ground } from '../site';
-import { groundAt, standable } from '../walk';
+import { blocked, groundAt, standable } from '../walk';
 import type { Fauna } from '../life/fauna';
 import { say } from '../life/fauna/kit';
+import { Person } from '../life/person';
 import { Parts, creatureMat, paint, tone, trs } from '../life/rig';
 import type { Act } from './types';
 import { PAIRS, V, openShot, shot } from './lib';
@@ -37,6 +38,35 @@ const snd = (k: Anlewo, name: string, x: number, z: number, vel = 0.5) => { cons
 function standNear(x: number, z: number, r0 = 0): [number, number] | null {
   for (let r = r0; r <= 3; r += 0.2) for (let a = 0; a < (r ? 16 : 1); a++) { const px = x + Math.cos((a / 16) * Math.PI * 2) * r, pz = z + Math.sin((a / 16) * Math.PI * 2) * r; if (standable(px, pz) != null) return [px, pz]; }
   return null;
+}
+/**
+ * 做这件事时村里人要让开的几个圆（行者蹲着的那一处、那只生灵在的那一处……）：set 放进 Person.shun（每帧挪到它们此刻在的地方），off 拿走。
+ * 人走路绕开、要去的地方落在圈里就站在圈外等、站着的被挨上了往外让（见 life/person.ts 的 shun）。
+ */
+function room(n: number) {
+  const ds = Array.from({ length: n }, () => ({ x: 1e6, z: 1e6, r: 0 }));
+  let till = 0, lx = 0, lz = 0;
+  const set = (i: number, x: number, z: number, r: number) => { const d = ds[i]; d.x = x; d.z = z; d.r = r; till = 0; if (!Person.shun.includes(d)) Person.shun.push(d); };
+  const off = () => { till = 0; for (const d of ds) { d.r = 0; const i = Person.shun.indexOf(d); if (i >= 0) Person.shun.splice(i, 1); } };
+  return {
+    set, off,
+    /** 做完了、他起身还站在原处（等着要去那里的人，一散就要往他身上走）：只留他那一个圆，等他走开半步多、或过了八秒再拿走（见 idle） */
+    leave(x: number, z: number) { off(); set(0, x, z, CROUCH_R); till = performance.now() + 8000; lx = x; lz = z; },
+    /** 每帧（on 里）看一眼：起身后留着的那个圆，人走开了、到时候了就拿走 */
+    idle(px: number, pz: number) { if (till && (performance.now() > till || Math.hypot(px - lx, pz - lz) > 0.7)) off(); },
+  };
+}
+/** 行者蹲着做事时，村里人离他留多远（圆的半径；人自己的身宽另算） */
+const CROUCH_R = 0.5;
+/** (x, z) 离村里人有多远：此刻站的地方、这件事里去站过和正要去站的几处，取最近的 */
+function folkGap(x: number, z: number): number {
+  let g = 1e9;
+  for (const p of Person.all) {
+    if (!p.here) continue;
+    g = Math.min(g, Math.hypot(p.pos.x - x, p.pos.z - z));
+    for (const s of p.spots) g = Math.min(g, Math.hypot(s.x - x, s.z - z));
+  }
+  return g;
 }
 const geo = (g: Geo) => { if (!g.attributes.color) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3)); return g; };
 const STRAW = wash({ pig: PIG.mao, dens: 1.35, shade: 1.45, streak: [40, 3, 0.45], grain: 2 });
@@ -178,18 +208,59 @@ function feedFish(k: Anlewo, F: Fauna): Act | null {
 }
 
 // ———————————————————————— 摸狗 ————————————————————————
+/** 绕着一点换一边找地方时依次试的偏角（先正对着，再左右斜着、两侧，末了身后） */
+const SIDES = [0, -0.5, 0.5, -1.0, 1.0, -1.5, 1.5, -2.1, 2.1, Math.PI];
+/** 狗坐在行者跟前多远（dog.ts 的 Pet）；村里人离狗留多远（圆的半径：狗身子连头带尾一米来长，翻肚皮时横过来） */
+const DOG_AT = 0.72, DOG_R = 0.62;
 function petDog(k: Anlewo, F: Fauna): Act {
   const D = F.dog;
   const { state, set } = base(k);
-  const spot = { x: D.pos.x, z: D.pos.z + 1, yaw: Math.PI }, anchor = new THREE.Vector3();
-  let happy = 0, holding = false, belly = false, scratched = 0;
+  const spot = { x: D.pos.x, z: D.pos.z + 1, yaw: Math.PI }, anchor = new THREE.Vector3(), seat = { x: 0, z: 0 }, keep = room(3);
+  let happy = 0, holding = false, belly = false, scratched = 0, turn = 0;
   const show = () => set({ title: '摸狗', hint: belly ? '它躺倒了，翻出肚皮' : holding ? '它眯着眼，往你手上拱' : '按住「摸」，摸它的头', meter: { v: happy, label: '欢喜' }, hold: { id: 'pat', label: belly ? '挠' : '摸', v: happy }, choices: [{ id: 'done', label: '罢' }] });
+  /** 行者蹲在狗的 a 那一边一米处行不行：站得住，村里人不在那里、也不要去那里站 */
+  const room1 = (a: number) => { const x = D.pos.x + Math.sin(a), z = D.pos.z + Math.cos(a); return folkGap(x, z) > CROUCH_R + 0.4 && standable(x, z) != null; };
+  /** 狗从此刻在的地方直着走得到 (x, z)（dog.ts 的 goTo 是直着走的，碰上东西就停），也不从蹲着的人 p 身上穿过去 */
+  const dogLine = (x: number, z: number, p: THREE.Vector3) => {
+    const dx = x - D.pos.x, dz = z - D.pos.z, d = Math.hypot(dx, dz);
+    if (d > 8) return true;
+    for (let s = 0.3; s < d; s += 0.2) if (blocked(D.pos.x + (dx * s) / d, D.pos.z + (dz * s) / d, 'ground', 0.18)) return false;
+    const t = d > 1e-3 ? Math.max(0, Math.min(1, ((p.x - D.pos.x) * dx + (p.z - D.pos.z) * dz) / (d * d))) : 0;
+    return Math.hypot(D.pos.x + dx * t - p.x, D.pos.z + dz * t - p.z) > 0.42;
+  };
+  /**
+   * 狗在他哪一边坐下（他面朝的方向）：照 y0 那一边先试；那里有村里人站着、有人要去站，挨着墙、篱笆（坐着时身后一拃、翻肚皮时身子横过来，头尾都别碰着），
+   * 或狗走不过去，就左右斜着、再两侧……挑头一处都不碍的；都碍着就挑离村里人最远的那一边
+   */
+  const sideFor = (p: THREE.Vector3, y0: number) => {
+    let best = y0, bestG = -1;
+    for (const s of SIDES) {
+      const y = y0 + s, fx = Math.sin(y), fz = Math.cos(y), sx = p.x + fx * DOG_AT, sz = p.z + fz * DOG_AT, b = y + Math.PI + 1.3, bx = Math.sin(b), bz = Math.cos(b);
+      if (standable(sx, sz, 'ground', 0.28) == null || blocked(sx + fx * 0.3, sz + fz * 0.3, 'ground', 0.12) || blocked(sx + bx * 0.42, sz + bz * 0.42, 'ground', 0.1) || blocked(sx - bx * 0.36, sz - bz * 0.36, 'ground', 0.1) || !dogLine(sx, sz, p)) continue;
+      const g = folkGap(sx, sz);
+      if (g > DOG_R + 0.4) return y;
+      if (g > bestG) { bestG = g; best = y; }
+    }
+    return best;
+  };
+  /** 村里人让开：行者蹲着的一处、狗要去卧的一处、狗此刻在的一处 */
+  const clearRoom = () => { const p = k.player.pos; keep.set(0, p.x, p.z, CROUCH_R); keep.set(1, seat.x, seat.z, DOG_R); keep.set(2, D.pos.x, D.pos.z, DOG_R); };
   return {
     id: 'dog', name: '摸狗', anchor, spot, radius: 2.4, state, noZoom: true,
     on() {
-      // 跟着狗：站在它朝人的那一侧一米远
-      const p = k.player.pos, dx = p.x - D.pos.x, dz = p.z - D.pos.z, d = Math.hypot(dx, dz) || 1;
-      spot.x = D.pos.x + (dx / d) * 1.0; spot.z = D.pos.z + (dz / d) * 1.0; spot.yaw = Math.atan2(-dx, -dz);
+      const p = k.player.pos;
+      keep.idle(p.x, p.z);
+      // 跟着狗：站在它朝人的那一侧一米远。那里站着村里人、有人要去站（扫地、喂鸡的那几处），或站不住，就绕着狗换一边
+      // （走近了以后先试上回换到的那一边，免得人一挪它就来回跳）。正摸着的时候不动：就是他蹲着的那一处（起身就在原处站起来）
+      if (k.act?.id !== 'dog') {
+        const dx = p.x - D.pos.x, dz = p.z - D.pos.z, d = Math.hypot(dx, dz), a0 = d > 1e-3 ? Math.atan2(dx, dz) : 0;
+        if (d < 24) {
+          if (d > 6) turn = 0;
+          if (!room1(a0 + turn)) { turn = 0; for (const s of SIDES) if (room1(a0 + s)) { turn = s; break; } }
+        } else turn = 0;
+        const a = a0 + turn;
+        spot.x = D.pos.x + Math.sin(a); spot.z = D.pos.z + Math.cos(a); spot.yaw = a + Math.PI;
+      }
       anchor.set(D.pos.x, D.pos.y + 0.9, D.pos.z);
       return D.awake && k.atmos.night < 0.6 && k.atmos.w.rain < 0.5;
     },
@@ -197,10 +268,15 @@ function petDog(k: Anlewo, F: Fauna): Act {
       happy = 0; holding = false; belly = false; scratched = 0;
       // 远远点了它走过来的，常是狗迎上来又跟在身后，人到了还得掉过身来——没转完就开始了（Anlewo 等转身最多一两秒），
       // 所以按他转完以后面朝的那一边算（faceTo）：狗绕到那一边坐下，镜头也按那一边摆
-      const av = k.player.av, p = k.player.pos, y = k.player.faceTo ?? k.player.yaw;
+      const av = k.player.av, p = k.player.pos, y0 = k.player.faceTo ?? k.player.yaw;
       av.setPose('crouch', 1.0); av.setHands('free');
-      // 狗过来坐在他跟前 0.72 米（dog.ts 的 Pet）
+      // 狗过来坐在他跟前 0.72 米（dog.ts 的 Pet）；跟前那一处碍着就换一边，他转过身对着它
+      const y = sideFor(p, y0);
+      if (Math.abs(Math.atan2(Math.sin(y - y0), Math.cos(y - y0))) > 0.02) k.player.faceTo = y;
+      seat.x = p.x + Math.sin(y) * DOG_AT; seat.z = p.z + Math.cos(y) * DOG_AT;
+      spot.x = p.x; spot.z = p.z; spot.yaw = y;
       D.pet('come', { x: p.x, z: p.z, yaw: y });
+      clearRoom();
       // 机位：从侧面看人与狗（两个都是侧影，摸它的右手在近处），看的是两个当中、齐手高的那一点。
       // 先试右手那一侧（略偏后一点，狗的脸转过来一些），挡着就试左边，再试前面斜着；人的正背后不去——从那里看，狗全被他的身子挡住了。
       // 狗常卧在甲家矮墙根：哪一面有墙、篱笆、过路的人挡着，就换一面（openShot）。拖动时绕着转，也只转到背后斜四十五度为止。
@@ -212,9 +288,10 @@ function petDog(k: Anlewo, F: Fauna): Act {
       snd(k, 'dogWhine', D.pos.x, D.pos.z, 0.4);
       show();
     },
-    exit() { D.pet(null); const av = k.player.av; av.reach('R', null); av.reach('L', null); av.bow = 0; if (happy > 0.3) k.log({ kind: 'beast', text: belly ? '摸狗，它翻了肚皮' : '摸狗' }); },
+    exit() { D.pet(null); keep.leave(spot.x, spot.z); const av = k.player.av; av.reach('R', null); av.reach('L', null); av.bow = 0; if (happy > 0.3) k.log({ kind: 'beast', text: belly ? '摸狗，它翻了肚皮' : '摸狗' }); },
     update(dt) {
       const av = k.player.av, p = D.pos;
+      clearRoom();
       if (holding) {
         happy = Math.min(1, happy + dt * (belly ? 0.12 : 0.16));
         // 手：在头上、背上一下一下地捋；翻了肚皮就挠肚皮
@@ -368,6 +445,8 @@ function oxHay(k: Anlewo, F: Fauna): Act | null {
   pile.position.set(trough[0], ground(trough[0], trough[1]) + 0.55, trough[1]); pile.rotation.y = O.yaw;
   k.world.scene.add(arm, pile, bale);
   let step = 0, t = 0, eatT = 0, fedAt = -1e9;
+  // 他站的地方就在棚口（清早王伯来牵牛、傍晚送牛回棚都站这里）：添草的时候村里人让开，王伯在一旁等他添完再牵
+  const keep = room(1);
   const inShed = () => {
     const here = ox.present && !ox.hitched && Math.hypot(ox.x - W(-0.4, 0.45)[0], ox.z - W(-0.4, 0.45)[1]) < 1.6;
     // 槽里的草吃完了（一分半钟），或牛被牵走了：收起来
@@ -376,18 +455,20 @@ function oxHay(k: Anlewo, F: Fauna): Act | null {
   };
   return {
     id: 'oxHay', name: '添草', anchor: V(front[0], ground(front[0], front[1]) + 1.3, front[1]), spot: { x: at[0], z: at[1], yaw: shedYaw }, radius: 2.2, state, noZoom: true,
-    on: inShed,
+    on: () => { keep.idle(k.player.pos.x, k.player.pos.z); return inShed(); },
     enter() {
       step = 0; t = 0;
       k.player.av.setHands('free');
       k.nav.setPose({ pos: V(front[0] + Math.sin(O.yaw + 0.5) * 3.0, ground(front[0], front[1]) + 1.7, front[1] + Math.cos(O.yaw + 0.5) * 3.0), look: V(trough[0], ground(trough[0], trough[1]) + 0.6, trough[1]), fov: 46, yaw: 22, up: 10, down: 8 }, 1.5);
       set({ title: '添草', steps: ['抱草', '添进槽', '看它吃'], step: 0, hint: '棚口有一捆草', choices: [{ id: 'grab', label: '抱一抱草', main: true }, { id: 'done', label: '罢' }] });
       ox.eat = 0;
+      keep.set(0, k.player.pos.x, k.player.pos.z, CROUCH_R);
     },
-    exit() { arm.removeFromParent(); k.world.scene.add(arm); arm.visible = false; const av = k.player.av; av.reach('R', null); av.reach('L', null); av.bow = 0; av.setPose('stand'); if (step >= 2) k.log({ kind: 'beast', text: '给牛添草' }); },
+    exit() { keep.leave(at[0], at[1]); arm.removeFromParent(); k.world.scene.add(arm); arm.visible = false; const av = k.player.av; av.reach('R', null); av.reach('L', null); av.bow = 0; av.setPose('stand'); if (step >= 2) k.log({ kind: 'beast', text: '给牛添草' }); },
     update(dt) {
       const av = k.player.av;
       t += dt;
+      keep.set(0, k.player.pos.x, k.player.pos.z, CROUCH_R);
       if (step === 1) {
         // 蹲下去抱，起来，两手捧在胸前
         if (t < 1.0) { av.setPose('crouch', 0.8); av.reach('R', bale.position, { rate: 6 }); av.reach('L', bale.position, { rate: 6 }); }
@@ -413,7 +494,7 @@ function oxHay(k: Anlewo, F: Fauna): Act | null {
 function catchHen(k: Anlewo, F: Fauna): Act {
   const H = F.hens, spot = { x: 0, z: 0, yaw: 0 }, anchor = new THREE.Vector3(0, -100, 0);
   const { state, set } = base(k);
-  const hand = new THREE.Object3D();
+  const hand = new THREE.Object3D(), keep = room(1);
   let phase: 'catch' | 'carry' | 'put' | 'over' = 'catch', t = 0;
   const show = () => {
     const home = H.lost.home, near = Math.hypot(k.player.pos.x - home.x, k.player.pos.z - home.z) < 6;
@@ -437,6 +518,7 @@ function catchHen(k: Anlewo, F: Fauna): Act {
       set({ title: '抱鸡', hint: '它一蹲，不跑了' });
     },
     exit() {
+      keep.off();
       if (phase === 'carry') { H.carry(null); }
       hand.removeFromParent();
       const av = k.player.av; av.reach('R', null); av.reach('L', null); av.setPose('stand');
@@ -444,6 +526,8 @@ function catchHen(k: Anlewo, F: Fauna): Act {
     update(dt) {
       t += dt;
       const av = k.player.av;
+      // 蹲着抱它、放它的那一会儿，村里人让开（抱着走路时不用：走着的人自己会让）
+      if (phase === 'catch' || (phase === 'put' && t < 1.2)) keep.set(0, k.player.pos.x, k.player.pos.z, CROUCH_R); else keep.off();
       if (phase === 'catch') {
         const b = H.strayBird();
         if (b) { av.reach('R', _v.set(b.x, ground(b.x, b.z) + 0.15, b.z), { rate: 6 }); av.reach('L', _v.set(b.x, ground(b.x, b.z) + 0.12, b.z), { rate: 6 }); }

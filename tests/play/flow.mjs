@@ -112,6 +112,11 @@ await shot(page, `flow-${size}-5-pavilion`);
 // —— 天时 ——
 await tapSel('[data-testid="key-when"]'); await wait(900);
 ok('点时辰的卦：天时开了', await ev(() => window.__ui.ui.get().sheet === 'sky'));
+// 十二消息卦默认按月：点「八月」——到了八月（秋），右上写「八月·观」
+await tapSel('[data-testid="dial-9"]'); await wait(1200);
+ok('按月：点「八月」，到了八月、秋天，右上写八月·观', await ev(() => window.__ks.month === 9 && window.__ks.season === 'autumn' && /八月/.test(document.querySelector('[data-testid=key-when]')?.textContent ?? '')), await ev(() => `month=${window.__ks.month} season=${window.__ks.season} 右上=${document.querySelector('[data-testid=key-when]')?.textContent}`));
+// 换成按时辰，再点「酉」
+await tapSel('[data-testid="xx-hour"]'); await wait(400);
 await tapSel('[data-testid="dial-9"]'); await wait(1500);            // 酉时 · 观
 // 时辰流转着（默认每秒一分钟），点过之后会往前走一点
 ok('点「酉」：画里到酉时', await ev(() => Math.abs(window.__ks.atmos.hour - 18) < 0.15 && Math.abs(Number(window.__ui.saved.get().time) - 18) < 0.15), await ev(() => `hour=${window.__ks.atmos.hour.toFixed(3)} 右上=${document.querySelector('.when span')?.textContent}`));
@@ -139,14 +144,16 @@ await wait(700);
 ok('世界说一句话：画面下方浮起来', await ev(() => [...document.querySelectorAll('.notes .note')].some((n) => n.textContent === '得麦三捆')));
 await shot(page, `flow-${size}-6b-note`);
 await wait(4600);
-ok('过一会儿那句话退下去', await ev(() => !document.querySelector('.notes .note')));
+// （只看「得麦三捆」那一句：秋天头一回见雁会另浮一句诗，时候不定）
+ok('过一会儿那句话退下去', await ev(() => ![...document.querySelectorAll('.notes .note')].some((n) => n.textContent === '得麦三捆')), await ev(() => [...document.querySelectorAll('.notes .note')].map((n) => n.textContent).join('｜')));
 
 // —— 重开：记住了没有 ——
 await wait(500);
 await page.goto(page.url().split('?')[0] + '?auto=1', { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true || !!document.querySelector('.fatal'), null, { timeout: 120000 });
 await wait(1200);
-ok('重开（auto）：直接在桃林，秋夜有雾（记着上回选的）', await ev(() => { const k = window.__ks, h = k.atmos.hour; return k.nav.cur === 'grove' && k.season === 'autumn' && k.atmos.weather === 'mist' && (k.timeMode === 'night' || (typeof k.timeMode === 'number' && (h > 19 || h < 5))) && window.__ui.ui.get().phase === 'roam'; }), await ev(() => `season=${window.__ks.season} w=${window.__ks.atmos.weather} time=${window.__ks.timeMode} visits=${window.__ui.saved.get().visits}`));
+// （开门默认是此刻：这里此刻的节气与钟点——上回拨的秋、夜不留；天气照上回的雾）
+ok('重开（auto）：直接在桃林，季与时辰是此刻的，雾还在（天气记着上回的）', await ev(() => { const k = window.__ks, d = new Date(), h = d.getHours() + d.getMinutes() / 60, dh = Math.abs(((k.atmos.hour - h + 36) % 24) - 12); return k.nav.cur === 'grove' && k.timeMode === 'now' && dh < 0.2 && k.atmos.weather === 'mist' && window.__ui.ui.get().phase === 'roam'; }), await ev(() => `season=${window.__ks.season} w=${window.__ks.atmos.weather} time=${window.__ks.timeMode} visits=${window.__ui.saved.get().visits}`));
 ok('重开：时辰流转还是「停」、行囊里还有三个桃', await ev(() => window.__ks.flow === 0 && window.__ks.bag.count('peach') === 3));
 ok('重开：不再出走法提示', await ev(() => !document.querySelector('.walk-hint')));
 await shot(page, `flow-${size}-7-again`);

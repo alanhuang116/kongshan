@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { cn } from '../calendar';
 import { actCmd, getKs } from '../ks';
+import { GuaGlyph } from '../Gua';
+import { TRIGRAMS } from '../texts';
 import type { Hold, ItemPick, KeyHint, Meter, Tag } from './state';
 
 /**
@@ -248,6 +250,30 @@ export function Tags({ tags }: { tags: Tag[] }) {
           <i className="tag-lead" aria-hidden />
           <b className="tag-dot" aria-hidden />
         </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 八卦挑一卦（取一象时：先挑上卦，再挑下卦）：state.tri = { step: 'upper' | 'lower', on?: 已挑的那一卦 }。
+ * 按先天之序排两行：乾兑离震 / 巽坎艮坤；每一枚是三画、所象（天、泽……）与卦名。点了发 cmd('tri', id)。
+ */
+export interface TriSel { step: 'upper' | 'lower'; on: string | null }
+export function triOf(v: unknown): TriSel | null {
+  const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  if (!o || (o.step !== 'upper' && o.step !== 'lower')) return null;
+  return { step: o.step, on: typeof o.on === 'string' ? o.on : null };
+}
+export function TriPick({ t }: { t: TriSel }) {
+  return (
+    <div className={`tri-pick is-${t.step}`} role="group" aria-label={t.step === 'upper' ? '挑上卦' : '挑下卦'} data-testid="act-tri">
+      {TRIGRAMS.map((g) => (
+        <button key={g.id} className={`tri-key${t.on === g.id ? ' is-on' : ''}`} onClick={() => actCmd('tri', g.id)} data-testid={`tri-${g.id}`} aria-label={`${g.image}，${g.name}卦`}>
+          <GuaGlyph lines={g.lines} />
+          <b>{g.image}</b>
+          <small>{g.name}</small>
+        </button>
       ))}
     </div>
   );

@@ -1,0 +1,95 @@
+/* 选人：画里两位并立；左上一枚小签（「来客」与一句话），两位脚下各一枚名签，下方一片磨砂的纸放三身衣着、雅号与「入」 */
+.ke { position: absolute; inset: 0; pointer-events: none; animation: fade 1.2s var(--out) backwards; transition: opacity 1s var(--out); }
+.ke > * { pointer-events: auto; }
+.ke.is-going > *:not(.ke-tag) { opacity: 0; transition: opacity 0.9s var(--out); pointer-events: none; }
+.ke.is-going .ke-tag:not(.is-on) { opacity: 0; transition: opacity 0.5s var(--out); }
+
+/* 左上的签：题目一个毛笔大字，下面一句（楷） */
+.ke-head { position: absolute; left: calc(var(--sal) + clamp(18px, 3.6vw, 56px)); top: calc(var(--sat) + clamp(16px, 4vh, 44px)); max-width: min(23em, calc(100vw - 36px)); padding: 14px 20px 13px; border-radius: 2px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); box-shadow: var(--board-shadow); display: grid; gap: 6px; animation: rise 1.4s var(--out) backwards; }
+.ke-head::before { content: ''; position: absolute; inset: 4px; border: 1px solid var(--rule-2); pointer-events: none; }
+.ke-title { margin: 0; font-family: var(--brush); font-weight: 400; font-size: clamp(36px, 6vh, 52px); line-height: 1.05; letter-spacing: 0.14em; color: var(--title); }
+.ke-title.is-kai { font-family: var(--kai); font-size: clamp(30px, 5vh, 44px); }
+.ke-line { margin: 0; font-family: var(--kai); font-size: clamp(13.5px, 1.9vh, 15.5px); line-height: 1.75; letter-spacing: 0.14em; color: var(--ink-2); }
+
+/* 名签：落在那一位脚下；选中的一枚压一圈朱，字也是朱色 */
+.ke-tag { position: absolute; transform: translate(-50%, 14px); min-width: 64px; min-height: 40px; padding: 6px 14px 7px; display: grid; place-items: center; border-radius: 2px; border: 1px solid var(--rule-2); background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); box-shadow: var(--key-shadow, 0 1px 0 rgba(0, 0, 0, 0.06)); font-family: var(--kai); font-size: 16.5px; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--ink); transition: color 0.3s, border-color 0.3s, opacity 0.4s, transform 0.4s var(--out); animation: rise 1.2s 0.4s var(--out) backwards; }
+.ke-tag::before { content: ''; position: absolute; left: 50%; top: -9px; width: 1px; height: 8px; background: var(--ink-3); opacity: 0.6; }
+.ke-tag.is-on { color: var(--zhu); border-color: color-mix(in srgb, var(--zhu) 70%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--zhu) 30%, transparent) inset; }
+.ke-tag.is-off { opacity: 0.62; }
+@media (hover: hover) { .ke-tag:hover { transform: translate(-50%, 12px); color: var(--ink-max); } .ke-tag.is-on:hover { color: var(--zhu); } }
+
+/* 竖着的手机：上方两枚切换 */
+.ke-seg { position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--sat) + var(--seg-top, 150px)); display: flex; gap: 0; padding: 3px; border-radius: 3px; background: var(--tex) 0 0 / var(--tex-size), var(--glass-2); border: 1px solid var(--rule-2); box-shadow: var(--board-shadow); animation: rise 1.2s 0.2s var(--out) backwards; }
+.ke-seg-key { min-width: 86px; min-height: 42px; padding: 0 16px; font-family: var(--kai); font-size: 16px; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--ink-2); border-radius: 2px; transition: color 0.3s, background-color 0.3s; }
+.ke-seg-key.is-on { color: var(--zhu-ink); background: var(--zhu); }
+
+/* 下方那片纸：三身衣着一行，一句说明，雅号与「入」 */
+.ke-panel { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sab) + clamp(14px, 3vh, 30px)); width: min(560px, calc(100vw - 28px)); padding: 16px 20px 8px; border-radius: 3px; box-shadow: var(--board-shadow); display: grid; gap: 10px; animation: rise 1.3s 0.15s var(--out) backwards; }
+.ke-panel.is-empty { width: auto; padding: 12px 22px 6px; justify-items: center; gap: 2px; }
+.ke-hint { margin: 0; font-family: var(--kai); font-size: 15px; letter-spacing: 0.24em; text-indent: 0.24em; color: var(--ink); }
+.ke-wears { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ke-wear { display: grid; justify-items: center; gap: 3px; min-height: 92px; padding: 8px 4px 7px; border-radius: 3px; color: var(--ink-2); transition: color 0.3s, background-color 0.3s; }
+.ke-wear span { font-family: var(--kai); font-size: 14.5px; letter-spacing: 0.1em; color: var(--ink); white-space: nowrap; }
+.ke-wear small { font-family: var(--kai); font-size: 12px; letter-spacing: 0.08em; color: color-mix(in srgb, var(--ink-2) 75%, var(--ink)); white-space: nowrap; }
+.ke-wear.is-on { background: color-mix(in srgb, var(--wash) 70%, transparent); }
+.ke-wear.is-on span { color: var(--zhu); }
+@media (hover: hover) { .ke-wear:hover span { color: var(--ink-max); } .ke-wear.is-on:hover span { color: var(--zhu); } }
+/* 色块：上衣（左上）与裙或衣缘（右下）两色斜分，冠的颜色一道细边；外面一笔墨圈（选中的那一圈是朱） */
+.ke-chip { position: relative; width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, var(--c1) 0 52%, var(--c2) 52% 100%); box-shadow: 0 0 0 2px var(--c3) inset, 0 1px 3px rgba(0, 0, 0, 0.18); }
+.ke-chip b { position: absolute; inset: -5px; background: var(--ink-3); -webkit-mask: var(--m-ring) center / 100% 100% no-repeat; mask: var(--m-ring) center / 100% 100% no-repeat; opacity: 0.55; transition: background-color 0.3s, opacity 0.3s; }
+.ke-wear.is-on .ke-chip b { background: var(--zhu); opacity: 1; }
+.ke-note { margin: 0; min-height: 3.3em; font-family: var(--kai); font-size: 13.5px; line-height: 1.65; letter-spacing: 0.06em; color: color-mix(in srgb, var(--ink-2) 70%, var(--ink)); animation: fade 0.6s backwards; }
+.ke-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ke-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.ke-label { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.2em; color: color-mix(in srgb, var(--ink-2) 75%, var(--ink)); }
+.ke-name b { font-family: var(--kai); font-weight: 400; font-size: 19px; letter-spacing: 0.12em; color: var(--ink); white-space: nowrap; }
+.ke-enter { width: 60px; height: 60px; }
+.ke-enter span { font-size: 27px; }
+.ke-back { justify-self: center; min-height: 32px; font-size: 12.5px; opacity: 0.85; }
+
+/* 竖着的手机：签在上头当中，面板贴底 */
+@media (max-aspect-ratio: 4/5) {
+  .ke { --seg-top: clamp(112px, 17vh, 150px); }
+  .ke-head { left: 50%; transform: translateX(-50%); top: calc(var(--sat) + 12px); padding: 10px 16px 9px; text-align: center; justify-items: center; width: max-content; max-width: calc(100vw - 32px); animation: fade 1.2s var(--out) backwards; }
+  .ke-title { font-size: clamp(30px, 8.6vw, 40px); }
+  .ke-line { font-size: 13px; letter-spacing: 0.08em; }
+  .ke-panel { width: calc(100vw - 20px); padding: 12px 14px 4px; gap: 8px; bottom: calc(var(--sab) + 10px); }
+  .ke-wear { min-height: 84px; padding: 6px 2px; }
+  .ke-wear span { font-size: 13.5px; letter-spacing: 0.04em; }
+  .ke-note { font-size: 12.5px; min-height: 3.2em; }
+}
+/* 很矮的竖屏（SE 一类）：签只留题目与一行小字，衣着只写衣名、不写说明，「入」小一号——给画里的人多留地方 */
+@media (max-aspect-ratio: 4/5) and (max-height: 600px) {
+  .ke { --seg-top: 84px; }
+  .ke-head { padding: 6px 14px 6px; gap: 0; }
+  .ke-title { font-size: 26px; }
+  .ke-line { font-size: 11.5px; line-height: 1.5; letter-spacing: 0.04em; }
+  .ke-seg-key { min-height: 38px; min-width: 78px; }
+  .ke-panel { gap: 6px; padding: 8px 12px 2px; }
+  .ke-note { display: none; }
+  .ke-wear { min-height: 0; padding: 5px 2px 4px; gap: 2px; }
+  .ke-wear small { display: none; }
+  .ke-chip { width: 32px; height: 32px; }
+  .ke-enter { width: 50px; height: 50px; }
+  .ke-enter span { font-size: 23px; }
+  .ke-name b { font-size: 17px; }
+  .ke-back { min-height: 28px; }
+}
+/* 横着的手机：屋矮——签小，面板靠右竖着 */
+@media (max-height: 520px) and (min-aspect-ratio: 4/5) {
+  .ke-head { top: calc(var(--sat) + 10px); left: calc(var(--sal) + 14px); padding: 8px 14px 7px; max-width: 16em; }
+  .ke-title { font-size: 30px; }
+  .ke-line { font-size: 12.5px; line-height: 1.6; }
+  .ke-panel { left: auto; right: calc(var(--sar) + 12px); transform: none; top: calc(var(--sat) + 10px); bottom: calc(var(--sab) + 10px); width: min(330px, 46vw); padding: 12px 14px 4px; align-content: start; overflow-y: auto; }
+  .ke-panel.is-empty { top: auto; }
+  .ke-wear { min-height: 80px; padding: 6px 2px; }
+  .ke-note { font-size: 12.5px; min-height: 0; }
+  .ke-tag { min-height: 36px; font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { .ke, .ke-head, .ke-panel, .ke-tag, .ke-seg { animation: none; } }
+
+/* 宽屏选了一位：面板靠右竖着（人落在左边，见 Select.tsx 的 frameFor），不挡着人 */
+@media (min-aspect-ratio: 4/5) and (min-height: 521px) {
+  .ke-panel.is-side { left: auto; right: calc(var(--sar) + clamp(20px, 4.5vw, 72px)); top: 50%; bottom: auto; transform: translateY(-50%); width: min(420px, 38vw); padding: 20px 22px 8px; gap: 12px; }
+  .ke-panel.is-side .ke-note { min-height: 0; }
+}

@@ -21,7 +21,8 @@ import * as THREE from 'three';
 import type { Quality } from '../core/World';
 import { wash } from '../ink/ink';
 import { LoftGeo } from './loft';
-import { ATLAS, CAPE, HEAD_UP, RAIN_HAT, TEX, bodyV, buildBack, buildFoot, buildHand, buildHead, buildRainCape, buildRainHat, buildWrist, paintAtlas, resolveLook, tones } from './parts';
+import { ATLAS, CAPE, HEAD_UP, RAIN_HAT, TEX, bodyV, buildBack, buildFoot, buildHand, buildHead, buildRainCape, buildRainHat, buildWrist, paintAtlas, resolveLook, tones, weld as weldAll } from './parts';
+import { buildOrnaments, type OrnPiece } from './attire';
 import type { Avatar, GestureName, HandsName, Look, PoseName, ReachOpts, Seat, Side } from './types';
 
 export type { Seat } from './types';
@@ -61,6 +62,13 @@ const UP: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [1.316, 0.055, 0.050, 0.058, 2.0],
 ];
 const K_CHEST = 6, K_SHOULDER = 8, K_NECK = 10, NUP = UP.length;
+/**
+ * 女子的上身（按 UP 各圈的比例）：半宽——胯略窄、腰细、肩窄、颈细；前半径——胸前略丰；后半径——腰背略收。
+ * 宋人衣衫宽直，不显腰身：只收一点，穿上衣还是那一副身子，只是肩不那么宽、颈细长些
+ */
+const F_W = [0.96, 0.93, 0.89, 0.88, 0.89, 0.9, 0.9, 0.88, 0.86, 0.87, 0.89, 0.9];
+const F_F = [0.98, 0.97, 0.95, 0.96, 1.0, 1.04, 1.05, 1.03, 1.0, 0.95, 0.92, 0.92];
+const F_B = [0.98, 0.96, 0.93, 0.93, 0.95, 0.96, 0.97, 0.97, 0.97, 0.95, 0.92, 0.92];
 
 /** 各姿态：骨盆心的高与前后、上身前倾 */
 const BASE: Record<PoseName, { py: number; pz: number; lean: number }> = {
@@ -202,10 +210,16 @@ const CH = { head: 0, handL: 1, handR: 2, footL: 3, footR: 4, back: 5 };
 
 export class Figure implements Avatar {
   root = new THREE.Group();
-  readonly height: number;
-  readonly eyeY: number;
-  /** 这一身打扮（造好之后不再变） */
-  readonly look: Look;
+  height = 1.58;
+  eyeY = 1.45;
+  /** 这一身打扮（换装时 setLook 换掉） */
+  look!: Look;
+  private q: Quality;
+  /** 上身各圈的表（女子的肩、腰、颈收窄一点）、肩头离脊多远、步子的长短 */
+  private up: ReadonlyArray<readonly [number, number, number, number, number]> = UP;
+  private shX = SH_X; private stride = 1;
+  /** 身上的小物件：哪一块、在几何里排第几；垂着的那几样此刻朝哪垂（d，小人的坐标）、晃得多快 */
+  private orns: Array<{ p: OrnPiece; ch: number; d: THREE.Vector3; v: THREE.Vector3; on: boolean; init: boolean }> = [];
   joints: Avatar['joints'];
   bow = 0;
   /** 上身另外扭多少（弧度，正是往左转；外面给目标值，这里带一点缓冲） */
@@ -236,7 +250,7 @@ export class Figure implements Avatar {
   /** 平滑过的加速度（给起跑前探、急停后坐）；折算成成年人的速度；跑了几成（衣摆往后飘）；里子提亮了几成 */
   private accS = 0; private ga = 0; private runS = 0; private linK = 0;
   /** 身量的平方根（孩子的步频按它折算） */
-  private sqS: number;
+  private sqS!: number;
   /** 闲时的小动作：哪一个、做了多久、偏哪只手、收没收；整体的分量 */
   private gst: { name: GestureName; t: number; side: 1 | -1; out: boolean } | null = null; private gW = 0;
   /** 小动作在这一刻给的：头的俯仰与左右、胸往后仰、上身扭；两手要不要负到身后、按小动作给的去处（胸的坐标：x 左、y 上、z 前，原点胸心） */
@@ -245,12 +259,12 @@ export class Figure implements Avatar {
   private iq = new THREE.Quaternion();
   private hatSwing = 0; private hatV = 0;
 
-  private loft: LoftGeo; private garment: THREE.Mesh;
+  private loft!: LoftGeo; private garment!: THREE.Mesh;
   private head: THREE.Object3D; private hat: THREE.Object3D; private feet: { L: THREE.Object3D; R: THREE.Object3D };
   private arms: { L: Arm; R: Arm };
   private mats: THREE.Material[] = []; private texs: THREE.Texture[] = [];
   /** 衣长、摆张开几成、袖子的肥瘦、是不是露着小腿、背上有没有东西 */
-  private hem: number; private flare: number; private sleeveK: number; private bare: boolean; private hasBack = false;
+  private hem!: number; private flare!: number; private sleeveK!: number; private bare!: boolean; private hasBack = false;
   /** 两腕那两块在几何里排第几（左、右挨着） */
   private chWrist = 0;
   /**
@@ -259,18 +273,20 @@ export class Figure implements Avatar {
    * 戴的时候就是把背上那顶翻上头。hatM：斗笠此刻摆在哪（小人的坐标）；donW：右手扶着笠沿跟过去的分量
    */
   gear = 0; private gearS = 0; private chHat = -1; private chCape = -1; private hatFromBack = false;
+  /** 高出头顶的冠、髻那一块（没有是 −1） */
+  private chCrown = -1;
   private hatOn = false; private capeOn = false; private hatM = new THREE.Matrix4(); private donW = 0; private gearLast = 0;
   /** 斗笠戴在头上（颈的坐标）、背在背上（胸的坐标）时的摆法 */
   private hatHead = new THREE.Matrix4(); private hatBack = new THREE.Matrix4();
 
   // 圈与表
-  private segs: number; private nlow: number; private srs: SRing[]; private segS: number; private segK: number;
-  private sn: Float32Array; private cs: Float32Array;                // 衣身一圈上各点的 sin / cos
+  private segs!: number; private nlow!: number; private srs!: SRing[]; private segS!: number; private segK!: number;
+  private sn!: Float32Array; private cs!: Float32Array;                // 衣身一圈上各点的 sin / cos
   private sPu: Float32Array[] = []; private cPu: Float32Array[] = []; // 上身各圈 |sin|^n、|cos|^n
   private sPl: Float32Array[] = []; private cPl: Float32Array[] = []; private nl: number[] = [];
-  private rho: Float32Array; private rhoInit = false;                // 下摆各圈各点的半径（往回收带滞后，往外撑是立刻的）
-  private rc: Float32Array; private rtw: Float32Array;              // 下摆各圈的圈心（x、y、z）与扭转——给下一帧量手离布多远
-  private rideL: Float32Array; private rideT: Float32Array; private rideU: Float32Array; // 摆脚各处顺着腿往上缩了多少（最下一圈的；往上递减）
+  private rho!: Float32Array; private rhoInit = false;                // 下摆各圈各点的半径（往回收带滞后，往外撑是立刻的）
+  private rc!: Float32Array; private rtw!: Float32Array;              // 下摆各圈的圈心（x、y、z）与扭转——给下一帧量手离布多远
+  private rideL!: Float32Array; private rideT!: Float32Array; private rideU!: Float32Array; // 摆脚各处顺着腿往上缩了多少（最下一圈的；往上递减）
   /** 两只脚上的三个球此刻的位置（小人的坐标）与要不要裹（抬起来了几成） */
   private footP = new Float32Array(18); private footW = [0, 0];
   /** 布要裹住的腿：一串球（每个五个数：x、y、z、半径、哪条腿） */
@@ -279,12 +295,12 @@ export class Figure implements Avatar {
    * 下摆每一圈管的那一层（站着时各圈的高，上下各半个圈距）里两条腿（与抬起的脚）的横截面，每帧先量好：
    * 每层最多 MAX_BALL 个圆，每个圆四个数（小人坐标里的 x、z，半径，哪条腿）；各层几个圆。抬起来的点到它所在的那一层去取
    */
-  private slab: Float32Array; private slabN: Uint8Array;
+  private slab!: Float32Array; private slabN!: Uint8Array;
   /** 各层里每条腿的那几个圆合起来的外接圆（x、z、半径；没有就是半径 −1）：这一点的方向上连它都够不着布，就不必一个个圆去比 */
-  private slabB: Float32Array;
-  private fold: Float32Array;                                        // 下摆一圈上的褶（固定的起伏）
-  private s3: Float32Array; private c3: Float32Array;                // 跑起来下摆的抖（三个起伏绕着转）
-  private snS: Float32Array; private csS: Float32Array;
+  private slabB!: Float32Array;
+  private fold!: Float32Array;                                        // 下摆一圈上的褶（固定的起伏）
+  private s3!: Float32Array; private c3!: Float32Array;                // 跑起来下摆的抖（三个起伏绕着转）
+  private snS!: Float32Array; private csS!: Float32Array;
   // 脊上各站的位置与朝向
   private stC = new Float32Array(NUP * 3); private stP = new Float32Array(NUP); private stT = new Float32Array(NUP);
   private sk = newSk(); private skB = newSk();
@@ -296,9 +312,51 @@ export class Figure implements Avatar {
 
   /** q.tier 定这个人的网有多细（low 约四千三角，其余约九千）；q.tex 定贴图多大。look 不给就是读书人那一身 */
   constructor(q: Quality, look?: Partial<Look>) {
-    const low = q.tier === 'low', lk = (this.look = resolveLook(look));
+    this.q = q;
     this.root.name = 'avatar';
+    // —— 关节（挂点）。头、手、脚、背上的东西不再各是一个网格，只留着它们的位置，每帧把那几块搬过去 ——
+    const hips = new THREE.Group(), chest = new THREE.Group(), neck = new THREE.Group(), headJ = new THREE.Group(), handL = new THREE.Group(), handR = new THREE.Group();
+    const back = new THREE.Group(), footL = new THREE.Group(), footR = new THREE.Group();
+    hips.name = 'hips'; chest.name = 'chest'; headJ.name = 'head'; handL.name = 'handL'; handR.name = 'handR';
+    neck.add(headJ);
+    chest.add(back);
+    this.root.add(hips, chest, neck, handL, handR, footL, footR);
+    this.head = neck; this.hat = back; this.feet = { L: footL, R: footR };
+    this.joints = { hips, chest, head: headJ, handL, handR };
+    const arm = (s: number, joint: THREE.Object3D): Arm => ({ s, reach: null, rDir: null, rPalm: null, rGrip: null, rate: 10, rw: 0, rpos: V(), rd: new THREE.Vector3(0, -1, 0), rn: new THREE.Vector3(-s, 0, 0), S: V(), E: V(), W: V(), P: V(), D: new THREE.Vector3(0, -1, 0), prevW: V(), bagU: new THREE.Vector3(0, -0.2, -1).normalize(), bagF: new THREE.Vector3(0, -0.2, -1).normalize(), init: false, joint });
+    this.arms = { L: arm(1, handL), R: arm(-1, handR) };
+    this.build(resolveLook(look));
+  }
+
+  /**
+   * 换一身打扮（你换衣饰、选人那一页换男女时）：网与贴图重做，姿态、手脚此刻在哪、手里拿着的都留着。
+   * 村里人造好就不再换，用不着它。外面若另有东西指着这张网（行者的淡影 ghost.ts），换完要再接一回
+   */
+  setLook(look?: Partial<Look>) {
+    this.dropGeo();
+    this.build(resolveLook(look));
+  }
+  /** 拿掉这一身的网、材质、贴图（关节、手里的东西不动） */
+  private dropGeo() {
+    if (this.garment) { this.garment.removeFromParent(); this.garment.geometry.dispose(); }
+    for (const m of this.mats) m.dispose();
+    for (const t of this.texs) t.dispose();
+    this.mats = []; this.texs = [];
+    this.chHat = -1; this.chCape = -1; this.chCrown = -1; this.hatFromBack = false; this.hasBack = false; this.orns = [];
+  }
+
+  /**
+   * 网与贴图（造的时候一回，换一身打扮时再一回）：衣身、两袖、两只袜筒一张网；头、手、鞋、背上的东西、雨具、身上的小物件各是一块，收在同一个几何里
+   */
+  private build(lk: Look) {
+    const q = this.q, low = q.tier === 'low';
+    this.look = lk;
     this.root.scale.setScalar(lk.scale);
+    // 身形：女子肩窄、腰细、颈细一点（上身各圈的半宽、前后半径按比例收），肩头往里收，步子略小
+    const fem = lk.build === 'f';
+    this.up = UP.map((r, k) => (fem ? [r[0], r[1] * F_W[k], r[2] * F_F[k], r[3] * F_B[k], r[4]] as const : r));
+    this.shX = fem ? 0.124 : SH_X;
+    this.stride = fem ? 0.93 : 1;
     this.sqS = Math.sqrt(Math.max(0.3, lk.scale));
     this.height = 1.58 * lk.scale; this.eyeY = 1.45 * lk.scale;
     this.hem = lk.hem; this.bare = lk.hem > 0.2; this.sleeveK = Math.max(0, Math.min(1, lk.sleeve));
@@ -322,7 +380,8 @@ export class Figure implements Avatar {
       for (let i = 0; i <= S; i++) { s[i] = Math.pow(Math.abs(this.sn[i]), n); c[i] = Math.pow(Math.abs(this.cs[i]), n); }
       return [s, c] as const;
     };
-    for (let k = 0; k < NUP; k++) { const [s, c] = pw(UP[k][4]); this.sPu.push(s); this.cPu.push(c); }
+    this.sPu = []; this.cPu = []; this.sPl = []; this.cPl = []; this.nl = [];
+    for (let k = 0; k < NUP; k++) { const [s, c] = pw(this.up[k][4]); this.sPu.push(s); this.cPu.push(c); }
     for (let j = 0; j < NL; j++) { const n = 2.0 + 0.25 * (j / NL); this.nl.push(n); const [s, c] = pw(n); this.sPl.push(s); this.cPl.push(c); }
     this.rho = new Float32Array(NL * (S + 1));
     this.rc = new Float32Array(NL * 3); this.rtw = new Float32Array(NL);
@@ -335,7 +394,8 @@ export class Figure implements Avatar {
     // —— 长衫、两袖、两只袜筒（短衣的人是两条小腿）：一张网；头、手、鞋、背上的东西各是一块，收在同一个几何里 ——
     const bodyRings = 2 + NL + NUP + 1, slRings = this.srs.length, SK = this.segK;
     const backG = buildBack(lk, low), footG = buildFoot(lk, low);
-    const rigid = [buildHead(lk, low), buildHand(lk, low, 1), buildHand(lk, low, -1), footG, footG];
+    const tallG: THREE.BufferGeometry[] = [];
+    const rigid = [buildHead(lk, low, tallG), buildHand(lk, low, 1), buildHand(lk, low, -1), footG, footG];
     if (backG) { rigid.push(backG); this.hasBack = true; }
     // 两腕（顺着小臂摆的那一截）：排在后头，前面几块的次序不变（tests/play/clip.js 按次序找手、脚）
     const wristG = buildWrist(lk, low);
@@ -343,6 +403,16 @@ export class Figure implements Avatar {
     // 雨具：本来戴着斗笠的不另加斗笠，本来披着蓑衣的不另加蓑衣
     if (!(lk.hat === 'li' && lk.hatWorn)) { this.chHat = rigid.length; rigid.push(buildRainHat(low)); this.hatFromBack = lk.hat === 'li'; }
     if (!lk.cape) { this.chCape = rigid.length; rigid.push(buildRainCape(low)); }
+    // 高出头顶的冠、髻：另一块（雨天戴斗笠时压低收进笠里）。坐标与头一样，先抬 HEAD_UP 再按头的大小缩放
+    this.chCrown = -1;
+    if (tallG.length) {
+      const cg = weldAll(tallG).translate(0, HEAD_UP, 0.008);
+      if (lk.head !== 1) cg.scale(lk.head, lk.head, lk.head);
+      this.chCrown = rigid.length; rigid.push(cg);
+    }
+    // 身上的小物件（簪、步摇、耳珰、玉佩、香囊……）：各是一块，排在最后（前面几块的次序不变）
+    this.orns = [];
+    for (const p of buildOrnaments(lk, low)) { this.orns.push({ p, ch: rigid.length, d: new THREE.Vector3(0, -1, 0), v: V(), on: false, init: false }); rigid.push(p.geo); }
     // 戴着：沿压到眉上一点、略往后仰，露出脸来（髻、巾顶都在笠里）；背着：笠面朝后贴着背，与背斗笠的人那一顶一样
     this.hatHead.makeScale(lk.head, lk.head, lk.head).multiply(new THREE.Matrix4().makeTranslation(0, HEAD_UP, 0.008))
       .multiply(new THREE.Matrix4().compose(new THREE.Vector3(0, 0.034, -0.014), new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0, 0)), new THREE.Vector3(1, 1, 1)));
@@ -356,7 +426,7 @@ export class Figure implements Avatar {
     const dark = [0.26, 0.275, 0.3], RU = ATLAS.robeU;
     for (let r = 0; r < bodyRings; r++) {
       const lining = r < 2 || r === bodyRings - 1;
-      const y = r < 2 ? Math.max(0.3, this.hem + 0.2) : r < 2 + NL ? this.hem + (UP[0][0] - this.hem) * ((r - 2) / NL) : r === bodyRings - 1 ? 1.34 : UP[r - 2 - NL][0];
+      const y = r < 2 ? Math.max(0.3, this.hem + 0.2) : r < 2 + NL ? this.hem + (this.up[0][0] - this.hem) * ((r - 2) / NL) : r === bodyRings - 1 ? 1.34 : this.up[r - 2 - NL][0];
       for (let i = 0; i <= S; i++) {
         const o = L.at(0, r, i);
         L.uv[o * 2] = (RU * i) / S; L.uv[o * 2 + 1] = bodyV(y);
@@ -388,20 +458,10 @@ export class Figure implements Avatar {
     this.garment.name = 'avatar:body';
     this.root.add(this.garment);
     this.mats.push(gm);
-
-    // —— 关节（挂点）。头、手、脚、背上的东西不再各是一个网格，只留着它们的位置，每帧把那几块搬过去 ——
-    const hips = new THREE.Group(), chest = new THREE.Group(), neck = new THREE.Group(), headJ = new THREE.Group(), handL = new THREE.Group(), handR = new THREE.Group();
-    const back = new THREE.Group(), footL = new THREE.Group(), footR = new THREE.Group();
-    hips.name = 'hips'; chest.name = 'chest'; headJ.name = 'head'; handL.name = 'handL'; handR.name = 'handR';
-    headJ.position.set(0, HEAD_UP * lk.head, 0.008 * lk.head); neck.add(headJ);
-    chest.add(back);
-    this.root.add(hips, chest, neck, handL, handR, footL, footR);
-    this.head = neck; this.hat = back; this.feet = { L: footL, R: footR };
-    this.joints = { hips, chest, head: headJ, handL, handR };
-    const arm = (s: number, joint: THREE.Object3D): Arm => ({ s, reach: null, rDir: null, rPalm: null, rGrip: null, rate: 10, rw: 0, rpos: V(), rd: new THREE.Vector3(0, -1, 0), rn: new THREE.Vector3(-s, 0, 0), S: V(), E: V(), W: V(), P: V(), D: new THREE.Vector3(0, -1, 0), prevW: V(), bagU: new THREE.Vector3(0, -0.2, -1).normalize(), bagF: new THREE.Vector3(0, -0.2, -1).normalize(), init: false, joint });
-    this.arms = { L: arm(1, handL), R: arm(-1, handR) };
+    (this.joints.head as THREE.Object3D).position.set(0, HEAD_UP * lk.head, 0.008 * lk.head);
     this.stats.triangles = Math.round(L.triangles);
     this.stats.draws = 1;
+    this.rhoInit = false; this.hatOn = false; this.capeOn = false;
     this.update(0, 0, { speed: 0 });
   }
 
@@ -531,14 +591,15 @@ export class Figure implements Avatar {
     this.climbS += (clamp(move.climb ?? 0, -0.7, 0.7) * (moving ? 1 : 0) - this.climbS) * Math.min(1, dt * 6);
     this.amp += ((moving ? 1 : 0) - this.amp) * Math.min(1, dt * (moving ? 6.5 : 5));
     const run = smooth(RUN_A, RUN_B, ga);                            // 快到一定程度就是跑：两脚有同时离地的一瞬
-    // 转弯时身子向内倾：走着只略倾；跑起来按离心力倾（世界里的速度 × 转得多快）
-    const turn = move.turn ?? 0, lim = lerp(0.11, 0.24, run);
-    this.rollS += (clamp(lerp(turn * 0.04 * Math.min(1.6, ga / 1.9), 0.8 * Math.atan((turn * this.speedS * this.look.scale) / 9.8), run), -lim, lim) - this.rollS) * Math.min(1, dt * 5);
+    // 转弯时身子至多微微向内倾（两三度）：先前跑起来按离心力倾到十几度，试玩的人说快跑、斜着跑时身子是斜的——
+    // 镜头跟着往人身后转，按着斜方向跑其实一直在拐，身子就一直歪着。如今身子立着，只在急拐时略一沉
+    const turn = move.turn ?? 0, lim = lerp(0.03, 0.05, run);
+    this.rollS += (clamp(lerp(turn * 0.015 * Math.min(1.6, ga / 1.9), 0.25 * Math.atan((turn * this.speedS * this.look.scale) / 9.8), run), -lim, lim) - this.rollS) * Math.min(1, dt * 5);
     const A = this.amp * W.stand, climb = this.climbS, roll = this.rollS * W.stand;
     // 一步里脚着地的时间占比：走 0.62（换脚时两脚都在地上）；跑 0.44 → 0.35（越快腾空越长）
     const beta = lerp(0.62, clamp(0.44 - 0.08 * (ga - 3), 0.3, 0.45), run);
     // 步幅：走是 0.4 + 0.19 × 速度；跑按步频（每秒 3.2–3.5 步、越快略密——穿长衫的人步子不放得太开）定。台阶、坡上收小
-    const stepLen = lerp(clamp(0.4 + 0.19 * ga, 0.36, 1.05), ga / (2.85 + 0.13 * ga), run) * (1 - lerp(0.26, 0.38, run) * Math.min(1, Math.abs(climb) * lerp(1.6, 1.9, run)));
+    const stepLen = lerp(clamp(0.4 + 0.19 * ga, 0.36, 1.05), ga / (2.85 + 0.13 * ga), run) * (1 - lerp(0.26, 0.38, run) * Math.min(1, Math.abs(climb) * lerp(1.6, 1.9, run))) * this.stride;
     // 跑：落脚在身子前面不远（不是远远伸出去），撑地的这一程整个往后错一点——身子在两脚的前头
     const reachF = beta * stepLen, back = run * Math.max(0, reachF - (0.27 + 0.025 * (ga - 3))), zLand = reachF - back;
     const liftH = lerp(0.036 + 0.03 * Math.min(1, ga / 1.5) + 0.07 * Math.max(0, climb), 0.06 + 0.038 * ga + 0.05 * Math.max(0, climb), run);
@@ -647,7 +708,7 @@ export class Figure implements Avatar {
     this.twistS += (clamp(this.twist || 0, -0.6, 0.6) - this.twistS) * Math.min(1, dt * 9);
     const tw = this.twistS * (1 - Wl);
     for (let k = 0; k < NUP; k++) {
-      const y = UP[k][0];
+      const y = this.up[k][0];
       // （躺着整条脊一样平；别的姿态腰以下弯得少）
       SP[k] = baseP * lerp(0.3 + 0.7 * smooth(0.8, 0.955, y), 1, Wl) + (bSp + G.arch) * smooth(0.985, 1.215, y);
       ST[k] = lerp(yawP, yawS, smooth(0.82, 1.25, y)) + 0.28 * lkY * (1 - Wl) * smooth(1.0, 1.25, y) + G.twist * smooth(0.9, 1.25, y) + tw * smooth(0.86, 1.22, y);
@@ -655,7 +716,7 @@ export class Figure implements Avatar {
     // 第一站在骨盆心往下（躺平时是往脚那边）四厘米
     C[0] = px; C[1] = py - 0.04 * (1 - Wl); C[2] = pz + 0.04 * Wl;
     for (let k = 1; k < NUP; k++) {
-      const dh = UP[k][0] - UP[k - 1][0], p = (SP[k] + SP[k - 1]) * 0.5;
+      const dh = this.up[k][0] - this.up[k - 1][0], p = (SP[k] + SP[k - 1]) * 0.5;
       C[k * 3] = C[k * 3 - 3] + roll * dh * 1.25; C[k * 3 + 1] = C[k * 3 - 2] + Math.cos(p) * dh; C[k * 3 + 2] = C[k * 3 - 1] + Math.sin(p) * dh;
     }
     // 呼吸：肩略起
@@ -711,6 +772,7 @@ export class Figure implements Avatar {
     this.shapeSleeve(1, this.arms.L); this.shapeSleeve(2, this.arms.R);
     this.shapeSock(3, this.feet.L, FL, 0); this.shapeSock(4, this.feet.R, FR, 1);
     this.placeRigid();
+    if (this.orns.length) this.placeOrn(dt, vLoc, yawP);
     this.loft.normals(); this.loft.commit();
   }
 
@@ -837,6 +899,16 @@ export class Figure implements Avatar {
   private placeRigid() {
     const L = this.loft, a = this.arms, f = this.feet;
     this.head.updateMatrix(); L.place(CH.head, this.head.matrix);
+    // 高冠、高髻：斗笠戴上去（gearS 往 1 走）时压低、收窄，收进笠里（笠盖着看不见）；摘了复原
+    if (this.chCrown >= 0) {
+      const g = this.gearS > 0.001 ? ease3(clamp(this.gearS * 1.4, 0, 1)) : 0;
+      if (g <= 0) L.place(this.chCrown, this.head.matrix);
+      else {
+        const yp = (HEAD_UP + 0.1) * this.look.head;
+        _hm2.makeTranslation(0, yp, 0).multiply(_hm1.makeScale(1 - 0.14 * g, 1 - 0.64 * g, 1 - 0.14 * g)).multiply(_hm0.makeTranslation(0, -yp, 0));
+        L.place(this.chCrown, this.m1.multiplyMatrices(this.head.matrix, _hm2));
+      }
+    }
     a.L.joint.updateMatrix(); L.place(CH.handL, a.L.joint.matrix);
     a.R.joint.updateMatrix(); L.place(CH.handR, a.R.joint.matrix);
     this.placeWrist(this.chWrist, a.L); this.placeWrist(this.chWrist + 1, a.R);
@@ -853,6 +925,209 @@ export class Figure implements Avatar {
       else if (this.hatOn) { L.place(this.chHat, null); this.hatOn = false; }
     }
     this.placeCape();
+  }
+
+  /**
+   * 身上的小物件。头上的（簪、簪花、珠花）跟着头整块走，雨天斗笠戴上去时收起来；
+   * 垂着的（步摇的珠串、耳珰、腰间的佩、囊、禁步）：各有一个垂的方向 d（小人的坐标），像一根短摆——往正下方回，人走动时往后甩、
+   * 停下时往前荡一下，带阻尼；腰间那几样还要量衣身（下摆被腿顶到哪、坐下时铺在哪，按上一帧的）与两袖：
+   * 沿着这一串取几处，哪一处插进布里、袖里，就把它往外推出来（再留一点空），整串跟着转过去——所以腿迈出去时佩被顶开，
+   * 不会从衣摆里穿过去；拢着手时袖子垂在身前，佩就从袖外头过。插着的折扇贴着腰前一侧，同样不插进布里。
+   */
+  private placeOrn(dt: number, vLoc: THREE.Vector3, yawP: number) {
+    const L = this.loft, head = this.head, hatted = this.gearS > 0.3, h = Math.max(dt, 1e-4);
+    head.updateMatrix();
+    const J = this.joints.hips, hy = J.position.y;
+    for (const o of this.orns) {
+      const p = o.p;
+      if (p.slot === 'head') {
+        if (hatted) { if (o.on) { L.place(o.ch, null); o.on = false; } continue; }
+        L.place(o.ch, head.matrix); o.on = true; continue;
+      }
+      // 挂点（小人的坐标）
+      const P = _op;
+      if (p.slot === 'dangle') {
+        if (hatted && p.pivot!.y > 0.2) { if (o.on) { L.place(o.ch, null); o.on = false; } continue; }
+        P.copy(p.pivot!).applyMatrix4(head.matrix);
+      } else {
+        // 腰带上：胯往上约十厘米那一圈，偏左（1）或偏右（−1）一点，系在布的外面
+        const az = yawP + (p.side ?? 1) * (p.az ?? 0.4), ux = Math.sin(az), uz = Math.cos(az), y = hy + 0.105 * this.w.stand + 0.09 * (1 - this.w.stand);
+        this.bodyAt(y, J.position.x + ux, J.position.z + uz);
+        const r = _bc.y + 0.008;
+        P.set(_bc.x + ux * r, y, _bc.z + uz * r);
+        if (p.slot === 'tuck') {
+          // 插着的扇：贴着布往上斜出去，大半截在带里（扇头露在带上）
+          _od.set(ux * 0.3, 1, uz * 0.3).normalize();
+          _ox.set(uz, 0, -ux);
+          this.m1.makeBasis(_ox, _od, _oz.crossVectors(_ox, _od)).setPosition(P.x - _od.x * 0.12, P.y - _od.y * 0.12, P.z - _od.z * 0.12);
+          L.place(o.ch, this.m1); o.on = true;
+          continue;
+        }
+      }
+      // 摆：往正下方回；人往前走时往后甩（加速度的反方向），带阻尼。一帧拆成几步（摆短、劲大）
+      const d = o.d, v = o.v, len = p.len ?? 0.1;
+      if (!o.init) { d.set(0, -1, 0); v.set(0, 0, 0); o.init = true; }
+      const k = p.slot === 'dangle' ? 60 : 34, damp = p.slot === 'dangle' ? 5.5 : 6.5;
+      const n = Math.max(1, Math.ceil(h / 0.012)), hh = h / n;
+      // 走起来受的风（往身后）与起停时甩的那一下：垂得长的、腰间的甩得多些
+      const drag = p.slot === 'dangle' ? 0.9 : 1.6, kick = p.slot === 'dangle' ? 1.2 : 2.0, acc = clamp(this.accS, -6, 6);
+      for (let i = 0; i < n; i++) {
+        // 回到正下方的劲 + 身子起停甩的那一下（往身后）+ 走起来一步一步的颠
+        const tx = -d.x * k - v.x * damp - vLoc.x * drag, ty = (-1 - d.y) * k - v.y * damp, tz = -d.z * k - v.z * damp - vLoc.z * drag - acc * kick;
+        v.x += tx * hh; v.y += ty * hh; v.z += tz * hh;
+        d.addScaledVector(v, hh);
+        d.normalize();
+        v.addScaledVector(d, -v.dot(d));
+      }
+      if (p.slot === 'waist') this.hang(P, d, len, p.probe ?? [1]);
+      // 摆好：−y 顺着 d；+z（朝外那一面）尽量朝外、朝前
+      _od.copy(d).negate();
+      _oz.set(P.x - J.position.x, 0, P.z - J.position.z);
+      if (_oz.lengthSq() < 1e-6) _oz.set(Math.sin(yawP), 0, Math.cos(yawP));
+      _oz.addScaledVector(_od, -_oz.dot(_od));
+      if (_oz.lengthSq() < 1e-6) _oz.set(0, 0, 1);
+      _oz.normalize();
+      _ox.crossVectors(_od, _oz);
+      this.m1.makeBasis(_ox, _od, _oz).setPosition(P);
+      L.place(o.ch, this.m1); o.on = true;
+    }
+  }
+  /**
+   * 垂在腰间的一串（自 P 顺着 d 长 len）：沿着它取几处（probe：0 系处 … 1 末梢），量衣身与两袖——插进去了就把 d 往外转，
+   * 转到那一处落在布外、袖外（再留一点空）。地面也算：坐下、跪下时不插进地里。改的是 d（下一帧从这里接着摆）
+   */
+  private hang(P: THREE.Vector3, d: THREE.Vector3, len: number, probe: number[]) {
+    const W = this.w;
+    // 坐着、跪着：衣摆铺在腿上、地上，是一片斜的、平的面——要量这一面在哪一高（不然佩沉进腿上的布里）
+    const lap = W.kneel + W.sit + W.bench + W.lie > 0.5;
+    // 量的处：串上各处都量（给的那几处，再添四分之一、二分之一、四分之三；流苏梢还要往下多一点）
+    const us = [...new Set([0.25, 0.5, 0.75, ...probe, 1.05])];
+    // 一处插进布里多深（负的是在布外）；out 写这一处往外的方向（离圈心水平往外；腿上那片布是往上）。
+    // 一串东西有宽窄、流苏散开：这一处再往下一点、往两边一点也量（腿顶起的摆脚边上，布面一厘米里就差好几厘米），取最深的
+    const depth = (u: number, dir: THREE.Vector3, out: THREE.Vector3 | null) => {
+      let dep = -1;
+      for (let k = 0; k < 4; k++) {
+        const q = _oq.copy(P).addScaledVector(dir, len * u);
+        if (k === 1) q.y -= 0.014;
+        else if (k > 1) { const s = k === 2 ? 1 : -1; this.meshAt(q.y, q.x, q.z); const ex = q.x - _bc.x, ez = q.z - _bc.z, l = Math.hypot(ex, ez) || 1; q.x += (ez / l) * 0.018 * s; q.z -= (ex / l) * 0.018 * s; }
+        const v = this.depth1(q, lap, k === 0 ? out : null);
+        if (v > dep) { dep = v; if (out && k > 0) this.depth1(q, lap, out); }
+      }
+      return dep;
+    };
+    for (let it = 0; it < 6; it++) {
+      // 这一回插得最深的那一处
+      let worst = 1e-4, wu = -1;
+      for (const u of us) { const dep = depth(u, d, _oo); if (dep > worst) { worst = dep; wu = u; _ow.copy(_oo); } }
+      if (wu < 0) break;
+      // 绕着系处往外转：轴是「此刻的方向 × 往外」；转多少一点点加，到那一处落在布外为止（再细找一回）
+      _ox.crossVectors(d, _ow);
+      if (_ox.lengthSq() < 1e-10) { _ox.crossVectors(d, _ow.set(0, 0, 1)); if (_ox.lengthSq() < 1e-10) break; }
+      _ox.normalize();
+      let lo = 0, hi = -1;
+      for (let a = 0.06; a <= 1.5; a += 0.06) { _oq2.copy(d).applyAxisAngle(_ox, a); if (depth(wu, _oq2, null) <= 0) { hi = a; break; } lo = a; }
+      if (hi < 0) hi = 1.5;
+      for (let k = 0; k < 5; k++) { const m = (lo + hi) / 2; _oq2.copy(d).applyAxisAngle(_ox, m); if (depth(wu, _oq2, null) <= 0) hi = m; else lo = m; }
+      d.applyAxisAngle(_ox, hi).normalize();
+    }
+    // 两袖：插进袖里的那一处往外让一点——只在让了不插进身上的布里时才让（布说了算）
+    const aL = this.arms.L, aR = this.arms.R, full = this.sleeveK;
+    for (const u of us) {
+      const q = _oq.copy(P).addScaledVector(d, len * u), x0 = q.x, y0 = q.y, z0 = q.z;
+      for (const a of [aL, aR]) { this.pushOff(q, a.S, a.E, 0, full); this.pushOff(q, a.E, a.W, 0.5, full); }
+      if (Math.abs(q.x - x0) + Math.abs(q.y - y0) + Math.abs(q.z - z0) < 1e-5) continue;
+      _oq2.subVectors(q, P).normalize();
+      _ow.copy(d);
+      d.copy(_oq2);
+      let ok = true;
+      for (const v of us) if (depth(v, d, null) > 0.002) { ok = false; break; }
+      if (!ok) d.copy(_ow);
+    }
+  }
+  /** 一点插进布里多深（负的是在布外）；out 写往外的方向（离圈心水平往外；坐着时腿上那片布是往上；地是往上） */
+  private depth1(q: THREE.Vector3, lap: boolean, out: THREE.Vector3 | null): number {
+    let dep: number;
+    // 坐着跪着、在胯以下：衣摆铺在腿上、地上，量那一片布在这里多高（往上出去）；胯以上是身子，照旧水平量
+    if (lap && q.y < this.rc[(this.nlow - 1) * 3 + 1] + 0.02) {
+      dep = Math.max(this.lapY(q.x, q.z), this.meshLapY(q.x, q.z)) + 0.014 - q.y;
+      if (out) out.set(0, 1, 0);
+    } else {
+      this.meshAt(q.y, q.x, q.z);
+      const ex = q.x - _bc.x, ez = q.z - _bc.z, dd = Math.hypot(ex, ez);
+      dep = _bc.y + 0.014 - dd;
+      if (out) { if (dd > 1e-5) out.set(ex / dd, 0, ez / dd); else out.set(Math.sin(this.stT[0]), 0, Math.cos(this.stT[0])); }
+    }
+    const g = this.groundAt(q.x, q.z) + 0.01 - q.y;
+    if (g > dep) { dep = g; if (out) out.set(0, 1, 0); }
+    return dep;
+  }
+  /**
+   * 坐着、跪着时衣摆铺开那一面在 (x, z) 处多高（小人的坐标）：下摆各圈自下而上越收越小，
+   * 这一点离圈心多远，就落在哪两圈之间，按两圈的高插出来。在最下一圈外面（衣摆外头）是地
+   */
+  private lapY(x: number, z: number): number {
+    const NL = this.nlow, rc = this.rc;
+    let prevY = -1, prevR = 1e9;
+    for (let j = 0; j < NL; j++) {
+      const cx = rc[j * 3], cy = rc[j * 3 + 1], cz = rc[j * 3 + 2], r = this.ringR(j, x - cx, z - cz), dist = Math.hypot(x - cx, z - cz);
+      if (dist > r) {
+        if (j === 0) return this.groundAt(x, z);
+        // 落在上一圈（大的、低的）与这一圈（小的、高的）之间
+        const t = clamp((prevR - dist) / Math.max(1e-4, prevR - r), 0, 1);
+        return lerp(prevY, cy, t);
+      }
+      prevY = cy; prevR = r;
+    }
+    return prevY;
+  }
+  /**
+   * 下摆在 (qx, qz) 那一边的那一列点（这一帧真摆好的网，各圈各取朝那一边的一点）：自摆脚往上，哪两圈之间跨过了 y，
+   * 就在那两点之间插出半径（离各自的圈心）。结果写在 _bc（圈心 x、半径、圈心 z），与 bodyAt 一样。
+   * 在下摆之上（胯以上）或这一列没有跨过 y：照 bodyAt
+   */
+  private meshAt(y: number, qx: number, qz: number) {
+    const NL = this.nlow, S = this.segs, L = this.loft, P = L.pos, rc = this.rc;
+    if (!this.rhoInit || y > rc[(NL - 1) * 3 + 1] + 0.03) { this.bodyAt(y, qx, qz); return; }
+    let py = 0, pr = 0, pcx = 0, pcz = 0, best = -1;
+    for (let j = 0; j < NL; j++) {
+      const cx = rc[j * 3], cz = rc[j * 3 + 2];
+      let f = ((Math.atan2(qx - cx, qz - cz) - this.rtw[j] + Math.PI) / (2 * Math.PI)) * S;
+      f = ((f % S) + S) % S;
+      const i = Math.floor(f), t = f - i, o0 = L.at(0, 2 + j, i) * 3, o1 = L.at(0, 2 + j, Math.min(S, i + 1)) * 3;
+      const vx = lerp(P[o0], P[o1], t), vy = lerp(P[o0 + 1], P[o1 + 1], t), vz = lerp(P[o0 + 2], P[o1 + 2], t), vr = Math.hypot(vx - cx, vz - cz);
+      if (j > 0 && (py - y) * (vy - y) <= 0 && Math.abs(vy - py) > 1e-6) {
+        const k = (y - py) / (vy - py), r = lerp(pr, vr, k);
+        // 这一列可能不止一处跨过 y（腿顶起的摆脚高过上一圈）：取最外的那一处
+        if (r > best) { best = r; _bc.set(lerp(pcx, cx, k), r, lerp(pcz, cz, k)); }
+      }
+      py = vy; pr = vr; pcx = cx; pcz = cz;
+    }
+    if (best < 0) { this.bodyAt(y, qx, qz); return; }
+    // 也不比 bodyAt 量的小（那边按圈心高插、腿顶出去的也算了：两样取大的）
+    const mx = _bc.x, mz = _bc.z, mr = _bc.y;
+    this.bodyAt(y, qx, qz);
+    if (mr >= _bc.y) _bc.set(mx, mr, mz);
+  }
+  /** 坐着跪着时：下摆那一列（真摆好的网）在离圈心 D 远处有多高——自摆脚往上，半径跨过 D 的那两圈之间插出高 */
+  private meshLapY(x: number, z: number): number {
+    const NL = this.nlow, S = this.segs, L = this.loft, P = L.pos, rc = this.rc;
+    let py = -1, pr = 1e9, hi = -1;
+    for (let j = 0; j < NL; j++) {
+      const cx = rc[j * 3], cz = rc[j * 3 + 2], D = Math.hypot(x - cx, z - cz);
+      let f = ((Math.atan2(x - cx, z - cz) - this.rtw[j] + Math.PI) / (2 * Math.PI)) * S;
+      f = ((f % S) + S) % S;
+      const i = Math.floor(f), t = f - i, o0 = L.at(0, 2 + j, i) * 3, o1 = L.at(0, 2 + j, Math.min(S, i + 1)) * 3;
+      const vx = lerp(P[o0], P[o1], t), vy = lerp(P[o0 + 1], P[o1 + 1], t), vz = lerp(P[o0 + 2], P[o1 + 2], t), vr = Math.hypot(vx - cx, vz - cz);
+      if (j > 0 && (pr - D) * (vr - D) <= 0 && Math.abs(vr - pr) > 1e-6) hi = Math.max(hi, lerp(py, vy, (D - pr) / (vr - pr)));
+      py = vy; pr = vr;
+    }
+    return hi < 0 ? this.groundAt(x, z) : hi;
+  }
+  /** 衣身在 (x, y, z) 那一高、朝那一边的样子（测试量佩有没有插进布里用）：圈心与半径 */
+  surfaceAt(x: number, y: number, z: number): { cx: number; cz: number; r: number; lap: number | null } {
+    this.meshAt(y, x, z);
+    const W = this.w, cx = _bc.x, cz = _bc.z, r = _bc.y, lap = W.kneel + W.sit + W.bench + W.lie > 0.5 && y < this.rc[(this.nlow - 1) * 3 + 1] + 0.02;
+    return { cx, cz, r, lap: lap ? Math.max(this.lapY(x, z), this.meshLapY(x, z)) : null };
   }
 
   /**
@@ -1088,7 +1363,7 @@ export class Figure implements Avatar {
     const W = this.w, C = this.stC, s = a.s;
     // 肩
     const sh = K_SHOULDER * 3, st = this.stT[K_SHOULDER];
-    a.S.set(C[sh] + Math.cos(st) * s * SH_X, C[sh + 1] - 0.022, C[sh + 2] - Math.sin(st) * s * SH_X);
+    a.S.set(C[sh] + Math.cos(st) * s * this.shX, C[sh + 1] - 0.022, C[sh + 2] - Math.sin(st) * s * this.shX);
     // 摆法（换摆法时在新旧之间过渡）
     const P = _fp, D = _fd, N = _fn;
     this.handTarget(this.hands1, a, A, swing, run, P, D, N);
@@ -1250,8 +1525,8 @@ export class Figure implements Avatar {
   }
   /** 上身第 k 圈朝 (dx, dz) 那一边的半径（站着时的宽窄，扭转按脊） */
   private upR(k: number, dx: number, dz: number) {
-    const a = Math.atan2(dx, dz) - this.stT[k], cs = Math.cos(a), n = UP[k][4];
-    return Math.pow(Math.pow(Math.abs(Math.sin(a)) / UP[k][1], n) + Math.pow(Math.abs(cs) / (cs >= 0 ? UP[k][2] : UP[k][3]), n), -1 / n);
+    const U = this.up[k], a = Math.atan2(dx, dz) - this.stT[k], cs = Math.cos(a), n = U[4];
+    return Math.pow(Math.pow(Math.abs(Math.sin(a)) / U[1], n) + Math.pow(Math.abs(cs) / (cs >= 0 ? U[2] : U[3]), n), -1 / n);
   }
   /**
    * 布要裹住的腿，摆成一串球：每条腿自胯到膝、膝到踝（踝以下按 legT 顺着小腿再探一截），球心隔不过 BALL_STEP，粗细自 HIP_R 收到 ANKLE_R；
@@ -1590,7 +1865,7 @@ export class Figure implements Avatar {
       const p = SP[k], tw = ST[k], cp = Math.cos(p), spn = Math.sin(p), ct = Math.cos(tw), stn = Math.sin(tw);
       const Xx = ct, Xz = -stn, Fx = stn * cp, Fy = -spn, Fz = ct * cp;
       const sc = 1 + (k >= 4 && k <= 8 ? br * 4.5 : 0);
-      const n = UP[k][4], ia = Math.pow(UP[k][1] * sc, -n), ibF = Math.pow(UP[k][2] * sc, -n), ibB = Math.pow(UP[k][3], -n), inv = -1 / n;
+      const U = this.up[k], n = U[4], ia = Math.pow(U[1] * sc, -n), ibF = Math.pow(U[2] * sc, -n), ibB = Math.pow(U[3], -n), inv = -1 / n;
       const sP = this.sPu[k], cP = this.cPu[k], cx = C[k * 3], cy = C[k * 3 + 1], cz = C[k * 3 + 2];
       const dip = k >= NUP - 2 ? (k === NUP - 1 ? 0.03 : 0.016) : 0;        // 领口前低后高
       for (let i = 0; i <= S; i++) {
@@ -1718,4 +1993,5 @@ const _p = V(), _q = V(), _fp = V(), _fd = V(), _fn = V(), _p0 = V(), _d0 = V(),
 const _ga = V(), _gt = V(), _gf = V(), _gn = V(), _wx = V(), _wy = V(), _wz = V();
 const _hm0 = new THREE.Matrix4(), _hm1 = new THREE.Matrix4(), _hm2 = new THREE.Matrix4(), _hp = V(), _hp0 = V(), _hp1 = V(), _hs = V(), _hs0 = V(), _hs1 = V(), _cp = V();
 const _hq = new THREE.Quaternion(), _hq0 = new THREE.Quaternion(), _hq1 = new THREE.Quaternion();
+const _op = V(), _oq = V(), _od = V(), _ox = V(), _oz = V(), _ob = V(), _oo = V(), _ow = V(), _oq2 = V();
 const _ax = new THREE.Vector3(1, 0, 0), _ay = new THREE.Vector3(0, 1, 0), _az = new THREE.Vector3(0, 0, 1), _q3 = new THREE.Quaternion();

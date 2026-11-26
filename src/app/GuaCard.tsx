@@ -13,7 +13,7 @@ import { bodyOf } from './yi';
  *   full（观象册里）再添一句说明。
  * 卦辞、大象、白话从 texts（yi.ts）来；所见与说明从 data/gua64.ts 来（都是照录的原文）。文字没备好的那一项就不出。
  */
-export default function GuaCard({ gua, draw, full }: { gua: Gua; draw?: boolean; /** 观象册里：连说明一起 */ full?: boolean }) {
+export default function GuaCard({ gua, draw, full, plain }: { gua: Gua; draw?: boolean; /** 观象册里：连说明一起 */ full?: boolean; /** 只有卦本身（取一象、路标：那是游人自己取的象，不是园里那一处的「所见」） */ plain?: boolean }) {
   const brush = useBrush(gua.name);
   const sc = sceneOf(gua.key);
   const ref = useRef<HTMLElement>(null);
@@ -21,8 +21,8 @@ export default function GuaCard({ gua, draw, full }: { gua: Gua; draw?: boolean;
   useLayoutEffect(() => { if (draw) { const box = ref.current?.closest('.panel-body'); if (box) box.scrollTop = 0; } }, [draw]);
   const ours: Array<[string, string]> = [];
   if (gua.gloss) ours.push(['白话', gua.gloss]);
-  if (sc?.view) ours.push(['所见', sc.view]);
-  if (full && sc?.note) ours.push(['说明', sc.note]);
+  if (sc?.view && !plain) ours.push(['所见', sc.view]);
+  if (full && sc?.note && !plain) ours.push(['说明', sc.note]);
   return (
     <article ref={ref} className={`xiang${draw ? ' is-draw' : ''}${full ? ' is-full' : ''}`} data-testid="gua-card">
       <div className="xiang-top">

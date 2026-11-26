@@ -15,8 +15,8 @@ const out = dir('day');
 /** 截图：几点、对着哪里（台子的机位：tx ty tz 看的地方，d 远近，az el 方位、俯角） */
 const VIEWS = {
   // az 是机位在看的那一点的哪一边：0 在南（屋门朝南的人家从门前看），180 在北
-  spring: [[9.3, 'village', { tx: 97, ty: 8, tz: 6, d: 32, az: 20, el: 24 }], [10.5, 'fields', { tx: -27, ty: 4, tz: 92, d: 34, az: 30, el: 20 }], [14.6, 'aunt', { tx: 51.6, ty: 8.6, tz: 10.6, d: 11, az: 12, el: 16 }], [15.0, 'teashed', { tx: 32.5, ty: 8.2, tz: 24.5, d: 13, az: 30, el: 18 }], [19.4, 'story', { tx: 91.4, ty: 7.8, tz: 18.6, d: 12, az: 12, el: 18 }]],
-  summer: [[9.0, 'reap', { tx: -6, ty: 4.6, tz: 63, d: 16, az: 20, el: 22 }], [12.2, 'lunch', { tx: -12.5, ty: 4.6, tz: 62, d: 10, az: 60, el: 18 }], [20.4, 'story', { tx: 91.4, ty: 7.8, tz: 18.6, d: 12, az: 12, el: 18 }]],
+  spring: [[9.3, 'village', { tx: 97, ty: 8, tz: 6, d: 32, az: 20, el: 24 }], [10.5, 'fields', { tx: -27, ty: 4, tz: 116, d: 34, az: 30, el: 20 }], [14.6, 'aunt', { tx: 51.6, ty: 8.6, tz: 10.6, d: 11, az: 12, el: 16 }], [15.0, 'teashed', { tx: 32.5, ty: 8.2, tz: 24.5, d: 13, az: 30, el: 18 }], [19.4, 'story', { tx: 91.4, ty: 7.8, tz: 18.6, d: 12, az: 12, el: 18 }]],
+  summer: [[9.0, 'reap', { tx: -6, ty: 4.6, tz: 87, d: 16, az: 20, el: 22 }], [12.2, 'lunch', { tx: -12.5, ty: 4.6, tz: 86, d: 10, az: 60, el: 18 }], [20.4, 'story', { tx: 91.4, ty: 7.8, tz: 18.6, d: 12, az: 12, el: 18 }]],
   autumn: [[9.6, 'potter', { tx: 135.8, ty: 6.6, tz: 22.3, d: 9, az: 170, el: 20 }], [10.0, 'yard', { tx: 61, ty: 8.5, tz: 5, d: 18, az: 10, el: 26 }]],
   winter: [[10.5, 'afront', { tx: 51, ty: 8.6, tz: 10, d: 14, az: 8, el: 18 }], [12.5, 'village', { tx: 97, ty: 8, tz: 6, d: 34, az: 20, el: 24 }]],
   wet: [[10.0, 'eaves', { tx: 50.5, ty: 8.6, tz: 9.2, d: 10, az: 5, el: 14 }], [10.3, 'loom', { tx: 119.3, ty: 8.4, tz: -8.0, d: 9, az: 340, el: 16 }], [16.0, 'basket', { tx: 36.4, ty: 9, tz: -4.3, d: 8, az: 5, el: 14 }]],

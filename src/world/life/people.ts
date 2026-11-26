@@ -41,6 +41,7 @@ import {
 import { listenAct, ropeWork, sewWork, sitStool, stoolWork, sweepAct, waterAct } from './chores';
 import { makeHarvest, type Harvest } from './harvest';
 import { addVillagers } from './villagers';
+import { SCHOOL } from '../play/study/school';
 
 /** 后添的几路共用的一套家当：造人、摆东西、每帧要照看的、几样大家都看着的事 */
 export interface Kit {
@@ -469,6 +470,8 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
   let recite = 0;
   /** 孩子们的日程照名册；午后货郎来了都跑去茶亭看，石头看棋只在两位老人真坐下来下的时候（不然还是去玩） */
   const kidExtra = (c: Ctx, a: string | null): string | null => {
+    // 邵先生回村塾讲卦（play/study/school.ts）：都回到自己的席上听（大雨大雪天照旧不来）
+    if (SCHOOL.on && c.rain <= 0.85 && c.snow <= 0.85) return 'school';
     if (a === 'play' || a === 'watch') { if (PED.call) return 'gather'; if (a === 'watch' && !GO.on[0]) return 'play'; }
     // 大雨大雪天不上学（小雨照上：下雨天书声最齐）
     if (a === 'school' && (c.rain > 0.85 || c.snow > 0.85)) return null;
@@ -482,6 +485,8 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
       yield* p.sit(p.liftTo(SCHOOL_Y), 'lap'); p.curious = false;
       yield* p.forever((t) => {
         const w = t * 2.5 + ph;
+        // 先生在讲：不念书，坐直了抬头看先生，偶尔点一点头
+        if (SCHOOL.on && SCHOOL.at) { p.tilt = 0.012 * Math.sin(w * 0.3); f.bow = 0.05 + 0.05 * Math.max(0, Math.sin(t * 0.7 + ph)) ** 6; f.lookAt(SCHOOL.at); return; }
         p.tilt = 0.085 * Math.sin(w);
         f.bow = 0.16 + 0.1 * Math.sin(w * 2 + 0.6);
         f.lookAt(p.loc(0.5 * Math.sin(w + 0.4), 0.42 + 0.12 * Math.sin(w * 2), 1, v1));
@@ -652,7 +657,7 @@ export function makeFolk(q: Quality, group: THREE.Group, ox: OxTeam, buf: OxTeam
         f.reach('R', null);
       }
     },
-  }, [pt(door('d'))], (c, a) => (a === 'teach' && (c.rain > 0.85 || c.snow > 0.85) ? null : a));
+  }, [pt(door('d'))], (c, a) => (SCHOOL.on ? 'read' : a === 'teach' && (c.rain > 0.85 || c.snow > 0.85) ? null : a));
   teacher.chatty = 0.35;
 
   // ———————————————————————— 槐树下：老人、弈棋的另一位、邻家妇人 ————————————————————————

@@ -3,7 +3,7 @@ import { PLACES } from '../../world/site';
 import { folkView, seek, type FolkCard } from '../../world/acts/favor';
 import { cn } from '../calendar';
 import { getKs, openSheet } from '../ks';
-import { ui, useStore } from '../store';
+import { legacyPref, pref, setPref, ui, useStore } from '../store';
 import Sheet from './Sheet';
 
 /**
@@ -17,8 +17,8 @@ type By = 'home' | 'place';
 const HOME_ORDER = ['a', 'b', 'd', 'e', 'f', 'g'];
 const HOME_NAME: Record<string, [string, string]> = { a: ['甲家', '王家'], b: ['乙家', '李家'], d: ['丁家', '赵家'], e: ['戊家', '孙家酒家'], f: ['己家', '陈篾匠家'], g: ['庚家', '陶家'] };
 const PLACE_ORDER = [...PLACES.map((p) => p.name), '外头', '在家', '村外'];
-const load = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
-const keep = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* 存不下就算了 */ } };
+/** 按家还是按处：跟着存档走（旧版本只在本机存过的那一份，初次读时兜底） */
+const byPref = (): By => (pref('folkBy', legacyPref('anlewo:folk:by') ?? 'home') === 'place' ? 'place' : 'home');
 
 function groups(cards: FolkCard[], by: By): Array<{ key: string; name: string; sub: string; cards: FolkCard[] }> {
   if (by === 'home') {
@@ -69,7 +69,7 @@ function Row({ c, open, onToggle, onJump }: { c: FolkCard; open: boolean; onTogg
             )}
           </dl>
           <div className="folk-foot">
-            <span>{c.met ? `说过${c.met === 2 ? '两' : cn(c.met)}回话，上回是${c.last}` : '还没说过话'}{c.you !== '先生' ? `　他叫你「${c.you}」` : ''}</span>
+            <span>{c.met ? `说过${c.met === 2 ? '两' : cn(c.met)}回话，上回是${c.last}` : '还没说过话'}{c.you ? `　他叫你「${c.you}」` : ''}</span>
             {canGo
               ? <span className="well"><button className="key is-main" onClick={go} data-testid={`folk-go-${c.id}`}>{c.here ? '去找他' : '去他家门口'}</button></span>
               : <button className="key" disabled data-testid={`folk-go-${c.id}`}>不在村里</button>}
@@ -82,7 +82,7 @@ function Row({ c, open, onToggle, onJump }: { c: FolkCard; open: boolean; onTogg
 
 export default function FolkSheet() {
   const hour = useStore(ui, (s) => s.hour);
-  const [by, setBy] = useState<By>(() => (load('anlewo:folk:by') === 'place' ? 'place' : 'home'));
+  const [by, setBy] = useState<By>(byPref);
   const [open, setOpen] = useState<string | null>(null);
   // 村里人走动着：隔两秒重看一眼
   const [tick, setTick] = useState(0);
@@ -98,7 +98,7 @@ export default function FolkSheet() {
   }, [cards, by, open]);
   const gs = useMemo(() => groups(by === 'place' ? cards.map((c) => (placeOf[c.id] ? { ...c, place: placeOf[c.id] } : c)) : cards, by), [cards, by, placeOf]);
   const out = cards.filter((c) => c.here).length;
-  const pick = (b: By) => { setBy(b); keep('anlewo:folk:by', b); grouped.current = 0; };
+  const pick = (b: By) => { setBy(b); setPref('folkBy', b); grouped.current = 0; };
   // 在办的托事（托事的人那一行里的）：放在最上面，点一件就翻到那个人
   const tasks = cards.flatMap((c) => c.favors.filter((f) => f.state === '在办' || f.state === '快办成了').map((f) => ({ ...f, who: c.id })));
   const doing = tasks.length;

@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import type { Quality } from '../core/World';
 import type { Season } from '../env/atmos';
-import { Builder, merge, type Geo } from '../core/geo';
+import { Builder, merge, norm, type Geo } from '../core/geo';
 import { FX_LAYER, FX_PARS, INK_PARS, U, dabMat, dabMesh, wash, type Dab } from '../ink/ink';
 import { TILES, atlas as brushAtlas } from '../ink/brush';
 import { PETAL } from '../env/flora/tiles2';
 import { SITE } from '../site';
 import { makeAtlas } from './atlas';
-import { GLOW_PAPER, GLOW_ROOM, SEASONS, makeMats, type Ctx, type Mats, type Solid } from './kit';
+import { GLOW_PAPER, GLOW_ROOM, SEASONS, dye, makeMats, type Ctx, type Mats, type Solid } from './kit';
 import { buildHall } from './hall';
 import { buildYard } from './yard';
 import { buildWaterside } from './waterside';
@@ -75,6 +75,8 @@ function haloMesh(): THREE.Mesh {
 export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Promise<Buildings> {
   const q = o.q, atlas = await makeAtlas(q.tex, SITE.gnomon);
   const mats = makeMats(atlas.map);
+  /** 窗纸本来的颜料（黄昏点灯时往暖里调，见 apply） */
+  const PAPER_PIG = (mats.paper.uniforms.uPig.value as THREE.Color).toArray() as [number, number, number];
   const group = new THREE.Group(), hallRoof = new THREE.Group(), hallFront = new THREE.Group();
   group.name = 'buildings'; hallRoof.name = 'hallRoof'; hallFront.name = 'hallFront';
   group.add(hallRoof, hallFront);
@@ -130,17 +132,49 @@ export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Pr
 
   // —— 灯：案上那一盏的火苗与灯晕；窗纸、屋里的墙面跟着亮 ——
   const lampAt = anchors.lamp, halo = haloMesh();
+  // 村塾前排矮桌上那一盏（与草堂的一起点、一起熄）
+  const lamp2At = anchors.schoolLamp, halo2 = haloMesh();
   const flame = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6).scale(0.011, 0.024, 0.011), wash({ pig: [1, 0.93, 0.7], dens: 1, body: 1, flat: 1, line: 0, glow: [0.9, 0.62, 0.25], snow: 0, vertexColors: false }));
   flame.name = 'lampFlame';
   if (lampAt) { halo.position.copy(lampAt.position); flame.position.copy(lampAt.position); group.add(halo, flame); }
+  const flame2 = flame.clone(); flame2.name = 'schoolLampFlame'; halo2.name = 'schoolLampHalo';
+  if (lamp2At) { halo2.position.copy(lamp2At.position); flame2.position.copy(lamp2At.position); group.add(halo2, flame2); }
+  // —— 酒家门边那一塘火：几条火舌（白天也看得见一点橙红），夜里四周一圈火光；一直轻轻地跳，夜深了才熄 ——
+  const fireAt = anchors.wineStove, fireHalo = haloMesh();
+  // 火舌并成一块（一次绘制）：当中一条高的、四周三条矮的，颜色写在顶点上（心里黄、外头橙）
+  const fire = new THREE.Mesh(merge([0, 1, 2, 3].map((i) => {
+    const a = i * 1.7, r = i ? 0.09 : 0, s = i ? 0.75 : 1;
+    const g = dye(norm(new THREE.ConeGeometry(0.075 * s, 0.34 * s, 7, 1, true).translate(0, 0.17 * s, 0)), i ? [1, 0.74, 0.42] : [1, 0.9, 0.64], 1);
+    return g.applyMatrix4(new THREE.Matrix4().makeRotationZ((i ? 0.25 : 0) * Math.sin(a)).setPosition(Math.cos(a) * r, 0.07, Math.sin(a) * r));
+  })), wash({ pig: [1, 1, 1], dens: 1, body: 1, flat: 1, line: 0, glow: [0.9, 0.52, 0.18], snow: 0 }));
+  fire.name = 'wineFire';
+  if (fireAt) {
+    fire.position.copy(fireAt.position); group.add(fire);
+    (fireHalo.material as THREE.ShaderMaterial).uniforms.uCol.value.setRGB(1, 0.58, 0.28);
+    (fireHalo.material as THREE.ShaderMaterial).uniforms.uSize.value = 2.2;
+    fireHalo.position.copy(fireAt.position).add(new THREE.Vector3(0, 0.3, 0)); fireHalo.name = 'wineFireHalo'; group.add(fireHalo);
+  }
+  const fireTick = (t: number) => {
+    if (!fireAt) return;
+    const on = U.uNight.value < 0.92;
+    fire.visible = on; fireHalo.visible = on && U.uNight.value > 0.05;
+    if (!on) return;
+    { const f = 0.82 + 0.2 * Math.sin(t * 7.1) + 0.1 * Math.sin(t * 13.7 + 1), w = 1 - 0.1 * (f - 1); fire.scale.set(w, f, w); fire.rotation.y = 0.15 * Math.sin(t * 2.3); }
+    (fireHalo.material as THREE.ShaderMaterial).uniforms.uK.value = 0.85 + 0.12 * Math.sin(t * 9.3) + 0.06 * Math.sin(t * 17.1);
+  };
   let lamp = 0;
   const apply = (f: number) => {
     const k = lamp;
     mats.paper.uniforms.uGlow.value.setRGB(GLOW_PAPER[0] * k, GLOW_PAPER[1] * k, GLOW_PAPER[2] * k);
+    // 黄昏点上灯：天还亮着，窗纸、灯笼先泛一层暖色（不比纸亮，只是暖；天黑了另由 uGlow 透出光来）
+    { const dk = Math.min(1, k * 1.6) * (1 - U.uNight.value), base = PAPER_PIG, warm: [number, number, number] = [1, 0.8, 0.56]; (mats.paper.uniforms.uPig.value as THREE.Color).setRGB(base[0] + (warm[0] - base[0]) * 0.7 * dk, base[1] + (warm[1] - base[1]) * 0.7 * dk, base[2] + (warm[2] - base[2]) * 0.7 * dk); }
     mats.inner.uniforms.uGlow.value.setRGB(GLOW_ROOM[0] * k * f, GLOW_ROOM[1] * k * f, GLOW_ROOM[2] * k * f);
     (halo.material as THREE.ShaderMaterial).uniforms.uK.value = k * f;
     halo.visible = flame.visible = k > 0.02 && !!lampAt;
     flame.scale.setScalar(0.85 + 0.3 * f * k);
+    (halo2.material as THREE.ShaderMaterial).uniforms.uK.value = k * (2 - f);
+    halo2.visible = flame2.visible = k > 0.02 && !!lamp2At;
+    flame2.scale.setScalar(0.85 + 0.3 * (2 - f) * k);
   };
   apply(1);
 
@@ -155,6 +189,7 @@ export async function assemble(o: BuildOpts, only?: Piece[], sub?: string[]): Pr
     setSeason(s: Season) { if (s !== season) { season = s; showSeason(); } },
     update(dt: number, t: number) {
       for (const f of c.tick) f(dt, t);
+      fireTick(t);
       // 晒的东西：下雨、天黑了收进去，天晴、天亮了再摊出来（看画里的雨与夜，不另记天时）
       const want = dryOn ? U.uWet.value < 0.35 && U.uNight.value < 0.6 : U.uWet.value < 0.2 && U.uNight.value < 0.45;
       if (want !== dryOn) { dryOn = want; showSeason(); }

@@ -24,6 +24,8 @@ import { SHOWERS } from '../../data/starlore';
 import { loadSky, nearest, segDist, type SkyData } from './stars/catalog';
 import { LabelLayer, LineLayer, RIDGE_GLSL, StarLayer, SU } from './stars/layers';
 import { emptyMilkyWay, MW_B, paintMilkyWay } from './stars/milkyway';
+import { puffs, type Puff } from './far/veil';
+import { mulberry32 } from '../core/rng';
 
 const SKY_V = /* glsl */ `
 varying vec3 vDir;
@@ -43,9 +45,25 @@ uniform vec3 uSunDir; uniform vec4 uSun;
 uniform vec3 uMoonDir; uniform vec4 uMoon;
 uniform vec3 uMtPig; uniform vec4 uMt;
 uniform sampler2D tMW; uniform mat3 uGal; uniform vec4 uMW;
+uniform vec4 uBolt; uniform vec4 uBolt2;
 varying vec3 vDir;
 ${RIDGE_GLSL}
 float fb2(vec2 p) { return n2(p) * 0.5 + n2(p * 2.03 + 3.1) * 0.25 + n2(p * 4.1 + 7.7) * 0.125 + n2(p * 8.3 + 1.3) * 0.0625; }
+float bh(float i, float s) { return fract(sin(i * 12.9898 + s * 78.233) * 43758.5453) - 0.5; }
+// 一道电：自云底折折地下到远山（主干九折、半腰分出一枝）。a 是这一点离电的方位（弧度），h 是自云底往下走了几成；返回离电有多远（弧度）
+float boltD(float a, float h, float s) {
+  float seg = h * 9.0, i = floor(seg), f = fract(seg), x0 = 0.0, x1 = 0.0, w = 0.0;
+  for (int k = 0; k < 10; k++) { float fk = float(k); if (fk > i) break; x0 = x1; x1 += bh(fk, s) * (0.016 + 0.01 * fk / 9.0) + w; w = bh(fk + 31.0, s) * 0.003; }
+  float d = abs(a - mix(x0, x1, f));
+  // 分枝：从第三折处斜出去，四折，到半腰为止
+  if (h > 0.3 && h < 0.66) {
+    float g = (h - 0.3) / 0.36, j = floor(g * 4.0), q = fract(g * 4.0), b0 = 0.0, b1 = 0.0;
+    float root = 0.0; for (int k = 0; k < 3; k++) root += bh(float(k), s) * (0.016 + 0.01 * float(k) / 9.0);
+    for (int k = 0; k < 5; k++) { float fk = float(k); if (fk > j) break; b0 = b1; b1 += (0.022 + bh(fk + 57.0, s) * 0.012) * sign(bh(91.0, s) + 0.001); }
+    d = min(d, abs(a - root - mix(b0, b1, q)) * 1.35);
+  }
+  return d;
+}
 // 一重山：h 山脊的高（仰角的正切），t 这一点的高，dens 山头的浓度；山脚淡进雾里
 vec3 range(vec3 c, float t, float h, float dens, float foot) {
   float aa = fwidth(t) * 1.2 + 1e-5;
@@ -122,6 +140,18 @@ void main() {
     c = mix(c, c * mix(vec3(1.0), uSun.rgb, 0.35) + 0.05, exp(-sd * sd * 0.1) * 0.5);
     c = mix(c, uSun.rgb * mix(vec3(1.0), uPaper, 0.25), smoothstep(1.0, 0.86, sd) * 0.92);
   }
+  // 打闪：那一下整片天发白（云底亮）；电是一道折折的白，四周晕开一圈（画在远山后头：山挡着的那一截看不见）
+  if (uBolt2.y > 0.001) c = mix(c, uLight, uBolt2.y * 0.5 * smoothstep(-0.02, 0.35, t));
+  if (uBolt.z > 0.001) {
+    float da = mod(atan(d.x, d.z) - uBolt.x + 3.14159265, 6.2831853) - 3.14159265;
+    float bhh = (uBolt.y - t) / max(1e-3, uBolt.y - uBolt2.x);
+    if (abs(da) < 0.45 && bhh > -0.04 && bhh < 1.0) {
+      float hh = clamp(bhh, 0.0, 1.0), bd = boltD(da, hh, uBolt.w), aa = fwidth(da) * 1.3 + 1e-5, wd = 0.0011 + 0.0009 * (1.0 - hh);
+      float core = smoothstep(wd + aa, wd * 0.35, bd) * smoothstep(-0.04, 0.03, bhh);
+      float glow = exp(-bd * 60.0) * 0.45 * smoothstep(-0.04, 0.1, bhh);
+      c = mix(c, uLight * 1.04, clamp((core + glow) * uBolt.z, 0.0, 1.0));
+    }
+  }
   // 远山三重
   if (uMt.x > 0.001) {
     vec3 hs = ridges(u);
@@ -137,6 +167,27 @@ void main() {
 
 const col = (c: RGB) => new THREE.Color(c[0], c[1], c[2]);
 const setM = (m: THREE.Matrix3, a: M3) => m.set(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]);
+/** 霞：在哪一边、多浓（xyz 水平方向，w 浓度）与颜色。天与近处的池水（env/water.ts）共用这一份，atmos 每帧写一次 */
+export const SKY_GLOW = { value: new THREE.Vector4(1, 0, 0, 0) }, SKY_GLOW_PIG = { value: col(PIG.zhe) };
+/**
+ * 西山上的那一带墨云：西北一大团厚的、压得高（遮了半边天），往西南拖成低低一条薄的（云压得很低）。
+ * 一片片是远景那种带墨的云烟（far/veil.ts 的 puffs），在一千四到两千米外、西山前头，比深度：近处的树、坡挡得住它。
+ */
+function rackMesh(): THREE.Mesh {
+  const R = mulberry32(4171), list: Puff[] = [];
+  const at = (az: number, d: number, y: number, w: number, h: number, tone: number) => { const a = (az * Math.PI) / 180; list.push({ x: Math.sin(a) * d, y, z: Math.cos(a) * d, w, h, tone, amount: 1 }); };
+  // 西北：厚的一大团，上下两三层
+  for (let i = 0; i < 9; i++) { const az = -100 - 50 * (i / 8) + (R() - 0.5) * 6; at(az, 1500 + 600 * R(), 300 + 230 * R() + 60 * Math.sin(i * 1.7), 760 + 300 * R(), 190 + 120 * R(), 0.85 + 0.15 * R()); }
+  for (let i = 0; i < 5; i++) { const az = -105 - 40 * (i / 4) + (R() - 0.5) * 8; at(az, 1700 + 400 * R(), 520 + 160 * R(), 900 + 300 * R(), 160 + 80 * R(), 0.7 + 0.2 * R()); }
+  // 正西：接上去，低一些
+  for (let i = 0; i < 4; i++) at(-80 - 20 * (i / 3) + (R() - 0.5) * 5, 1600 + 300 * R(), 210 + 110 * R(), 760 + 200 * R(), 150 + 60 * R(), 0.75 + 0.15 * R());
+  // 西南：低低的一条薄的
+  for (let i = 0; i < 6; i++) at(-45 - 35 * (i / 5) + (R() - 0.5) * 5, 1400 + 500 * R(), 140 + 70 * R(), 620 + 220 * R(), 90 + 50 * R(), 0.6 + 0.2 * R());
+  const m = puffs(list, { near: [400, 900] });
+  m.name = '密云'; m.visible = false; m.renderOrder = 5;
+  (m.material as THREE.ShaderMaterial).uniforms.uPuff.value.x = 0;
+  return m;
+}
 /** 各档画多少颗星（星表按星等排好，取前 n 颗）、天汉画多大 */
 const TIER = { low: { limit: 5.0, mw: [512, 112] }, mid: { limit: 5.6, mw: [768, 160] }, high: { limit: 6.0, mw: [1024, 224] } } as const;
 type Tier = keyof typeof TIER;
@@ -156,8 +207,8 @@ export class Sky {
   u = {
     /** 高处罩的颜色 */ uSkyPig: { value: col(PIG.qing) },
     /** x 罩色的浓度，y 云（留白）的多少，z 星的显隐 */ uSky: { value: new THREE.Vector4(0.1, 0.85, 0, 0) },
-    /** 霞的颜色 */ uGlowPig: { value: col(PIG.zhe) },
-    /** xyz 霞在哪一边（水平方向），w 浓度 */ uGlow: { value: new THREE.Vector4(1, 0, 0, 0) },
+    /** 霞的颜色 */ uGlowPig: SKY_GLOW_PIG,
+    /** xyz 霞在哪一边（水平方向），w 浓度 */ uGlow: SKY_GLOW,
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     /** rgb 日的颜色，a 大小（弧度；0 不画） */ uSun: { value: new THREE.Vector4(0.86, 0.3, 0.22, 0) },
     uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
@@ -166,7 +217,11 @@ export class Sky {
     /** x 远山的显隐，yz 嵩山在哪个方向（水平单位向量 x、z），w 浓度（星点也用它判断落没落在山后） */ uMt: SU.uMt,
     /** 天汉：图、世界 → 银道、x 浓淡 y 暗隙 */
     tMW: { value: emptyMilkyWay() as THREE.Texture }, uGal: { value: new THREE.Matrix3() }, uMW: { value: new THREE.Vector4(0, 0, 0, 0) },
+    /** 电：x 方位（弧度，atan(x, z)），y 云底（仰角的正切），z 亮几成（0 不画），w 种子（折法）；uBolt2：x 落到哪（仰角的正切），y 整片天发白几成 */
+    uBolt: { value: new THREE.Vector4(0, 0.3, 0, 0) }, uBolt2: { value: new THREE.Vector4(0.03, 0, 0, 0) },
   };
+  /** 西山上压着的一带墨云（雾天、欲雨时聚起来；观象「小畜」「夬」）：几十片带墨的云烟并成一次绘制，平时不画（setRack） */
+  rack: THREE.Mesh;
   /** 此刻的天（atmos 每帧算一次） */
   now: ReturnType<typeof sceneSky> | null = null;
   /** 第几日（总装的 k.day）怎么取：观星那件事建好时接上；没接就当第 0 日 */
@@ -187,7 +242,8 @@ export class Sky {
     this.mesh.renderOrder = 1000;
     this.mesh.name = 'sky';
     this.stars = new StarLayer(this.data); this.lines = new LineLayer(this.data); this.labels = new LabelLayer();
-    this.group.add(this.mesh, this.stars.mesh, this.lines.mesh, this.labels.mesh);
+    this.rack = rackMesh();
+    this.group.add(this.mesh, this.stars.mesh, this.lines.mesh, this.labels.mesh, this.rack);
     this.group.name = '天';
     // 像素比：画的时候问渲染器（画质会自己升降）
     this.stars.mesh.onBeforeRender = (r) => { SU.uSt.value.z = r.getPixelRatio(); };
@@ -240,6 +296,11 @@ export class Sky {
   }
   /** 画月时用的方向（含多拨） */
   get moonDraw() { return this.moonS; }
+  /** 西山上那一带墨云聚到几成（0 没有：不画） */
+  setRack(k: number) {
+    (this.rack.material as THREE.ShaderMaterial).uniforms.uPuff.value.x = k;
+    this.rack.visible = k > 0.01;
+  }
 
   /**
    * 每帧：星、天汉、连线、名字的显隐。night 夜几成，clear 晴几成，moonUp 月在地平上几成，illum 月面亮几成（0 朔 … 1 望）。

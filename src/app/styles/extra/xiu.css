@@ -1,0 +1,117 @@
+/* 修为（XiuSheet）：不画框，段与段之间一道细线。上头一个大大的毛笔字是此刻那一重，旁边几分、离下一重还差几分、一道墨线；
+   六重排成一行（到过的实、此刻的添一点朱 / 金、没到的淡）；《大学》那一句里，此刻那半句添色。
+   榜：几张榜的名字排成可以折行的一排（选中的底下一笔墨线），下面一行一人：第几、名字（小字注你 / 村里 / 同游）、成绩。
+   取一象时挑卦的那一盘（.tri-pick）、观象册里「取一象」那一小段（.xiang-take）也在这里。字都不截断，窄了就折行。 */
+.xiu { display: grid; gap: 0; }
+.xiu-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 20px; padding: 2px 0 10px; }
+.xiu-char { font-family: var(--brush); font-weight: 400; font-size: 58px; line-height: 1; color: var(--title); letter-spacing: 0; min-width: 1.1em; text-align: center; }
+.xiu-head-r { display: grid; gap: 4px; min-width: 0; }
+.xiu-pts { font-family: var(--kai); font-size: 18px; letter-spacing: 0.12em; color: var(--ink); }
+.xiu-next { font-size: 13px; line-height: 1.7; letter-spacing: 0.05em; color: var(--ink-2); overflow-wrap: anywhere; }
+.xiu-bar { position: relative; display: block; height: 5px; margin-top: 4px; }
+.xiu-bar::before { content: ''; position: absolute; inset: 1.5px 0; background: var(--rule-2); border-radius: 2px; }
+.xiu-bar b { position: absolute; inset: 0; background: var(--ink); transform-origin: left center; -webkit-mask: var(--m-line) 0 0 / 100% 100% no-repeat; mask: var(--m-line) 0 0 / 100% 100% no-repeat; transition: transform 0.8s var(--out); }
+
+.xiu-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 8px 0 12px; border-top: 1px solid var(--rule-2); }
+.xiu-steps li { display: grid; justify-items: center; gap: 1px; position: relative; padding-top: 10px; }
+.xiu-steps li::before { content: ''; position: absolute; top: 2px; width: 5px; height: 5px; border-radius: 50%; border: 1px solid var(--ink-3); background: transparent; }
+.xiu-steps li.is-past::before { background: var(--ink-2); border-color: var(--ink-2); }
+.xiu-steps li.is-cur::before { background: var(--mark); border-color: var(--mark); width: 7px; height: 7px; top: 1px; }
+.xiu-steps span { font-family: var(--kai); font-size: 15px; letter-spacing: 0.06em; color: var(--ink-2); white-space: nowrap; }
+.xiu-steps .is-past span { color: var(--ink-2); }
+.xiu-steps .is-cur span { color: var(--ink); }
+.xiu-steps small { font-size: 12px; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; }
+
+.xiu-quote { margin: 0 0 14px; padding: 0 0 2px 12px; border-left: 1px solid var(--rule); }
+.xiu-quote blockquote { margin: 0; }
+.xiu-quote p { font-family: var(--kai); font-size: 15px; line-height: 1.9; letter-spacing: 0.08em; color: var(--ink-2); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.xiu-quote p span.is-cur { color: var(--ink); text-decoration: underline; text-decoration-color: var(--mark); text-decoration-thickness: 1.5px; text-underline-offset: 5px; }
+.xiu-quote figcaption { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.06em; color: var(--ink-2); text-align: right; }
+.xiu-gloss { margin-top: 4px; font-family: var(--serif) !important; font-size: 13px !important; line-height: 1.85 !important; letter-spacing: 0.04em !important; color: var(--ink-2); }
+.xiu-gloss i { font-style: normal; font-family: var(--kai); font-size: 12px; letter-spacing: 0.12em; color: var(--ink-2); margin-right: 10px; }
+
+.xiu-sec { padding: 12px 0 14px; border-top: 1px solid var(--rule-2); }
+.xiu-sec h4 { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.4em; color: var(--ink-2); margin-bottom: 6px; }
+.xiu-line { font-size: 13px; line-height: 1.85; letter-spacing: 0.04em; color: var(--ink-2); overflow-wrap: anywhere; margin-top: 4px; }
+.xiu-now { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 14px; font-size: 14px; line-height: 1.8; letter-spacing: 0.04em; color: var(--ink); overflow-wrap: anywhere; }
+.xiu-now .key { min-height: 44px; min-width: 60px; padding: 0 14px; }
+
+.xiu-ways li { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 14px; align-items: baseline; padding: 6px 0; }
+.xiu-ways li + li { border-top: 1px dashed var(--rule-2); }
+.xiu-ways b { font-family: var(--kai); font-weight: 400; font-size: 15px; letter-spacing: 0.1em; color: var(--ink); }
+.xiu-ways span { font-size: 13px; line-height: 1.8; letter-spacing: 0.04em; color: var(--ink-2); overflow-wrap: anywhere; }
+
+.xiu-tiers { margin-top: 6px; }
+.xiu-tiers li { display: grid; grid-template-columns: 3.2em minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; padding: 7px 0; color: var(--ink-2); }
+.xiu-tiers li + li { border-top: 1px dashed var(--rule-2); }
+.xiu-tiers b { font-family: var(--kai); font-weight: 400; font-size: 15px; letter-spacing: 0.1em; color: var(--ink-2); }
+.xiu-tiers span { font-size: 13px; line-height: 1.75; letter-spacing: 0.03em; color: var(--ink-2); overflow-wrap: anywhere; }
+.xiu-tiers small { font-family: var(--kai); font-size: 12.5px; letter-spacing: 0.06em; color: var(--ink-2); white-space: nowrap; }
+/* 修为够得着的：名字实；到过的：名字最实、注一点朱（夜里金） */
+.xiu-tiers li.is-ok b { color: var(--ink); }
+.xiu-tiers li:not(.is-ok) b { text-decoration: underline dotted var(--rule); text-underline-offset: 6px; }
+.xiu-tiers li.is-been b { color: var(--ink); }
+.xiu-tiers li.is-been small { color: var(--mark); }
+
+/* 几张榜的名字：一排，放不下就折到下一行（每枚至少 44 高，手指点得中） */
+.xiu-tabs { display: flex; flex-wrap: wrap; gap: 2px 4px; border-bottom: 1px solid var(--rule-2); margin-bottom: 6px; }
+.xiu-tabs > button { position: relative; flex: 0 1 auto; min-width: 3.6em; min-height: 40px; padding: 0 10px; font-family: var(--kai); font-size: 15px; letter-spacing: 0.1em; text-indent: 0.1em; color: var(--ink-2); white-space: nowrap; border-radius: 2px; transition: color 0.25s, background-color 0.25s; }
+.xiu-tabs > button::before { content: ''; position: absolute; left: 18%; right: 18%; bottom: 1px; height: 5px; background: var(--ink); -webkit-mask: var(--m-line) 0 0 / 100% 100% no-repeat; mask: var(--m-line) 0 0 / 100% 100% no-repeat; transform: scaleX(0); transform-origin: left center; transition: transform 0.45s var(--out); pointer-events: none; }
+.xiu-tabs > button.is-on { color: var(--ink); }
+.xiu-tabs > button.is-on::before { transform: none; }
+@media (hover: hover) { .xiu-tabs > button:hover:not(.is-on) { color: var(--ink-max); background: var(--wash-ink); } }
+@media (pointer: coarse) { .xiu-tabs > button { min-height: 44px; } }
+
+.xiu-board-note { font-size: 12.5px; line-height: 1.8; letter-spacing: 0.04em; color: var(--ink-2); margin: 4px 0; overflow-wrap: anywhere; }
+.xiu-rows li { display: grid; grid-template-columns: 2em minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; padding: 7px 4px; border-radius: 2px; }
+.xiu-rows li + li { border-top: 1px dashed var(--rule-2); }
+.xiu-rows li.is-me { background: var(--wash-ink); box-shadow: inset 2px 0 0 var(--mark); }
+.xiu-rank { font-family: var(--kai); font-size: 13.5px; letter-spacing: 0.04em; color: var(--ink); text-align: center; }
+.xiu-name { font-family: var(--kai); font-size: 15px; letter-spacing: 0.06em; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.xiu-name small { font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.06em; color: var(--ink-2); margin-left: 8px; white-space: nowrap; }
+.xiu-rows li.is-me .xiu-name small { color: var(--mark); }
+.xiu-score { font-size: 13.5px; letter-spacing: 0.04em; color: var(--ink); text-align: right; white-space: nowrap; }
+
+@media (max-width: 380px) {
+  .xiu-char { font-size: 50px; }
+  .xiu-head { gap: 4px 14px; }
+  .xiu-steps span { font-size: 14px; letter-spacing: 0.02em; }
+  .xiu-quote p { font-size: 14px; letter-spacing: 0.05em; }
+  .xiu-ways li { gap: 2px 10px; }
+  .xiu-ways b { font-size: 14px; letter-spacing: 0.06em; }
+  .xiu-tiers li { grid-template-columns: 2.8em minmax(0, 1fr); }
+  .xiu-tiers small { grid-column: 2; }
+  .xiu-name { font-size: 14.5px; }
+  .xiu-score { font-size: 13px; }
+}
+@media (max-height: 460px) {
+  .xiu-char { font-size: 46px; }
+  .xiu-steps { padding: 6px 0 8px; }
+}
+
+/* —— 取一象：八卦挑一卦（先天之序，两行四列） —— */
+.tri-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 2px 0 8px; }
+.tri-key { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 66px; padding: 8px 2px 6px; border-radius: 3px; background: linear-gradient(var(--key-top), var(--key-bot)); border: 1px solid var(--edge); box-shadow: var(--key-shadow); color: var(--ink); transition: transform 0.2s var(--out), background-color 0.25s, box-shadow 0.25s; }
+.tri-key .gua { width: 26px; }
+.tri-key .gua path { fill: currentColor; }
+.tri-key b { font-family: var(--kai); font-weight: 400; font-size: 17px; line-height: 1.1; letter-spacing: 0; }
+.tri-key small { font-family: var(--serif); font-size: 11px; line-height: 1.2; letter-spacing: 0.08em; color: var(--ink-2); }
+.tri-key.is-on { background: linear-gradient(var(--main-top), var(--main-bot)); color: var(--main-ink); border-color: transparent; }
+.tri-key.is-on small { color: color-mix(in srgb, var(--main-ink) 80%, transparent); }
+@media (hover: hover) { .tri-key:hover:not(.is-on) { box-shadow: var(--key-shadow-up); background: linear-gradient(var(--key-top), var(--key-top)); } }
+.tri-key:active { transform: translateY(1px); box-shadow: var(--key-shadow-down); }
+@media (max-height: 460px) { .tri-key { min-height: 52px; padding: 4px 2px; gap: 1px; } .tri-key .gua { width: 22px; } .tri-key b { font-size: 15px; } }
+
+/* —— 观象册里：取一象、自己留的灯 —— */
+.xiang-take { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-2); }
+.xiang-take .key { min-height: 44px; min-width: 72px; padding: 0 14px; }
+.xiang-take p { font-size: 13px; line-height: 1.85; letter-spacing: 0.04em; color: var(--ink-2); overflow-wrap: anywhere; }
+.xiang-take ul { grid-column: 1 / -1; }
+.xiang-take li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 4px 0; font-size: 13px; line-height: 1.7; letter-spacing: 0.04em; color: var(--ink); }
+.xiang-take li + li { border-top: 1px dashed var(--rule-2); }
+.xiang-take li span { overflow-wrap: anywhere; }
+.xiang-take .xiang-take-n { grid-column: 1 / -1; font-size: 12.5px; }
+
+/* 听讲·问：四个答案一屏放得下（手机矮时下截原只给二成八的高，第四个要滚才看得见）。题与时辰条不让，下截吃满余下的高；「走开」在最末，滚一下就到 */
+.act[data-kind='lecture'] .panel:not(.is-compact) .panel-body { flex-shrink: 0; }
+.act[data-kind='lecture'] .panel:not(.is-compact) .panel-foot { max-height: none; }

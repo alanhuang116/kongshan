@@ -30,13 +30,13 @@ export const resolveLook = (l?: Partial<Look>): Look => ({ ...SCHOLAR, ...(l ?? 
 const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 /** 颜料叠了几层之后的颜色 */
 export const tone = (p: RGB, d: number): RGB => [Math.pow(p[0], d), Math.pow(p[1], d), Math.pow(p[2], d)];
-const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-const mul = (a: RGB, k: number): RGB => [a[0] * k, a[1] * k, a[2] * k];
+export const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+export const mul = (a: RGB, k: number): RGB => [a[0] * k, a[1] * k, a[2] * k];
 const css = (c: RGB, a = 1) => `rgba(${Math.round(255 * c01(c[0]))},${Math.round(255 * c01(c[1]))},${Math.round(255 * c01(c[2]))},${a})`;
 const INK: RGB = [0.2, 0.2, 0.23];
 
 /** 一身打扮换算成各处实际的颜色 */
-export interface Tones { robe: RGB; skirt: RGB; trim: RGB; sash: RGB; hair: RGB; skin: RGB; shoes: RGB; hat: RGB; leg: RGB; tie: RGB; fold: RGB; inner: RGB }
+export interface Tones { robe: RGB; skirt: RGB; trim: RGB; sash: RGB; hair: RGB; skin: RGB; shoes: RGB; hat: RGB; leg: RGB; tie: RGB; fold: RGB; inner: RGB; coat: RGB | null; flower: RGB }
 export function tones(l: Look): Tones {
   const robe = tone(l.robe, l.robeDens), skin = tone(l.skin, l.skinDens), trim = tone(l.trim, l.trimDens);
   return {
@@ -46,9 +46,13 @@ export function tones(l: Look): Tones {
     leg: l.leg ? tone(l.leg, l.legDens ?? 1) : [0.95, 0.95, 0.93],
     tie: l.accent ? tone(l.accent, 1) : trim,
     fold: mix(robe, INK, 0.5),
-    inner: [0.97, 0.97, 0.95],
+    inner: l.inner ? tone(l.inner, l.innerDens ?? 1) : [0.97, 0.97, 0.95],
+    coat: l.coat ? tone(l.coat, l.coatDens ?? l.robeDens) : null,
+    flower: l.flower ? tone(l.flower, 1) : [0.93, 0.62, 0.62],
   };
 }
+/** 裹着头的布帽（巾、东坡巾、幞头）：头顶那一层是帽，不是发 */
+export const clothHat = (h: Look['hat']) => h === 'jin' || h === 'dongpo' || h === 'futou';
 
 /**
  * 贴图的排法（uv）：左半张是衣；右上四分之一是头（经纬展开）；右下靠左的一小块是斗笠的篾纹；
@@ -78,7 +82,7 @@ export function hairline(lon: number): number {
 const capline = (lon: number) => 5 + 31 * Math.cos((lon * Math.PI) / 180);
 /** 头顶那一层（发，或巾）盖到哪：纬度高过它的地方就是。童子剃了头，只留额前一撮与两个小髻 */
 function topLine(l: Look): (lon: number) => number {
-  if (l.hat === 'jin') return capline;
+  if (clothHat(l.hat)) return capline;
   if (l.hat === 'tufts') return () => 200;
   return hairline;
 }
@@ -86,10 +90,25 @@ function topLine(l: Look): (lon: number) => number {
 // —— 贴图 ——
 function paintRobe(g: CanvasRenderingContext2D, l: Look, T: Tones, W: number, H: number, r: Rng) {
   const k = W / 256, X = (u: number) => W * u, Y = (y: number) => H * (1 - bodyV(y));
-  const hem = l.hem, long = hem < 0.2;
+  const hem = l.hem, long = hem < 0.2, collar = l.collar ?? 'cross', coat = T.coat, cHem = Math.max(hem + 0.04, l.coatHem ?? 0.45);
   g.fillStyle = css(T.robe); g.fillRect(0, 0, W, H);
   // 襦裙：腰以下另一色
   if (l.skirt) { g.fillStyle = css(T.skirt); g.fillRect(0, Y(0.99), W, Y(hem) - Y(0.99) + 2); }
+  // 褙子（罩在外头的那一件）：自领口到它的下摆；对襟敞开处（前心）、两侧开衩处露出里面的长衣或裙。
+  // 贴图的横向绕身一周：u 0 是背心，0.25 右胁，0.5 前心，0.75 左胁
+  const OPEN = 0.022;
+  if (coat) {
+    g.fillStyle = css(coat);
+    g.fillRect(0, 0, X(0.5 - OPEN), Y(cHem)); g.fillRect(X(0.5 + OPEN), 0, W - X(0.5 + OPEN), Y(cHem));
+    // 两侧开衩：自下摆往上到胯下，一道窄窄的三角露出里面
+    const slit = (u: number) => {
+      g.fillStyle = css(l.skirt && cHem < 0.99 ? T.skirt : T.robe);
+      g.beginPath(); g.moveTo(X(u - 0.018), Y(cHem) + 1); g.lineTo(X(u), Y(Math.min(0.8, cHem + 0.36))); g.lineTo(X(u + 0.018), Y(cHem) + 1); g.closePath(); g.fill();
+      g.strokeStyle = css(mix(T.trim, INK, 0.25)); g.lineWidth = 1.6 * k;
+      g.beginPath(); g.moveTo(X(u - 0.018), Y(cHem)); g.lineTo(X(u), Y(Math.min(0.8, cHem + 0.36))); g.lineTo(X(u + 0.018), Y(cHem)); g.stroke();
+    };
+    slit(0.25); slit(0.75);
+  }
   // 衣纹：几笔两头尖的线。下摆自腰往下垂的长褶，腋下往腰里收的短褶
   if (l.folds > 0) {
     const fold = (pts: Array<[number, number]>, w: number, col: RGB) => stroke(g, pts, (t) => w * k * (0.12 + 0.88 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.96 + 0.02)), 0.7)), css(col, Math.min(1, 0.55 + 0.45 * l.folds)));
@@ -103,32 +122,63 @@ function paintRobe(g: CanvasRenderingContext2D, l: Look, T: Tones, W: number, H:
       fold([[X(u), Y(1.15 - 0.03 * i)], [X(u - s * 0.012), Y(1.08)], [X(u - s * 0.03), Y(1.0)]], (1.3 + r()) * l.folds, T.fold);
     }
   }
+  // 襕：膝下一道横襕（襕衫），上沿一道淡墨
+  if (l.lan) {
+    const y0 = Y(l.lan + 0.035), y1 = Y(l.lan);
+    g.fillStyle = css(T.trim); g.fillRect(0, y0, W, y1 - y0);
+    g.fillStyle = css(mix(T.trim, INK, 0.5)); g.fillRect(0, y0 - 0.8 * k, W, 1.1 * k);
+  }
   // 下摆的边
   g.fillStyle = css(T.trim); g.fillRect(0, Y(hem + (long ? 0.03 : 0.022)), W, Y(hem) - Y(hem + (long ? 0.03 : 0.022)) + 2 * k);
-  // 交领（右衽）：先画压在下面的右襟，再画盖在上面的左襟；两襟之间露出一小块中衣
+  // 褙子的下摆一道边、对襟两道直下的襟缘
+  if (coat) {
+    g.fillStyle = css(T.trim);
+    g.fillRect(0, Y(cHem + 0.026), X(0.5 - OPEN), Y(cHem) - Y(cHem + 0.026) + 1); g.fillRect(X(0.5 + OPEN), Y(cHem + 0.026), W - X(0.5 + OPEN), Y(cHem) - Y(cHem + 0.026) + 1);
+  }
   const band = (pts: Array<[number, number]>, w: number, col: string) => {
     g.strokeStyle = col; g.lineWidth = w * k; g.lineCap = 'butt'; g.lineJoin = 'round';
     g.beginPath(); pts.forEach(([u, y], i) => (i ? g.lineTo(X(u), Y(y)) : g.moveTo(X(u), Y(y)))); g.stroke();
   };
   const topY = 1.33, neckY = 1.296;
-  g.fillStyle = css(T.inner); g.beginPath(); g.moveTo(X(0.432), Y(topY)); g.lineTo(X(0.568), Y(topY)); g.lineTo(X(0.538), Y(1.215)); g.lineTo(X(0.503), Y(1.15)); g.lineTo(X(0.47), Y(1.215)); g.closePath(); g.fill();
-  band([[0.418, topY], [0.445, 1.24], [0.488, 1.165], [0.512, 1.135]], 7.5, css(T.trim));
-  band([[0.582, topY], [0.556, 1.245], [0.5, 1.13], [0.44, 1.02], [0.408, 0.965]], 8, css(T.trim));
-  band([[0.566, topY], [0.541, 1.243], [0.487, 1.134], [0.43, 1.03], [0.398, 0.975]], 1.1, css(mix(T.trim, INK, 0.55)));
+  if (collar === 'cross') {
+    // 交领（右衽）：先画压在下面的右襟，再画盖在上面的左襟；两襟之间露出一小块中衣
+    g.fillStyle = css(T.inner); g.beginPath(); g.moveTo(X(0.432), Y(topY)); g.lineTo(X(0.568), Y(topY)); g.lineTo(X(0.538), Y(1.215)); g.lineTo(X(0.503), Y(1.15)); g.lineTo(X(0.47), Y(1.215)); g.closePath(); g.fill();
+    band([[0.418, topY], [0.445, 1.24], [0.488, 1.165], [0.512, 1.135]], 7.5, css(T.trim));
+    band([[0.582, topY], [0.556, 1.245], [0.5, 1.13], [0.44, 1.02], [0.408, 0.965]], 8, css(T.trim));
+    band([[0.566, topY], [0.541, 1.243], [0.487, 1.134], [0.43, 1.03], [0.398, 0.975]], 1.1, css(mix(T.trim, INK, 0.55)));
+  } else if (collar === 'round') {
+    // 圆领：领口一圈圆的领缘（前低后高），右肩一颗纽；右胁一道开襟的线自领下到腰
+    band([[0.405, topY], [0.43, 1.292], [0.468, 1.268], [0.5, 1.262], [0.532, 1.268], [0.57, 1.292], [0.595, topY]], 7, css(T.trim));
+    band([[0.405, 1.31], [0.43, 1.28], [0.468, 1.256], [0.5, 1.25], [0.532, 1.256], [0.57, 1.28], [0.595, 1.31]], 1, css(mix(T.trim, INK, 0.55)));
+    g.fillStyle = css(mix(T.trim, INK, 0.3)); g.beginPath(); g.ellipse(X(0.405), Y(1.285), 3.2 * k, 2.6 * k, 0, 0, 6.2832); g.fill();
+    band([[0.405, 1.28], [0.39, 1.18], [0.375, 1.0]], 1.2, css(mix(T.robe, INK, 0.45)));
+  } else {
+    // 对襟：两襟自领口直下，不交；中间露出里面的衣（有褙子时是褙子的两襟，到它的下摆；没有就到衣摆）
+    const bottom = coat ? cHem : hem + 0.03;
+    if (!coat) { g.fillStyle = css(T.inner); g.fillRect(X(0.5 - OPEN), Y(topY), X(0.5 + OPEN) - X(0.5 - OPEN), Y(1.05) - Y(topY)); }
+    for (const s of [-1, 1]) {
+      const u0 = 0.5 + s * OPEN;
+      band([[0.5 + s * 0.085, topY], [0.5 + s * 0.05, 1.27], [u0 + s * 0.006, 1.2], [u0 + s * 0.006, bottom]], 7, css(T.trim));
+      band([[0.5 + s * 0.072, topY], [0.5 + s * 0.04, 1.27], [u0 - s * 0.004, 1.2], [u0 - s * 0.004, bottom]], 1, css(mix(T.trim, INK, 0.5)));
+    }
+    // 领口里露出的那一点里衣（交领的中衣）
+    g.fillStyle = css(T.inner); g.beginPath(); g.moveTo(X(0.44), Y(topY)); g.lineTo(X(0.56), Y(topY)); g.lineTo(X(0.5 + OPEN), Y(1.24)); g.lineTo(X(0.5 - OPEN), Y(1.24)); g.closePath(); g.fill();
+  }
   // 后领：一圈立着的领缘
   g.fillStyle = css(T.trim); g.fillRect(0, 0, X(0.418) + 1, Y(neckY)); g.fillRect(X(0.582) - 1, 0, W - X(0.582) + 1, Y(neckY));
-  // 绦带：腰间一条，左前打结；长衫垂两条带梢，短衣只一个结
-  const sy0 = Y(0.99), sy1 = Y(0.942), kx = X(0.578), ky = (sy0 + sy1) / 2;
-  g.fillStyle = css(T.sash); g.fillRect(0, sy0, W, sy1 - sy0);
+  // 绦带：腰间一条，左前打结；长衫垂两条带梢，短衣只一个结。罩着褙子时只在敞开处露出一截与带结
+  const sy0 = Y(0.99), sy1 = Y(0.942), kx = coat ? X(0.5) : X(0.578), ky = (sy0 + sy1) / 2;
+  g.fillStyle = css(T.sash);
+  if (coat) g.fillRect(X(0.5 - OPEN), sy0, X(0.5 + OPEN) - X(0.5 - OPEN), sy1 - sy0); else g.fillRect(0, sy0, W, sy1 - sy0);
   const tail = (dx: number, len: number, w: number) => {
     g.strokeStyle = css(T.sash); g.lineWidth = w * k; g.lineCap = 'round';
     g.beginPath(); g.moveTo(kx, ky); g.quadraticCurveTo(kx + dx * k * 0.4, ky + len * 0.5, kx + dx * k, ky + len); g.stroke();
   };
   if (long) { tail(-3.5, Y(0.62) - ky, 4); tail(6.5, Y(0.68) - ky, 3.5); } else { tail(-3, (Y(0.8) - ky) * 0.8, 3.5); tail(5, (Y(0.84) - ky) * 0.8, 3); }
   g.fillStyle = css(mul(T.sash, 0.85)); g.beginPath(); g.ellipse(kx, ky, 6 * k, 5.2 * k * (H / W / 2), 0.3, 0, 6.2832); g.fill();
-  // 袖子那一条：素面，几笔顺着袖长的褶，袖口一道边
+  // 袖子那一条：素面，几笔顺着袖长的褶，袖口一道边（罩着褙子时是褙子的袖）
   const s0 = H * (1 - TEX.sleeve1), s1 = H * (1 - TEX.sleeve0);
-  g.fillStyle = css(T.robe); g.fillRect(0, s0 - 7 * k, W, H - s0 + 7 * k);
+  g.fillStyle = css(coat ?? T.robe); g.fillRect(0, s0 - 7 * k, W, H - s0 + 7 * k);
   if (l.folds > 0) for (let i = 0; i < 5; i++) {
     const u = 0.1 + 0.2 * i + (r() - 0.5) * 0.06, a = s1 - (s1 - s0) * (0.08 + 0.2 * r()), b = s0 + (s1 - s0) * (0.12 + 0.1 * r());
     stroke(g, [[X(u), a], [X(u + (r() - 0.5) * 0.03), (a + b) / 2], [X(u + (r() - 0.5) * 0.04), b]], (t) => (1.2 + 1.2 * r()) * k * l.folds * Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.96 + 0.02)), 0.7), css(T.fold, 0.9));
@@ -142,14 +192,14 @@ function paintHead(g: CanvasRenderingContext2D, l: Look, T: Tones, x0: number, y
   // 之后的坐标：x 是经度（度，正前为 0），y 是纬度（度，朝上）
   g.translate(x0 + w / 2, y0 + h / 2); g.scale(w / 360, -h / 180);
   g.fillStyle = css(T.skin); g.fillRect(-180, -90, 360, 180);
-  const child = l.hat === 'tufts', line = topLine(l), top = l.hat === 'jin' ? T.hat : T.hair;
+  const child = l.hat === 'tufts', line = topLine(l), cloth = clothHat(l.hat), top = cloth ? T.hat : T.hair, fem = l.build === 'f';
   if (!child) {
     g.fillStyle = css(top);
     g.beginPath(); g.moveTo(-180, line(-180));
     for (let lon = -180; lon <= 180; lon += 2) g.lineTo(lon, line(lon));
     g.lineTo(180, 90); g.lineTo(-180, 90); g.closePath(); g.fill();
     // 巾沿压一道深边；发则自发际往髻上梳几道淡的丝
-    if (l.hat === 'jin') {
+    if (cloth) {
       g.strokeStyle = css(mul(top, 0.72)); g.lineWidth = 3.2; g.beginPath();
       for (let lon = -180; lon <= 180; lon += 4) (lon === -180 ? g.moveTo(lon, line(lon) + 1.6) : g.lineTo(lon, line(lon) + 1.6));
       g.stroke();
@@ -170,10 +220,19 @@ function paintHead(g: CanvasRenderingContext2D, l: Look, T: Tones, x0: number, y
   g.lineCap = 'round';
   for (const s of [-1, 1]) {
     const ex = s * 19.5, ey = child ? -1 : 1.5;
-    g.strokeStyle = css(feat); g.lineWidth = child ? 2.2 : 1.7;
-    g.beginPath(); g.moveTo(ex - s * 6.7, ey + 0.3); g.quadraticCurveTo(ex, ey - 3.2, ex + s * 8.1, ey - 0.4); g.stroke();
-    g.strokeStyle = css(brow); g.lineWidth = 1.3;
-    g.beginPath(); g.moveTo(ex - s * 7, ey + 11.4); g.quadraticCurveTo(ex + s * 0.7, ey + 14.7, ex + s * 9.8, ey + 12.2); g.stroke();
+    g.strokeStyle = css(feat); g.lineWidth = child ? 2.2 : fem ? 1.55 : 1.7;
+    // 女子：眼尾略长、微微上挑
+    if (fem) { g.beginPath(); g.moveTo(ex - s * 6.4, ey + 0.2); g.quadraticCurveTo(ex + s * 0.6, ey - 3.0, ex + s * 9.2, ey + 0.9); g.stroke(); }
+    else { g.beginPath(); g.moveTo(ex - s * 6.7, ey + 0.3); g.quadraticCurveTo(ex, ey - 3.2, ex + s * 8.1, ey - 0.4); g.stroke(); }
+    g.strokeStyle = css(brow); g.lineWidth = fem ? 1.05 : 1.3;
+    // 女子的眉细而长，弯一点（远山眉）
+    if (fem) { g.beginPath(); g.moveTo(ex - s * 5.5, ey + 12.4); g.quadraticCurveTo(ex + s * 2.2, ey + 16.2, ex + s * 11.6, ey + 12.6); g.stroke(); }
+    else { g.beginPath(); g.moveTo(ex - s * 7, ey + 11.4); g.quadraticCurveTo(ex + s * 0.7, ey + 14.7, ex + s * 9.8, ey + 12.2); g.stroke(); }
+  }
+  // 女子：唇上一点朱，两颊极淡的一层胭脂
+  if (fem && !child) {
+    g.fillStyle = 'rgba(196,84,78,0.78)'; g.beginPath(); g.ellipse(0, -30.5, 4.3, 1.7, 0, 0, 6.2832); g.fill();
+    for (const s of [-1, 1]) { const gr = g.createRadialGradient(s * 30, -18, 1, s * 30, -18, 15); gr.addColorStop(0, 'rgba(232,150,140,0.15)'); gr.addColorStop(1, 'rgba(232,150,140,0)'); g.fillStyle = gr; g.fillRect(s * 30 - 16, -34, 32, 32); }
   }
   // 髭：唇上两撇（有须的人）
   if (l.beard > 0) {
@@ -212,7 +271,7 @@ export function paintAtlas(l: Look, px: number): THREE.CanvasTexture {
 // —— 部件 ——
 const KEEP = ['position', 'normal', 'uv', 'color'];
 /** 整理成能并在一起的样子：带索引，恰有 position / normal / uv / color。col 是这一块的颜色；uv 不给就整块指到贴图的白处 */
-function piece(g: THREE.BufferGeometry, col: RGB | null, uv: readonly [number, number] | 'keep' = ATLAS.white): THREE.BufferGeometry {
+export function piece(g: THREE.BufferGeometry, col: RGB | null, uv: readonly [number, number] | 'keep' = ATLAS.white): THREE.BufferGeometry {
   if (!g.attributes.normal) g.computeVertexNormals();
   const n = g.attributes.position.count;
   if (!g.index) { const ix = new Uint16Array(n); for (let i = 0; i < n; i++) ix[i] = i; g.setIndex(new THREE.BufferAttribute(ix, 1)); }
@@ -224,7 +283,7 @@ function piece(g: THREE.BufferGeometry, col: RGB | null, uv: readonly [number, n
   for (const key of Object.keys(g.attributes)) if (!KEEP.includes(key)) g.deleteAttribute(key);
   return g;
 }
-function weld(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
+export function weld(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
   const m = mergeGeometries(list, false);
   if (!m) throw new Error('avatar: 部件的属性不一致');
   for (const g of list) g.dispose();
@@ -237,7 +296,7 @@ function intoAtlas(g: THREE.BufferGeometry, r: { u0: number; v0: number; du: num
   return g;
 }
 /** 一条两面都看得见的窄带（带梢）：沿 pts 走，宽 w，面大致朝 n */
-function strip(pts: THREE.Vector3[], w: number, n: THREE.Vector3): THREE.BufferGeometry {
+export function strip(pts: THREE.Vector3[], w: number, n: THREE.Vector3): THREE.BufferGeometry {
   const pos: number[] = [];
   const side = (i: number) => new THREE.Vector3().subVectors(pts[Math.min(pts.length - 1, i + 1)], pts[Math.max(0, i - 1)]).cross(n).normalize().multiplyScalar(w / 2);
   for (let i = 0; i < pts.length - 1; i++) {
@@ -252,7 +311,7 @@ function strip(pts: THREE.Vector3[], w: number, n: THREE.Vector3): THREE.BufferG
 }
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 /** 一幅两面都看得见的布：rows[j][i] 是点阵（自上而下、自左而右），正反各一层 */
-function sheet(rows: THREE.Vector3[][]): THREE.BufferGeometry {
+export function sheet(rows: THREE.Vector3[][]): THREE.BufferGeometry {
   const nj = rows.length, ni = rows[0].length, pos: number[] = [], idx: number[] = [];
   for (let side = 0; side < 2; side++) for (const row of rows) for (const p of row) pos.push(p.x, p.y, p.z);
   for (let side = 0; side < 2; side++) for (let j = 0; j < nj - 1; j++) for (let i = 0; i < ni - 1; i++) {
@@ -277,9 +336,13 @@ function liHat(T: Tones, R: number, Hh: number, seg: number): THREE.BufferGeomet
 }
 
 export const HEAD_UP = 0.152;   // 头心在颈根（头的转轴）上方多少
-/** 头：原点在颈根（转轴），面朝 +z。发、髻或巾、须、耳、颈，戴着的斗笠，都在这一块里 */
-export function buildHead(l: Look, low: boolean): THREE.BufferGeometry {
-  const T = tones(l), line = topLine(l), jin = l.hat === 'jin';
+/**
+ * 头：原点在颈根（转轴），面朝 +z。发、髻或巾、须、耳、颈，戴着的斗笠，都在这一块里。
+ * tall 给了的话，高出头顶的那几样（东坡巾、幞头的巾子、小冠、高髻、包髻、花冠）放进 tall 里另做一块（同样的坐标）——
+ * 雨天戴上斗笠时那一块压低收进笠里（figure.ts），不然从笠顶戳出来
+ */
+export function buildHead(l: Look, low: boolean, tall?: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const T = tones(l), line = topLine(l), jin = clothHat(l.hat);
   const ws = low ? 18 : 30, hs = low ? 12 : 20;
   const s = new THREE.SphereGeometry(1, ws, hs).rotateY(-Math.PI / 2);
   const p = s.attributes.position as THREE.BufferAttribute;
@@ -304,6 +367,7 @@ export function buildHead(l: Look, low: boolean): THREE.BufferGeometry {
   }
   s.computeVertexNormals();
   const parts: THREE.BufferGeometry[] = [intoAtlas(piece(s, null, 'keep'), ATLAS.head)];
+  const tp = tall ?? parts;
   const worn = l.hat === 'li' && l.hatWorn;
   if (l.hat === 'jin') {
     // 幅巾：髻裹在巾里，在头顶偏后撑起一个矮而方的顶；脑后两条短短的巾带，朝两边撇开
@@ -314,11 +378,82 @@ export function buildHead(l: Look, low: boolean): THREE.BufferGeometry {
       const rows = [0, 1, 2, 3].map((j) => { const t = j / 3, c = V(sx * (0.02 + 0.045 * t), -0.04 - 0.105 * t, -0.109 - 0.022 * Math.sin(t * 2.2)), w = 0.016 + 0.004 * t; return [c.clone().add(V(-w, 0, 0)), c.clone().add(V(w, 0, 0))]; });
       parts.push(piece(sheet(rows), mul(T.hat, 0.9)));
     }
+  } else if (l.hat === 'dongpo') {
+    // 东坡巾：高而方的一顶巾，里一重墙高、外一重墙矮一些，外墙的四角对着前后左右；墙是软的，上沿略收
+    const box = (half: number, y0: number, y1: number, rot: number, col: RGB, n = 4) => {
+      const seg = low ? 16 : 24, rows = 3, pos: number[] = [], idx: number[] = [];
+      for (let j = 0; j < rows; j++) {
+        const t = j / (rows - 1), y = y0 + (y1 - y0) * t, h = half * (1 - 0.06 * t);
+        for (let i = 0; i <= seg; i++) {
+          const a = (i / seg) * Math.PI * 2 + rot, c = Math.cos(a), s = Math.sin(a);
+          const rr = h * Math.pow(Math.pow(Math.abs(c), n) + Math.pow(Math.abs(s), n), -1 / n);
+          pos.push(s * rr, y, c * rr * 0.94);
+        }
+      }
+      for (let j = 0; j < rows - 1; j++) for (let i = 0; i < seg; i++) { const a = j * (seg + 1) + i, b = a + 1, c = a + seg + 2, d = a + seg + 1; idx.push(a, b, c, a, c, d); }
+      // 顶：一片平的
+      const top0 = pos.length / 3; pos.push(0, y1, 0);
+      for (let i = 0; i < seg; i++) idx.push(top0, (rows - 1) * (seg + 1) + i + 1, (rows - 1) * (seg + 1) + i);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+      return piece(geo, col);
+    };
+    tp.push(box(0.083, 0.04, 0.215, 0, T.hat));
+    // 外一重墙浅一层（墨色的帽上看得出两重）
+    tp.push(box(0.094, 0.032, 0.172, Math.PI / 4, mix(T.hat, [0.9, 0.9, 0.9], 0.16)));
+  } else if (l.hat === 'futou') {
+    // 软脚幞头：裹着头，脑后上方一个高起的巾子（包着髻），两条软脚自脑后垂到肩上、略往两边撇
+    tp.push(piece(new THREE.SphereGeometry(1, low ? 10 : 16, low ? 8 : 12).scale(0.062, 0.058, 0.06).translate(0, 0.118, -0.032), T.hat));
+    for (const sx of [-1, 1]) {
+      const rows = [0, 1, 2, 3, 4].map((j) => { const t = j / 4, c = V(sx * (0.02 + 0.06 * t), 0.07 - 0.2 * t, -0.112 - 0.03 * Math.sin(t * 2.6)), w = 0.017 + 0.003 * t; return [c.clone().add(V(-w, 0, 0)), c.clone().add(V(w, 0, 0))]; });
+      parts.push(piece(sheet(rows), mul(T.hat, 0.92)));
+    }
+  } else if (l.hat === 'guan') {
+    // 小冠：头顶偏后一个髻，上面一顶小冠（前低后高的一道弯），横贯一根簪
+    tp.push(piece(new THREE.SphereGeometry(1, low ? 9 : 14, low ? 7 : 10).scale(0.044, 0.034, 0.044).rotateX(-0.28).translate(0, 0.136, -0.03), T.hair));
+    const crown = new THREE.LatheGeometry([[0.0001, 0.0], [0.03, 0.0], [0.036, 0.018], [0.034, 0.04], [0.02, 0.056], [0.0001, 0.06]].map(([x, y]) => new THREE.Vector2(x, y)).reverse(), low ? 10 : 16);
+    crown.computeVertexNormals();
+    tp.push(piece(crown.scale(0.95, 1, 1.25).rotateX(-0.42).translate(0, 0.142, -0.032), l.hatPig ? T.hat : [0.32, 0.3, 0.3]));
+    tp.push(piece(new THREE.CylinderGeometry(0.0032, 0.0032, 0.15, 5).rotateZ(Math.PI / 2).translate(0, 0.165, -0.03), [0.92, 0.9, 0.8]));
+  } else if (l.hat === 'gaoji') {
+    // 高髻：发自四面梳上去，头顶偏后盘一个扁髻，上面立起一道髻环（略往前倾，像一弯新月立着），脑后挽一个小的。
+    // 髻环上顺着发的走向几道深浅（不然是一团墨）
+    tp.push(piece(new THREE.SphereGeometry(1, low ? 10 : 16, low ? 8 : 12).scale(0.056, 0.032, 0.052).translate(0, 0.128, -0.028), T.hair));
+    const loop = new THREE.TorusGeometry(0.034, 0.012, low ? 6 : 9, low ? 16 : 26, Math.PI * 1.32).rotateZ(Math.PI / 2 - Math.PI * 0.66).scale(0.95, 1.3, 0.9).rotateX(-0.22).translate(0, 0.168, -0.032);
+    const lp = piece(loop, T.hair), lc = lp.attributes.color as THREE.BufferAttribute, lpos = lp.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < lpos.count; i++) {
+      const k = 1 + 0.5 * Math.max(0, Math.sin(Math.atan2(lpos.getY(i) - 0.168, lpos.getX(i)) * 7 + lpos.getZ(i) * 300));
+      lc.setXYZ(i, Math.min(1, T.hair[0] * k), Math.min(1, T.hair[1] * k), Math.min(1, T.hair[2] * k));
+    }
+    tp.push(lp);
+    parts.push(piece(new THREE.SphereGeometry(1, low ? 8 : 12, low ? 6 : 9).scale(0.034, 0.028, 0.032).translate(0, 0.05, -0.112), T.hair));
+    // 髻前一把小梳（宋人插梳）：一弯浅月牙
+    tp.push(piece(new THREE.TorusGeometry(0.032, 0.0055, 4, low ? 10 : 16, Math.PI * 0.85).rotateZ(Math.PI * 0.075).scale(1, 0.55, 0.5).rotateX(-0.5).translate(0, 0.142, 0.012), [0.92, 0.88, 0.78]));
+  } else if (l.hat === 'baoji') {
+    // 包髻：髻用一方帕子包起来，帕角在前面打一个结、两个角翘着
+    tp.push(piece(new THREE.SphereGeometry(1, low ? 10 : 16, low ? 8 : 12).scale(0.066, 0.052, 0.064).rotateX(-0.35).translate(0, 0.128, -0.04), T.hat));
+    tp.push(piece(new THREE.SphereGeometry(1, 8, 6).scale(0.022, 0.017, 0.016).translate(0, 0.158, 0.008), mul(T.hat, 0.85)));
+    for (const sx of [-1, 1]) parts.push(piece(new THREE.ConeGeometry(0.011, 0.038, 5).rotateZ(-sx * 1.05).rotateX(0.3).translate(sx * 0.026, 0.168, 0.01), mul(T.hat, 0.9)));
+  } else if (l.hat === 'huaguan') {
+    // 花冠：头顶盘一个髻，髻根一圈细冠，冠上一圈花——几朵大的在前，两侧小些，一片两片叶
+    tp.push(piece(new THREE.SphereGeometry(1, low ? 10 : 16, low ? 8 : 12).scale(0.054, 0.048, 0.052).translate(0, 0.134, -0.028), T.hair));
+    tp.push(piece(new THREE.TorusGeometry(0.052, 0.006, 5, low ? 14 : 22).rotateX(Math.PI / 2 - 0.25).translate(0, 0.118, -0.024), [0.82, 0.72, 0.5]));
+    const n = low ? 7 : 9, leaf: RGB = [0.42, 0.56, 0.42];
+    for (let i = 0; i < n; i++) {
+      // 花立着、朝外开（正前那几朵最大最高，往两边低下去、小下去），朵与朵之间留一点空
+      const a = -1.55 + (3.1 * i) / (n - 1), big = 1 - 0.45 * Math.abs(a) / 1.55, rr = 0.058;
+      const x = Math.sin(a) * rr, z = Math.cos(a) * rr * 0.92 - 0.024, y = 0.134 + 0.05 * big;
+      const col = i % 3 === 0 ? T.flower : i % 3 === 1 ? mix(T.flower, [0.98, 0.96, 0.9], 0.55) : mix(T.flower, [0.95, 0.8, 0.5], 0.5);
+      const fr = 0.015 * big + 0.008, f = new THREE.SphereGeometry(1, 8, 6).scale(fr, fr, fr * 0.42).rotateX(-0.25).rotateY(a).translate(x, y, z);
+      tp.push(piece(f, col));
+      tp.push(piece(new THREE.SphereGeometry(1, 5, 4).scale(fr * 0.35, fr * 0.35, fr * 0.35).translate(x + Math.sin(a) * fr * 0.4, y, z + Math.cos(a) * fr * 0.4), [0.96, 0.82, 0.4]));
+      if (i % 2 === 0) tp.push(piece(new THREE.SphereGeometry(1, 5, 4).scale(0.014, 0.0028, 0.007).rotateZ(0.5).rotateY(a + 0.7).translate(x * 1.08, y - fr * 0.8, z * 1.06), leaf));
+    }
   } else if (l.hat === 'bun') {
-    // 妇人的髻：脑后偏上一个大的，横插一根簪
+    // 妇人的髻：脑后偏上一个大的，横插一根簪（身上另戴了簪、步摇的，就用那一根）
     parts.push(piece(new THREE.SphereGeometry(1, low ? 10 : 14, low ? 7 : 10).scale(0.056, 0.046, 0.058).rotateX(-0.5).translate(0, 0.112, -0.055), T.hair));
     parts.push(piece(new THREE.SphereGeometry(1, 8, 6).scale(0.03, 0.026, 0.03).translate(0, 0.15, -0.035), T.hair));
-    parts.push(piece(new THREE.CylinderGeometry(0.0035, 0.0035, 0.17, 5).rotateZ(Math.PI / 2).rotateY(0.25).translate(0, 0.126, -0.06), [0.9, 0.86, 0.72]));
+    if (!(l.orn ?? []).some((o) => o.startsWith('zan') || o === 'buyao')) parts.push(piece(new THREE.CylinderGeometry(0.0035, 0.0035, 0.17, 5).rotateZ(Math.PI / 2).rotateY(0.25).translate(0, 0.126, -0.06), [0.9, 0.86, 0.72]));
   } else if (l.hat === 'tufts') {
     // 总角：头顶两侧各一个小髻，扎一圈红绳
     for (const sx of [-1, 1]) {
@@ -416,6 +551,7 @@ export function buildHand(l: Look, low: boolean, s: number): THREE.BufferGeometr
     const ix = g.index!.array as Uint16Array | Uint32Array;
     for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; }
   }
+  if (l.build === 'f') g.scale(0.89, 0.92, 0.89);
   return g;
 }
 
@@ -488,7 +624,8 @@ export function buildRainCape(low: boolean): THREE.BufferGeometry {
 
 /** 腕与一截小臂：原点在腕上，+y 顺着小臂指向手（自腕往前探进掌根 3 厘米，往后 12 厘米），两头敞着（藏在掌里、袖里） */
 export function buildWrist(l: Look, low: boolean): THREE.BufferGeometry {
-  return piece(new THREE.CylinderGeometry(0.021, 0.027, 0.15, low ? 6 : 7, 1, true).translate(0, -0.045, 0), tones(l).skin);
+  const r = l.build === 'f' ? 0.88 : 1;
+  return piece(new THREE.CylinderGeometry(0.021 * r, 0.027 * r, 0.15, low ? 6 : 7, 1, true).translate(0, -0.045, 0), tones(l).skin);
 }
 
 /** 脚：一只布鞋（或草鞋、光脚——只是颜色不同）。原点在踝的正下方的地面，脚尖朝 +z */
@@ -519,5 +656,6 @@ export function buildFoot(l: Look, low: boolean): THREE.BufferGeometry {
   shoe.setIndex(idx); shoe.computeVertexNormals();
   const out = piece(shoe, null);
   (out.attributes.color as THREE.BufferAttribute).array.set(col);
+  if (l.build === 'f') out.scale(0.86, 0.92, 0.88);
   return out;
 }

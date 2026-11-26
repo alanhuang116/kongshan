@@ -13,7 +13,9 @@ import type { PoseName } from '../avatar/types';
 import type { Quality } from '../core/World';
 import { Track, type View } from './interp';
 import { lookFor } from './looks';
-import { POSES, type Name } from './proto';
+import { lookOfWear, wearFromWire } from '../avatar/dress';
+import { ACTS, POSES, type Name } from './proto';
+import { remotePropKind, type RemoteProp } from './props';
 import type { State } from './wire';
 
 const wrap = (a: number) => { a = (a + Math.PI) % (Math.PI * 2); return (a < 0 ? a + Math.PI * 2 : a) - Math.PI; };
@@ -49,12 +51,23 @@ export class Remote {
   private view: View = { x: 0, y: 0, z: 0, yaw: 0, pl: -1, a: -1, po: 0, h: 1, live: false };
   private acc = 0; private frame = 0; private last = new THREE.Vector3(); private lastYaw = 0; private placed = false;
 
+  /** 他的样子（男女、穿戴的序号；没报过是 null：画成读书人） */
+  lk: number[] | null = null;
+  /** 他身边带着的东西（骑的牛、斗的鸡：那样玩法登记的，见 props.ts） */
+  private prop: RemoteProp | null = null; private propAct = '';
+
   constructor(private scene: THREE.Scene, private q: Quality, public id: number, public n: Name, public c: number, private idx: number) {}
 
   /** 换了名字、衣色：换一身（身子重做） */
   rename(n: Name, c: number) {
     if (n[0] === this.n[0] && n[1] === this.n[1] && c === this.c) return;
     this.n = n; this.c = c;
+    if (this.fig) { this.disposeFig(); this.placed = false; }
+  }
+  /** 换了样子（男女、穿戴）：身子重做 */
+  setLook(lk: number[]) {
+    if (this.lk && lk.length === this.lk.length && lk.every((v, i) => v === this.lk![i])) return;
+    this.lk = lk.slice();
     if (this.fig) { this.disposeFig(); this.placed = false; }
   }
 
@@ -69,7 +82,9 @@ export class Remote {
 
   private makeFig() {
     // 与村里人一样用粗一档的网（画面里的人多了也不重），贴图留得比村里人清楚些（会走到跟前来）
-    const f = new Figure({ ...this.q, tier: 'low', tex: this.q.tex * 0.75 }, lookFor(this.n, this.c));
+    // 报过穿着的照穿着画（男女、衣、冠、簪、佩）；没报过的（旧的一版）画成读书人、按雅号配衣色
+    const w = wearFromWire(this.lk);
+    const f = new Figure({ ...this.q, tier: 'low', tex: this.q.tex * 0.75 }, w ? lookOfWear(w) : lookFor(this.n, this.c));
     f.root.name = `net:${this.id}`;
     f.root.visible = false;
     this.scene.add(f.root);
@@ -155,15 +170,39 @@ export class Remote {
     else if (this.bowing) { this.bowing = false; f.bow = 0; f.setHands('free', 0.6); }
     const speed = this.speed < 0.06 || this.pose !== 'stand' ? 0 : Math.min(this.speed, 6);
     f.update(step, t, { speed, climb: this.climb, turn: Math.abs(this.turn) < 8 ? this.turn : 0 });
+    this.stepProp(step, t);
     this.frame++;
     return true;
   }
 
+  /** 他在做的事要带东西（骑牛、斗鸡）：造一份摆在他脚下；不做了拿掉 */
+  private stepProp(dt: number, t: number) {
+    const act = this.act >= 0 ? ACTS[this.act]?.[0] ?? '' : '';
+    const kind = remotePropKind(act);
+    if (this.prop && (!kind || act !== this.propAct)) this.dropProp();
+    if (kind && !this.prop) {
+      try { this.prop = kind.make({ ...this.q, tier: 'low', tex: this.q.tex * 0.75 }); this.propAct = act; this.scene.add(this.prop.root); } catch (e) { console.warn('同游：东西没造成', e); }
+    }
+    const p = this.prop;
+    if (!p) return;
+    p.root.visible = true;
+    p.root.position.copy(this.pos); p.root.rotation.set(0, this.yaw, 0);
+    p.update?.(dt, t, this.speed);
+  }
+  private dropProp() {
+    const p = this.prop;
+    this.prop = null; this.propAct = '';
+    if (!p) return;
+    p.root.removeFromParent();
+    try { p.dispose(); } catch { /* 无妨 */ }
+  }
+
   private hide() {
+    if (this.prop) this.prop.root.visible = false;
     if (this.shown && this.fig) this.fig.root.visible = false;
     this.shown = false; this.placed = false; this.inView = false;
   }
 
   /** 走了：从画里拿掉 */
-  dispose() { this.hide(); this.disposeFig(); }
+  dispose() { this.hide(); this.dropProp(); this.disposeFig(); }
 }

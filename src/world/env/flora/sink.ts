@@ -11,7 +11,7 @@ import type { Dab } from '../../ink/ink';
 import { FGeo, type RGB } from './kit';
 
 /** 树上的层（四季常在，换季只换颜料、疏密） */
-export const LAYERS = ['peachBloom', 'plumBloom', 'fruitLeaf', 'willow', 'broadA', 'broadB', 'broadC', 'twig', 'whip', 'pine', 'bamboo', 'grass'] as const;
+export const LAYERS = ['peachBloom', 'plumBloom', 'fruitLeaf', 'willow', 'broadA', 'broadB', 'broadC', 'huai', 'twig', 'whip', 'pine', 'bamboo', 'grass'] as const;
 export type LayerId = (typeof LAYERS)[number];
 /** 面：寻常的干枝、松的鳞皮、竹竿（带节；豆架瓜架也是竹）、田里的垄 */
 export const GEOS = ['bark', 'pineBark', 'culm', 'soil'] as const;

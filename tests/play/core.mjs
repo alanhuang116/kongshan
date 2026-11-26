@@ -59,7 +59,7 @@ const browser = await launch();
       }
       return false;
     };
-    return { boxes, desk: inside(3.2, 9.1, 0.9), floor: inside(0, 8.35, 1), yard: inside(1.2, 8.05, 12), roofTop: inside(0, 12.6, 0), pav: inside(-3.8, 8.9, -21), cut: (() => { let v = -1; k.world.scene.traverse((o) => { const u = o.material?.uniforms; if (v < 0 && u?.uRoofCut) v = u.uRoofCut.value; }); return v; })() };
+    return { boxes, desk: inside(3.2, 9.1, 0.9), floor: inside(0, 8.35, 1), yard: inside(1.2, 8.05, 12), roofTop: inside(0, 12.6, 0), pav: inside(-4, 13.2, -24), cut: (() => { let v = -1; k.world.scene.traverse((o) => { const u = o.material?.uniforms; if (v < 0 && u?.uRoofCut) v = u.uRoofCut.value; }); return v; })() };
   });
   R.ok('登记了屋顶', r.boxes >= 6, `${r.boxes} 处`);
   R.ok('书案、地面在屋顶底下', r.desk && r.floor);

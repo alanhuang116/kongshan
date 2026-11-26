@@ -13,6 +13,7 @@ import type { Act } from './types';
 import { Rings } from '../play/ripples';
 import { flatRock } from '../build/kit';
 import { V, cnNum, mats, onFrame, playGet, playSet, sfx, stateOf } from '../play/kit';
+import { report } from '../play/board';
 
 const G = 9.8;
 export function create(k: Anlewo): Act | null {
@@ -134,6 +135,8 @@ export function create(k: Anlewo): Act | null {
     const better = skips > (r.best ?? 0);
     playSet(k, 'skip', { ...r, n: (r.n ?? 0) + 1, best: Math.max(r.best ?? 0, skips), far: Math.max(r.far ?? 0, Math.round(dist)) });
     k.log({ kind: 'play', text: skips ? `打水漂，漂了${cnNum(skips)}下` : '打水漂，一下就沉了' });
+    // 漂了几下上榜
+    if (skips > 0) report(k, 'skip', skips);
     if (better && (r.best ?? 0) > 0) k.note(`漂了${cnNum(skips)}下，比以往都多`);
     const text = skips === 0 ? '「咚」的一声，直直地沉下去了。' : `漂了${cnNum(skips)}下，${sank ? '最后' : ''}在${cnNum(Math.max(1, steps2))}步开外沉下去。`;
     set({ title: '打水漂', text, count: skips, choices: [{ id: 'again', label: '再拣一块' }, { id: 'done', label: '罢' }], done: skips > 0 });

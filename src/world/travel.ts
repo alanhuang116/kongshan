@@ -4,25 +4,29 @@
  * walk.ts 的找路是 0.2 米一格的 A*：近处最准（绕桌角、树干、篱笆），可隔着溪、桥又在几十米外时，绕的那一大圈找不完
  * （找到六万格就停）——以前于是直着朝溪走过去，卡在岸边。这里先看直线过不过溪：
  *   不过溪（或两头在溪的同一边、只是直线擦过一道溪湾）—— 照旧用格子找路；找不完再沿总图上的路走（life/route.ts 的路网）。
- *   过溪 —— 挑一处过溪的地方（石桥、汀步；东头的木桥还在修，过不去），分三段：走到这一头、过去、从那一头走到要去的地方。
+ *   过溪 —— 挑一处过溪的地方（石桥、汀步、板桥；东头的木桥还在修，过不去），分三段：走到这一头、过去、从那一头走到要去的地方。
  *           每一段都在溪的同一边，格子找路找得完。哪一处近走哪一处（按三段直线的长短估）。
  * 返回要依次走到的点（不含起点），至少一个；实在没有路返回 null（行者就直着走，被挡住了说一声）。
  * （walk.ts 的 findPath 在起点、终点落在同一格时会给一条空的路——这里一律当作没有，免得用的人去取第一个点时取个空）
  */
 import { route } from './life/route';
-import { PATHS, STREAM } from './site';
+import { SITE, STREAM } from './site';
 import { WADE, findPath, groundAt, waterDepth, type Zone } from './walk';
 
 type Pt = [number, number];
 
-const pathPts = (id: string): Pt[] => PATHS.find((p) => p.id === id)?.pts ?? [];
-/** 过溪的地方：一头、（中间踩的几处）、另一头——都取总图上那条路的折点（两头在岸上） */
+/**
+ * 过溪的地方：一头、（中间踩的几处）、另一头（两头都在岸上，离桥头、汀步一步）——按总图上的桥、汀步算。
+ * 石桥在村南（柴门往南）、汀步在村口往南、板桥在桃林路上（溪从这里折向南）；东头的木桥在修，过不去。
+ */
 const CROSS: Array<{ name: string; ends: [Pt, Pt]; mid: Pt[] }> = [];
 {
-  const b = pathPts('过桥进门');
-  if (b.length >= 2) CROSS.push({ name: '石桥', ends: [b[0], b[1]], mid: [] });
-  const s = pathPts('踏石');
-  if (s.length >= 3) CROSS.push({ name: '汀步', ends: [s[0], s[s.length - 2]], mid: s.slice(1, -2) });
+  const B = SITE.bridge, hb = B.len / 2 + 1.2;
+  CROSS.push({ name: '石桥', ends: [[B.x, B.z + hb], [B.x, B.z - hb]], mid: [] });
+  const S = SITE.stones;
+  CROSS.push({ name: '汀步', ends: [[S.x, S.z + 3.6], [S.x + 0.6, S.z - 3.6]], mid: [[S.x, S.z]] });
+  const D = SITE.board, ux = Math.sin(D.yaw), uz = Math.cos(D.yaw), hd = D.len / 2 + 1.2;
+  CROSS.push({ name: '板桥', ends: [[D.x - ux * hd, D.z - uz * hd], [D.x + ux * hd, D.z + uz * hd]], mid: [] });
 }
 
 /** 在溪的哪一边：顺着水流看，左手边 +1、右手边 −1（按离这一点最近的那一段溪算） */

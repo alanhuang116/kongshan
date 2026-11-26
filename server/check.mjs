@@ -24,7 +24,7 @@ ws.on('open', () => ws.send(JSON.stringify({ t: 'hi', v: 1, n: [0, 13], c: 6 }))
 ws.on('message', (data) => {
   let m;
   try { m = JSON.parse(String(data)); } catch { return; }
-  if (m.t === 'wel') { clearTimeout(timer); done(true, `${url} 进了 ${m.rm}，我是 ${m.id} 号，同屋另有 ${m.ps.length} 位`); }
+  if (m.t === 'wel') { clearTimeout(timer); done(true, `${url} 进了 ${m.rm}，我是 ${m.id} 号，同屋另有 ${m.ps.length} 位${m.x ? `；认得样子、名片、玩法、路标（此刻路标 ${m.mk?.length ?? 0} 枚）` : '（旧的一版：不认得样子、玩法、路标）'}`); }
   else if (m.t === 'no') { clearTimeout(timer); done(false, `中转说不行：${m.why}`); }
 });
 ws.on('unexpected-response', (_req, res) => { clearTimeout(timer); done(false, `HTTP ${res.statusCode}（来源不在放行之列、路径不对，或 Caddy 没转过去）`); });

@@ -9,6 +9,8 @@ export interface Proto {
   acts: Array<[string, string]>;
   bounds: { x: [number, number]; y: [number, number]; z: [number, number]; speed: number };
   near: number;
+  weathers?: string[];
+  games?: string[];
 }
 export const PROTO: Proto;
 export const MAX_BYTES: number;
@@ -18,6 +20,16 @@ export function readName(n: unknown): [number, number] | null;
 export function readRobe(c: unknown): number | null;
 export function readRoom(r: unknown): string | null;
 export function readState(d: unknown, prevCt?: number): State | null;
+export function readSky(d: unknown): [number, number] | null;
+export const EXT: number;
+export const LOOK_N: number;
+export const CARD_N: number;
+export const GAME_N: number;
+export const MARK_PER: number;
+export function readLook(d: unknown): number[] | null;
+export function readCard(d: unknown): number[] | null;
+export function readGame(d: unknown): number[] | null;
+export function readMark(d: unknown): [number, number, number, number, number, number] | null;
 export class Bucket {
   constructor(cap: number, rate: number, now: number);
   cap: number; rate: number; n: number; t: number;
@@ -27,11 +39,14 @@ export interface Conn { send(s: string): void; close(code: number, why: string):
 export interface HubClient {
   id: number; conn: Conn; ip: string; room: HubRoom | null; name: [number, number] | null; robe: number; st: State | null;
   dirty: boolean; need: boolean; t0: number; gone: boolean; strikes: number; strikeT: number;
+  lk: number[] | null; cd: number[] | null;
 }
-export interface HubRoom { id: string; members: Set<HubClient> }
+export interface HubMark { id: number; by: number; d: number[]; n: [number, number]; c: number; t: number }
+export interface HubRoom { id: string; members: Set<HubClient>; sky: [number, number] | null; skyBy: number }
 export class Hub {
-  constructor(o?: { roomSize?: number; maxConn?: number; perIp?: number; near?: number; now?: () => number; log?: (...a: unknown[]) => void });
-  roomSize: number; maxConn: number; perIp: number; near: number;
+  constructor(o?: { roomSize?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void });
+  roomSize: number; maxConn: number; perIp: number; near: number; markMax: number; markTtl: number;
+  marks: HubMark[];
   rooms: Map<string, HubRoom>;
   clients: Set<HubClient>;
   byId: Map<number, HubClient>;
@@ -43,5 +58,6 @@ export class Hub {
   pick(want: string | null): HubRoom;
   tick(): void;
   sweep(): void;
-  stats(): { rooms: number; players: number; conns: number };
+  markList(now: number): number[][];
+  stats(): { rooms: number; players: number; conns: number; marks: number };
 }

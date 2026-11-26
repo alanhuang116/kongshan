@@ -175,10 +175,11 @@
   100% { opacity: 0; transform: translateY(-6px); }
 }
 
-/* 窄屏（手机竖着）：两卷竹简排成一行、矮一些，只占右上一条，不把画面当中盖住；每枚的宽按屏宽分 */
+/* 窄屏（手机竖着）：竹简矮一些；两卷并排放得下就并排（只占右上一条），放不下（衣饰、修为添进来以后）第二卷落到第一卷下面——
+   每枚的宽按长的那一卷分（--nmax，Hud.tsx 给），不挤成一指宽 */
 @media (max-width: 560px) {
-  .menu { flex-wrap: nowrap; gap: 6px; }
-  .slip { width: clamp(33px, calc((100vw - var(--sal) - var(--sar) - 34px) / 10), 46px); min-height: 100px; padding: 18px 0; }
+  .menu { flex-wrap: wrap; gap: 6px; }
+  .slip { width: clamp(33px, calc((100vw - var(--sal) - var(--sar) - 34px) / var(--nmax, 10)), 46px); min-height: 100px; padding: 18px 0; }
   .slip span { font-size: 15px; letter-spacing: 0.22em; }
   .roll::before { top: 9px; }
   .roll::after { bottom: 9px; }
