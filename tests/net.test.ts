@@ -53,18 +53,50 @@ describe('中转：认字段', () => {
 });
 
 describe('中转：屋子', () => {
-  it('来了人先进人最多、还没满的那间；满了开新的；走光了屋子就没了', () => {
+  it('座位按报过位置的人算；坐满了开新的；走光了屋子就没了', () => {
     const { h } = hub({ roomSize: 3 });
-    const a = join(h), b = join(h), c = join(h), d = join(h);
-    expect(a.cl.room!.id).toBe(b.cl.room!.id);
-    expect(c.cl.room!.id).toBe(a.cl.room!.id);
-    expect(d.cl.room!.id).not.toBe(a.cl.room!.id);
+    const sit = (x: ReturnType<typeof join>) => h.message(x.cl, st(1));
+    const a = join(h), b = join(h), c = join(h);
+    for (const x of [a, b, c]) expect(sit(x)).toBe(true);        // 三个都报了位置：三个座位坐满
+    const d = join(h);
+    expect(d.cl.room!.id).not.toBe(a.cl.room!.id);               // 第一间坐满了：另开一间
     expect(h.rooms.size).toBe(2);
-    // 第二间里只有一个：再来的人仍进人最多（还没满）的那间——第一间满着，就进第二间
+    expect(sit(d)).toBe(true);
+    // 第一间坐满着：再来的人进第二间（坐了一个、还坐得下）
     const e = join(h);
     expect(e.cl.room!.id).toBe(d.cl.room!.id);
     h.close(d.cl); h.close(e.cl);
     expect(h.rooms.size).toBe(1);
+  });
+  it('只连上不报位置的尸位连接不占座位：新人仍进有人的那一间', () => {
+    const { h } = hub({ roomSize: 3 });
+    const a = join(h);
+    h.message(a.cl, st(1, 1, 2));
+    join(h); join(h); join(h);                                  // 三个尸位连接，一份位置也不报
+    const b = join(h);
+    expect(b.cl.room).toBe(a.cl.room);                           // 座位还空着：进同一间，见得到人
+    expect(h.stats()).toEqual({ rooms: 1, players: 5, seated: 1, conns: 5, marks: 0 });
+    h.message(b.cl, st(1, 3, 4));
+    expect(h.seated(a.cl.room!)).toBe(2);
+  });
+  it('一间屋里的连接数有硬顶：尸位连接再多也另开一间', () => {
+    const { h } = hub({ roomSize: 2 });                          // 硬顶是两个座位的两倍：四个连接
+    const four = [join(h), join(h), join(h), join(h)];
+    expect(new Set(four.map((x) => x.cl.room!.id)).size).toBe(1);
+    const more = join(h);
+    expect(more.cl.room!.id).not.toBe(four[0].cl.room!.id);
+  });
+  it('进了屋子一分钟还一份位置不报：断开（1001），同屋的人看见他走了', () => {
+    const { h, tick } = hub({ ghostMs: 60000 });
+    const a = join(h), ghost = join(h, [1, 1]);
+    h.message(a.cl, st(1));
+    expect(ghost.cl.room).toBe(a.cl.room);
+    tick(59000); h.sweep();
+    expect(ghost.c.closed).toBeNull();                           // 还没到一分钟：留着
+    tick(2000); h.sweep();
+    expect(ghost.c.closed).toBe(CLOSE.bye);
+    expect(a.c.got.at(-1)).toEqual({ t: 'out', id: ghost.cl.id });
+    expect(h.clients.size).toBe(1);
   });
   it('进门给一份同屋的名单；别人收到「来了」「走了」', () => {
     const { h } = hub();
@@ -79,15 +111,17 @@ describe('中转：屋子', () => {
     h.close(b.cl);
     expect(a.c.got.at(-1)).toEqual({ t: 'out', id: b.cl.id });
   });
-  it('断线重连可以要回原来那一间（那间还在、还有空的话）', () => {
+  it('断线重连可以要回原来那一间（那间还在、还坐得下的话）', () => {
     const { h } = hub({ roomSize: 3 });
-    for (let i = 0; i < 3; i++) join(h);                 // 第一间满了
-    const d = join(h), e = join(h), f = join(h);          // 第二间也满了
-    const g = join(h);                                    // 第三间
+    const sit = (x: ReturnType<typeof join>) => h.message(x.cl, st(1));
+    for (let i = 0; i < 3; i++) sit(join(h));             // 第一间三个座位坐满
+    const d = join(h), e = join(h), f = join(h);          // 第二间也坐满
+    for (const x of [d, e, f]) sit(x);
+    const g = join(h); sit(g);                            // 第三间一人
     expect(d.cl.room).toBe(f.cl.room);
     const r3 = g.cl.room!.id;
-    h.close(e.cl);                                        // 第二间空出一个（两人），第三间一人
-    expect(join(h).cl.room).toBe(d.cl.room);              // 不说要哪间：进人多的那间
+    h.close(e.cl);                                        // 第二间空出一个座位（两人），第三间一人
+    expect(join(h).cl.room).toBe(d.cl.room);              // 不说要哪间：进坐得多的那间
     h.close(f.cl);
     expect(join(h, [0, 0], 'x', { rm: r3 }).cl.room!.id).toBe(r3);   // 说了要第三间：就进第三间
     expect(join(h, [0, 0], 'x', { rm: 'r99' }).cl.room).toBe(d.cl.room);   // 要的那间没了：照常挑
@@ -300,9 +334,10 @@ describe('中转：样子、名片、玩法、路标', () => {
   });
   it('玩法：发给同屋某一位（远近不论）只他收到；发给 0 是同屋的人；别屋的、自己、不认得的种类不行', () => {
     const { h } = hub({ roomSize: 2 });
-    const a = join(h), b = join(h, [1, 1]), c = join(h, [2, 2]);
+    const a = join(h), b = join(h, [1, 1]);
+    h.message(a.cl, st(1, 0, 10)); h.message(b.cl, st(1, 150, 240));   // 两个座位坐满
+    const c = join(h, [2, 2]);
     expect(c.cl.room).not.toBe(a.cl.room);
-    h.message(a.cl, st(1, 0, 10)); h.message(b.cl, st(1, 150, 240));
     for (const x of [a, b, c]) x.c.got.length = 0;
     const k = GAMES.indexOf('cock');
     expect(k).toBeGreaterThanOrEqual(0);
@@ -337,7 +372,9 @@ describe('中转：样子、名片、玩法、路标', () => {
   });
   it('路标：人人看得见（不分屋子）；留标的那一位收到的那份带 me；后进门的在 wel 里拿到', () => {
     const { h } = hub({ roomSize: 1 });
-    const a = join(h), b = join(h, [1, 1]);
+    const a = join(h);
+    h.message(a.cl, st(1));                              // 唯一的座位坐上了
+    const b = join(h, [1, 1]);
     expect(b.cl.room).not.toBe(a.cl.room);
     expect(h.message(a.cl, msg({ t: 'mk', d: [12.346, 40.5, 58, 8, 17, 1] }))).toBe(true);
     const m = a.c.got.at(-1)!;

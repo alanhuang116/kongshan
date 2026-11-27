@@ -1,6 +1,6 @@
 # 同游的中转（relay）
 
-安乐窝的「同游」：同一间屋子（至多 24 人）里的游人互相看得见、作揖、说一句现成的话、同行。网页本身仍是纯静态的（GitHub Pages 与服务器上同一份），只有这一个很小的 WebSocket 服务要跑在服务器上。客户端那一半在 `src/world/net/`，说明见 `docs/NET.md`。
+安乐窝的「同游」：同一间屋子（24 个座位，座位按报过位置的人算）里的游人互相看得见、作揖、说一句现成的话、同行。网页本身仍是纯静态的（GitHub Pages 与服务器上同一份），只有这一个很小的 WebSocket 服务要跑在服务器上。客户端那一半在 `src/world/net/`，说明见 `docs/NET.md`。
 
 - **不存任何东西**：没有账号、没有数据库、没有日志里的地址；进程一停，屋子与人都没了，客户端过一会儿自己重连。
 - **没有任何密钥**：不需要环境文件。
@@ -40,7 +40,8 @@ node server/check.mjs                         # 另开一个窗口：ok … 进�
 | 不对 | 不是 JSON、字段不对、不认得的种类、太快、太长：记一笔，十秒里过了 12 笔用 4000 断开 |
 | 作揖、说话 | 只给同屋、按两人最后报来的位置在 40 米以内的人（客户端那边只在 12 米内给按） |
 | 心跳 | 20 秒一 ping，上一回的 pong 没回来就断开；连上了 8 秒不报名字的断开（4004） |
-| 屋子 | 进人最多、还没满的那间；断线重连可以要回原来那间（还在、有空的话）；走光了就没了 |
+| 屋子 | 一间屋子 24 个座位，**座位只算报过位置的人**（连上了却一份位置不报的尸位连接不占座）；一间屋里的连接数另有硬顶（座位的两倍），再多就另开一间；进座位坐得最多、还坐得下的那间；断线重连可以要回原来那间（还在、坐得下的话）；走光了就没了 |
+| 尸位连接 | 进了屋子一分钟还一份位置不报的（页面冻住、锁屏、坏客户端）：用 1001 断开；同屋的人看见他走了，他回来时会重连 |
 | 发 | 每 100 毫秒一拍：这一拍里动过的人打成一条发给同屋各人；某人的连接慢（排队过 64 KB）先不发位置，好了补一整份；排队过 1 MB 断开 |
 | 版本 | 报上来的 `v` 与 `proto.json` 的不同：回一句 `no`、用 4001 断开（客户端不再连，等用户重开页面换新的一版） |
 
@@ -81,7 +82,7 @@ mkdir -p /var/log/yiwen && touch /var/log/yiwen/yiwen-kongshan-relay.log && chow
 cp /opt/yiwen/kongshan-relay/current/yiwen-kongshan-relay.service /etc/systemd/system/
 sed -i 's/\r$//' /etc/systemd/system/yiwen-kongshan-relay.service     # 从 Windows 过去的文件先去掉回车
 systemctl daemon-reload && systemctl enable --now yiwen-kongshan-relay
-curl -s http://127.0.0.1:3820/health                                  # {"ok":true,"v":1,"rooms":0,"players":0}
+curl -s http://127.0.0.1:3820/health                                  # {"ok":true,"v":1,"rooms":0,"players":0,"seated":0}
 node /opt/yiwen/kongshan-relay/current/check.mjs                      # ok … 进了 r1
 
 # Caddy：把 Caddyfile.snippet 里的 handle /ws* 加进 kongshan 那一块（file_server 之前）
