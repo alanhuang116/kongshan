@@ -56,7 +56,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && (path === '/health' || path === '/ws/health')) {
     const s = hub.stats();
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, v: PROTO.v, rooms: s.rooms, players: s.players }));
+    res.end(JSON.stringify({ ok: true, v: PROTO.v, rooms: s.rooms, players: s.players, seated: s.seated }));
     return;
   }
   res.writeHead(path === '/ws' ? 426 : 404, { 'content-type': 'text/plain; charset=utf-8' });

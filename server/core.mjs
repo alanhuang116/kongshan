@@ -5,7 +5,9 @@
  *   - 不存任何东西：没有账号、没有名字的原文、没有位置的记录；进程一停全都没了。
  *   - 线上没有一个自由写的字：名字是两张名单里的两个序号，衣色、说的话、在哪一处、做什么事、姿态都是 proto.json 里各张单子的序号；
  *     数要是有限的、在范围里的，坐标落到厘米。哪一样不对，这一条整个不要；不对的太多，断开。
- *   - 一间屋子至多 roomSize 人（默认 24）。来了人先进人最多、还没满的那间（好遇见人）；断线重连时可以要回原来那间。
+ *   - 一间屋子 roomSize 个座位（默认 24）。**座位只算报过位置的人**：连上了却一份位置也不报的（页面冻住、锁屏、坏客户端）不占座。
+ *     连接数另有一个硬顶（座位的两倍），免得尸位连接都堆在一间屋里；进了屋子一分钟还不报位置的，断开。
+ *     来了人先进座位坐得最多、还坐得下的那间（好遇见人）；断线重连时可以要回原来那间。
  *   - 各人的位置随来随收，每一拍（relay 里 100 毫秒一拍）把这一拍里动过的人一并发给同屋的人。
  *   - 园中天时：同屋的人看同一个时辰、节气、天气。屋里最早进来的那一位（屋子名单里排第一的）报他那里的时区（分钟）与天气，
  *     中转记下这一份、转给同屋的人；新进门的在「wel」里就拿到。别人报的不收（谁排第一，两边可能差一拍，不算不对）。
@@ -112,10 +114,14 @@ const SLOW = 64 * 1024, STUCK = 1024 * 1024;
 
 export class Hub {
   /**
-   * @param {{ roomSize?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void }} [o]
+   * @param {{ roomSize?: number; roomConn?: number; ghostMs?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void }} [o]
    */
   constructor(o = {}) {
     this.roomSize = o.roomSize ?? 24;
+    /** 一间屋子里最多几个连接：座位之外再留同样多的尸位，再多就另开一间（免得一间屋里的人被几十个尸位连接拉着发） */
+    this.roomConn = o.roomConn ?? this.roomSize * 2;
+    /** 进了屋子多久还一份位置都不报就断开（毫秒）：正常人进门一百来毫秒就报上第一份 */
+    this.ghostMs = o.ghostMs ?? 60000;
     this.maxConn = o.maxConn ?? 240;
     this.perIp = o.perIp ?? 12;
     /** 作揖、说话只给这么近（米）的人：按两人最后报来的位置量（客户端那边也只在近处才给按） */
@@ -248,12 +254,28 @@ export class Hub {
     return true;
   }
 
-  /** 挑一间：要的那间还有空就进那间，不然进人最多、没满的那间；都满了开一间新的 */
+  /** 这间屋里坐了几个：报过位置的才算（客户端那边数人也是这个口径） */
+  seated(room) {
+    let n = 0;
+    for (const m of room.members) if (m.st) n++;
+    return n;
+  }
+
+  /** 这间屋子还进得去不：座位没坐满，连接数也没到硬顶 */
+  fits(room) {
+    return this.seated(room) < this.roomSize && room.members.size < this.roomConn;
+  }
+
+  /** 挑一间：要的那间还进得去就进那间，不然进座位坐得最多、还进得去的那间；都不行就开一间新的 */
   pick(want) {
     const w = want ? this.rooms.get(want) : null;
-    if (w && w.members.size < this.roomSize) return w;
-    let best = null;
-    for (const r of this.rooms.values()) if (r.members.size < this.roomSize && (!best || r.members.size > best.members.size)) best = r;
+    if (w && this.fits(w)) return w;
+    let best = null, bestN = -1;
+    for (const r of this.rooms.values()) {
+      if (!this.fits(r)) continue;
+      const n = this.seated(r);
+      if (n > bestN) { best = r; bestN = n; }
+    }
     if (best) return best;
     const id = `r${(++this.roomSeq).toString(36)}`;
     const room = { id, members: new Set(), sky: null, skyBy: 0 };
@@ -448,16 +470,23 @@ export class Hub {
     }
   }
 
-  /** 隔几秒扫一遍：连上了却一直不报名字的，断开 */
+  /** 隔几秒扫一遍：连上了却一直不报名字的，断开；进了屋子却一份位置也不报的（尸位连接），也断开 */
   sweep() {
     const now = this.now();
-    for (const c of [...this.clients]) if (!c.room && now - c.t0 > 8000) this.kick(c, CLOSE.hello, 'hello');
+    for (const c of [...this.clients]) {
+      if (!c.room) {
+        if (now - c.t0 > 8000) this.kick(c, CLOSE.hello, 'hello');
+      } else if (!c.st && now - c.t0 > this.ghostMs) {
+        this.log('ghost', c.id);
+        this.kick(c, CLOSE.bye, 'ghost');
+      }
+    }
     this.pruneMarks(now);
   }
 
   stats() {
-    let players = 0;
-    for (const r of this.rooms.values()) players += r.members.size;
-    return { rooms: this.rooms.size, players, conns: this.clients.size, marks: this.marks.length };
+    let players = 0, seated = 0;
+    for (const r of this.rooms.values()) { players += r.members.size; seated += this.seated(r); }
+    return { rooms: this.rooms.size, players, seated, conns: this.clients.size, marks: this.marks.length };
   }
 }

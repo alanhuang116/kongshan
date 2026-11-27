@@ -44,8 +44,8 @@ export interface HubClient {
 export interface HubMark { id: number; by: number; d: number[]; n: [number, number]; c: number; t: number }
 export interface HubRoom { id: string; members: Set<HubClient>; sky: [number, number] | null; skyBy: number }
 export class Hub {
-  constructor(o?: { roomSize?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void });
-  roomSize: number; maxConn: number; perIp: number; near: number; markMax: number; markTtl: number;
+  constructor(o?: { roomSize?: number; roomConn?: number; ghostMs?: number; maxConn?: number; perIp?: number; near?: number; markMax?: number; markTtl?: number; now?: () => number; log?: (...a: unknown[]) => void });
+  roomSize: number; roomConn: number; ghostMs: number; maxConn: number; perIp: number; near: number; markMax: number; markTtl: number;
   marks: HubMark[];
   rooms: Map<string, HubRoom>;
   clients: Set<HubClient>;
@@ -56,8 +56,10 @@ export class Hub {
   kick(c: HubClient, code: number, why: string): void;
   message(c: HubClient, data: string | Uint8Array, isBinary?: boolean): boolean;
   pick(want: string | null): HubRoom;
+  seated(room: HubRoom): number;
+  fits(room: HubRoom): boolean;
   tick(): void;
   sweep(): void;
   markList(now: number): number[][];
-  stats(): { rooms: number; players: number; conns: number; marks: number };
+  stats(): { rooms: number; players: number; seated: number; conns: number; marks: number };
 }

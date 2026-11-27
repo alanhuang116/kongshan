@@ -59,7 +59,7 @@ export interface NetView {
   on: boolean; status: Status;
   me: { label: string; robe: string; c: number; n: Name };
   peers: PeerView[];
-  /** 同屋另有几位；画面近处几位 */ others: number; near: number;
+  /** 同屋另有几位；画面近处几位（都只数报了位置的，与 peers 同一个口径） */ others: number; near: number;
   /** 园中连你一共几位（暂离的几分钟里也算） */ total: number;
   /** 暂离的（手机收起、切到别处，连线断了）：几分钟内回来还认他 */ away: Array<{ key: string; label: string; robe: string; c: number }>;
   /** 园中天时随谁：self 是你自己最早来（或只有你）；host 是那一位的名字；tz 是那里的时区（分钟）；own 是你此刻拨的是自己的天时。独游是 null */
@@ -380,7 +380,9 @@ export class Together {
         // 进门时报的样子、名片就是此刻的（之后变了再报）
         this.lookSent = this.lookD ? this.lookD.join(',') : ''; this.cardSent = this.cardD ? this.cardD.join(',') : '';
         for (const p of m.ps) this.firePeer('in', p.id);
-        if (!this.welcomed && m.ps.length) this.k.note(`园中另有${cnNum(m.ps.length)}位游人`, 'net');
+        // 只数进门时带着位置的（同 build() 的人数）：连接还在、一份位置也不报的那几位，纸上没有他们
+        const came = m.ps.filter((p) => p.st).length;
+        if (!this.welcomed && came) this.k.note(`园中另有${cnNum(came)}位游人`, 'net');
         this.welcomed = true;
         // 进门时本来就在近处的，不再说「走近了」
         this.quietUntil = now + 2500;
@@ -588,8 +590,12 @@ export class Together {
   private build(): NetView {
     const me = this.me, ls = labels(this.list()), sky = this.skyNow();
     const peers: PeerView[] = [];
+    // 园中人数只数报过位置的（与下面那份名单同一个口径）：手机锁屏、切到后台、另一个标签页被冻住的连接，
+    // socket 还连着（中转那边也算一人），但它的画面停了、一份位置也不报；先前按连接数报「二位」，纸上却一个人也没有
+    let here = 0;
     for (const r of this.remotes.values()) {
       if (!r.seen) continue;
+      here++;
       peers.push({
         id: r.id, n: r.n, c: r.c, label: ls.get(r.id) ?? nameOf(r.n), robe: robeName(r.c),
         dist: r.dist, far: r.hidden ? farText(99, r.place) : farText(r.dist, r.place), doing: actLabel(r.act), hidden: r.hidden,
@@ -600,8 +606,8 @@ export class Together {
     return {
       enabled: !!this.client, on: me.on, status: this.status,
       me: { label: ls.get(0) ?? nameOf(me.n), robe: robeName(me.c), c: me.c, n: me.n },
-      peers, others: this.remotes.size, near: peers.filter((p) => !p.hidden && p.dist < 40).length, following: this.following,
-      total: 1 + this.remotes.size + this.away.size,
+      peers, others: here, near: peers.filter((p) => !p.hidden && p.dist < 40).length, following: this.following,
+      total: 1 + here + this.away.size,
       away: [...this.away.entries()].map(([key, a]) => ({ key, label: a.label, robe: robeName(a.c), c: a.c })),
       sky: sky ? { self: sky.self, host: sky.self ? (ls.get(0) ?? nameOf(me.n)) : (ls.get(sky.host) ?? nameOf(this.remotes.get(sky.host)?.n)), tz: sky.tz, own: this.ownSky } : null,
       ext: this.ext && !!this.client?.online, marks: this.marks.size,
