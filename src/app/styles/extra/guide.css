@@ -21,7 +21,7 @@ body[data-guide] .corner { z-index: 9; pointer-events: none; }
 body[data-guide="3"] .menu-key::before { opacity: 1; background: var(--mark); transform: rotate(-25deg); }
 body[data-guide="3"] .when-line::after { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mark) 28%, transparent); }
 body[data-guide="3"] .when-day { color: var(--mark); }
-/* 说声音的那一页：「声音」在「册」里，「册」上那圈墨环也转成朱 */
+/* 说声音的那一页：「声与画」在「册」里，「册」上那圈墨环也转成朱 */
 body[data-guide="4"] .menu-key::before { opacity: 1; background: var(--mark); transform: rotate(-25deg); }
 @media (max-width: 380px) { .guide-card { padding: 18px 18px 16px; } .guide-body p { font-size: 15.5px; } }
 @media (max-height: 460px) { .guide-card { gap: 10px; padding: 14px 20px 12px; } .guide-head h3 { font-size: 25px; } .guide-body p { font-size: 15px; line-height: 1.75; } }

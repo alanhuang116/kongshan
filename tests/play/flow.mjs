@@ -91,7 +91,7 @@ ok(touch ? '点「毕」：起身' : 'Esc：起身', await ev(() => !window.__ks
 // —— 简册、行囊、村图 ——
 await tapSel('[data-testid="key-menu"]'); await wait(500);
 const slips = await ev(() => [...document.querySelectorAll('.menu .slip')].map((s) => s.textContent).join(' '));
-ok('简册展开：村图、天时、行囊、观象册、起居注、声音、关于都在（村人簿、星图有页才出）', ['村图', '天时', '行囊', '观象册', '起居注', '声音', '关于'].every((n) => slips.includes(n)), slips);
+ok('简册展开：村图、天时、行囊、观象册、起居注、声与画、关于都在（村人簿、星图有页才出）', ['村图', '天时', '行囊', '观象册', '起居注', '声与画', '关于'].every((n) => slips.includes(n)), slips);
 await tapSel('[data-testid="key-bag"]'); await wait(900);
 ok('行囊开了（空的时候也有一句话）', await ev(() => window.__ui.ui.get().sheet === 'bag' && !!document.querySelector('.bag-empty, .bag-group')));
 await ev(() => window.__ks.bag.add('peach', 3));
